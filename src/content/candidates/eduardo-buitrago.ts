@@ -1,6 +1,5 @@
 import type { Candidate } from "../../lib/candidates/types";
 
-
 export const eduardoBuitrago: Candidate = {
   id: "eduardo-buitrago",
   slug: "eduardo-buitrago",
@@ -12,4 +11,3 @@ export const eduardoBuitrago: Candidate = {
   biography: "Biography pending approval.",
   shortBio: "Perfil público pendiente de aprobación del equipo editorial.",
 };
-
