@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
-import { siteConfig } from "@/lib/site";
+import { getSiteUrlString } from "@/lib/site";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
+  const base = getSiteUrlString();
 
   const routes = [
     { path: "/", changeFrequency: "weekly", priority: 1 },
@@ -12,7 +13,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   ] as const;
 
   return routes.map((r) => ({
-    url: `${siteConfig.url}${r.path}`,
+    url: `${base}${r.path}`,
     lastModified: now,
     changeFrequency: r.changeFrequency,
     priority: r.priority,

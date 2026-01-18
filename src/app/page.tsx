@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { CandidateCard } from "@/components/CandidateCard";
 import { Section } from "@/components/Section";
+import { getCandidates } from "@/lib/candidates/getCandidates";
 import { siteConfig } from "@/lib/site";
 
 export default function Home() {
+  const candidates = getCandidates();
   return (
     <div className="space-y-12">
       <Section>
@@ -51,18 +53,18 @@ export default function Home() {
 
       <Section title="Candidatos (Meta, 2026)" subtitle="Información base para presencia y visibilidad digital.">
         <div className="grid gap-4 md:grid-cols-2">
-          <CandidateCard
-            name="Eduardo Buitrago"
-            office="Senado"
-            party="Salvación Nacional"
-            ballotNumber="22"
-          />
-          <CandidateCard
-            name="Jose Angel"
-            office="Cámara"
-            party="(por definir)"
-            ballotNumber="103"
-          />
+          {candidates.map((c) => (
+            <CandidateCard
+              key={c.id}
+              name={c.name}
+              role={c.role}
+              party={c.party}
+              region={c.region}
+              ballotNumber={c.ballotNumber}
+              shortBio={c.shortBio}
+              href={`/candidates/${c.slug}`}
+            />
+          ))}
         </div>
         <div className="mt-4 text-sm text-muted">
           <p>
