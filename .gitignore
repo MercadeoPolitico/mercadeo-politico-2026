@@ -39,6 +39,9 @@ yarn-error.log*
 # workers build artifacts
 /workers/dist
 
+# local-only isolated Vercel CLI config (must never be committed)
+.vercel-mp26/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
