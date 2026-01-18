@@ -1,4 +1,5 @@
-import type { Candidate } from "@/lib/candidates/types";
+import type { Candidate } from "../../lib/candidates/types";
+
 
 /**
  * IMPORTANT:
