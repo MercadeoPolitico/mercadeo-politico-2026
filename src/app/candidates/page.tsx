@@ -34,6 +34,7 @@ export default function CandidatesPage() {
                   ballotNumber={c.ballotNumber}
                   shortBio={c.shortBio}
                   href={`/candidates/${c.slug}`}
+                  proposalHref={`/candidates/${c.slug}#propuesta`}
                 />
               ))}
             </div>
@@ -52,6 +53,7 @@ export default function CandidatesPage() {
                   ballotNumber={c.ballotNumber}
                   shortBio={c.shortBio}
                   href={`/candidates/${c.slug}`}
+                  proposalHref={`/candidates/${c.slug}#propuesta`}
                 />
               ))}
             </div>

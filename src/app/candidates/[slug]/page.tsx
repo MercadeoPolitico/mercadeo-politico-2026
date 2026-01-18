@@ -54,7 +54,7 @@ export default async function CandidatePage({ params }: PageProps) {
           </div>
         </header>
 
-        <article className="rounded-2xl border border-border bg-surface p-6">
+        <article className="glass-card p-6">
           <h2 className="text-lg font-semibold">Biografía</h2>
           <div className="mt-3 space-y-4 text-sm text-muted">
             {paragraphs.length > 0 ? (
@@ -63,6 +63,13 @@ export default async function CandidatePage({ params }: PageProps) {
               <p>{candidate.biography}</p>
             )}
           </div>
+        </article>
+
+        <article id="propuesta" className="glass-card p-6">
+          <h2 className="text-lg font-semibold">Propuesta</h2>
+          <p className="mt-3 text-sm text-muted">
+            Contenido en preparación. Se publicará únicamente después de revisión y aprobación editorial.
+          </p>
         </article>
       </Section>
     </div>

@@ -8,11 +8,13 @@ type Props = {
   party?: string;
   shortBio?: string;
   href?: string;
+  proposalHref?: string;
 };
 
-export function CandidateCard({ name, role, ballotNumber, region, party, shortBio, href }: Props) {
+export function CandidateCard({ name, role, ballotNumber, region, party, shortBio, href, proposalHref }: Props) {
+  const proposalLink = proposalHref ?? (href ? `${href}#propuesta` : undefined);
   return (
-    <article className="rounded-2xl border border-border bg-surface p-6">
+    <article className="glass-card p-6">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h3 className="text-lg font-semibold">
@@ -32,6 +34,14 @@ export function CandidateCard({ name, role, ballotNumber, region, party, shortBi
         </div>
       </div>
       {shortBio ? <p className="mt-4 text-sm text-muted">{shortBio}</p> : null}
+
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        {proposalLink ? (
+          <Link className="glass-button w-full sm:w-auto" href={proposalLink}>
+            Ver propuesta
+          </Link>
+        ) : null}
+      </div>
     </article>
   );
 }

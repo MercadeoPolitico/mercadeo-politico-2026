@@ -63,6 +63,7 @@ export default function Home() {
               ballotNumber={c.ballotNumber}
               shortBio={c.shortBio}
               href={`/candidates/${c.slug}`}
+              proposalHref={`/candidates/${c.slug}#propuesta`}
             />
           ))}
         </div>
