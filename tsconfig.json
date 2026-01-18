@@ -15,15 +15,19 @@
     "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    /* 🔴 FIX CLAVE: NO depender del auto-patch de Next */
     "jsx": "react-jsx",
-    "incremental": true,
-    /* ✅ FIX DEFINITIVO PARA VERCEL + ALIAS */
+    /* 🔴 FIX CLAVE: alias consistente local + Vercel */
     "baseUrl": "src",
     "paths": {
       "@/*": [
         "*"
       ]
     },
+    "incremental": true,
+    "types": [
+      "node"
+    ],
     "plugins": [
       {
         "name": "next"
