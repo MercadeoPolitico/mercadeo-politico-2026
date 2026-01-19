@@ -74,8 +74,13 @@ export function computeCitizenPanelData(input: {
   events: { event_type: string; municipality: string | null; content_id: string | null; occurred_at: string }[];
   publicationTextsById: Record<string, string>;
 }): CitizenPanelData {
-  // Only approved lifecycle events contribute
-  const contributing = input.events.filter((e) => e.event_type === "approval_approved" || e.event_type === "automation_submitted");
+  const approvedLifecycle = input.events.filter((e) => e.event_type === "approval_approved" || e.event_type === "automation_submitted");
+  const pixelSignals = input.events.filter(
+    (e) => e.event_type === "profile_view" || e.event_type === "proposal_view" || e.event_type === "social_click" || e.event_type === "shared_link_visit",
+  );
+
+  // For "personas alcanzadas" and "horarios" we use pixel signals + approved lifecycle (still without numbers).
+  const contributing = [...pixelSignals, ...approvedLifecycle];
 
   // Trend: last 7 days vs previous 7 days (based on occurred_at)
   const nowMs = Date.now();
@@ -105,7 +110,8 @@ export function computeCitizenPanelData(input: {
 
   // Affinity labels (from publication texts)
   const labelCounts = new Map<string, number>();
-  for (const e of contributing) {
+  // Affinity only from approved lifecycle content
+  for (const e of approvedLifecycle) {
     const id = e.content_id ?? "";
     const text = id ? input.publicationTextsById[id] : "";
     if (!text) continue;

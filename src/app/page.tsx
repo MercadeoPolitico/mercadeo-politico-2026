@@ -3,6 +3,7 @@ import { CandidateCard } from "@/components/CandidateCard";
 import { Section } from "@/components/Section";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 import { siteConfig } from "@/lib/site";
+import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
 
 export default function Home() {
   const candidates = getCandidates();
@@ -87,42 +88,46 @@ export default function Home() {
           <div className="glass-card p-6">
             <p className="text-sm font-semibold">José Ángel Martínez</p>
             <div className="mt-3 grid gap-2 text-sm">
-              <a className="underline" href="https://www.facebook.com/JoseAngelFirmesporlaPatria/" target="_blank" rel="noreferrer">
+              <TrackedExternalLink className="underline" candidateSlug="jose-angel-martinez" href="https://www.facebook.com/JoseAngelFirmesporlaPatria/">
                 Facebook · Firmes por la Patria
-              </a>
-              <a className="underline" href="https://www.facebook.com/angelesparavillavicencio7/" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="jose-angel-martinez" href="https://www.facebook.com/angelesparavillavicencio7/">
                 Facebook · Ángeles para Villavicencio
-              </a>
-              <a className="underline" href="https://www.instagram.com/angelfirmesporlapatria/" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="jose-angel-martinez" href="https://www.instagram.com/angelfirmesporlapatria/">
                 Instagram · @angelfirmesporlapatria
-              </a>
-              <a className="underline" href="https://www.threads.net/@jose.martinez08121978" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="jose-angel-martinez" href="https://www.threads.net/@jose.martinez08121978">
                 Threads · @jose.martinez08121978
-              </a>
-              <a className="underline" href="https://www.tiktok.com/@jose.angel.martin725" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="jose-angel-martinez" href="https://www.tiktok.com/@jose.angel.martin725">
                 TikTok · @jose.angel.martin725
-              </a>
-              <a className="underline" href="https://x.com/joseangelFirmes" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="jose-angel-martinez" href="https://x.com/joseangelFirmes">
                 X · @joseangelFirmes
-              </a>
+              </TrackedExternalLink>
             </div>
           </div>
 
           <div className="glass-card p-6">
             <p className="text-sm font-semibold">Eduard Buitrago Acero</p>
             <div className="mt-3 grid gap-2 text-sm">
-              <a className="underline" href="https://x.com/yosoyeduardb" target="_blank" rel="noreferrer">
+              <TrackedExternalLink className="underline" candidateSlug="eduardo-buitrago" href="https://x.com/yosoyeduardb">
                 X · @yosoyeduardb
-              </a>
-              <a className="underline" href="https://www.instagram.com/soyeduardbuitrago?igsh=bnpsNmI2MGZ3azQy" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink
+                className="underline"
+                candidateSlug="eduardo-buitrago"
+                href="https://www.instagram.com/soyeduardbuitrago?igsh=bnpsNmI2MGZ3azQy"
+              >
                 Instagram · @soyeduardbuitrago
-              </a>
-              <a className="underline" href="https://www.youtube.com/@soyeduardbuitrago7801" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="eduardo-buitrago" href="https://www.youtube.com/@soyeduardbuitrago7801">
                 YouTube · @soyeduardbuitrago7801
-              </a>
-              <a className="underline" href="https://www.facebook.com/share/17x8kFiAGs/" target="_blank" rel="noreferrer">
+              </TrackedExternalLink>
+              <TrackedExternalLink className="underline" candidateSlug="eduardo-buitrago" href="https://www.facebook.com/share/17x8kFiAGs/">
                 Facebook
-              </a>
+              </TrackedExternalLink>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { POLITICO_COOKIE_NAME, readPoliticoSessionCookieValue } from "@/lib/politico/session";
 import { computeCitizenPanelData } from "@/lib/analytics/citizenPanel";
+import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
 export const runtime = "nodejs";
 
 export default async function PoliticoWorkspacePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -223,10 +224,16 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
         <h2 className="text-base font-semibold">Enlaces</h2>
         <div className="grid gap-2 md:grid-cols-2">
           {safeLinks.map((l) => (
-            <a key={`${l.platform}-${l.url}`} className="rounded-xl border border-border bg-background/60 p-4 underline" href={l.url} target="_blank" rel="noreferrer">
+            <TrackedExternalLink
+              key={`${l.platform}-${l.url}`}
+              className="rounded-xl border border-border bg-background/60 p-4 underline"
+              candidateSlug={politician.slug}
+              href={l.url}
+              refType="social"
+            >
               <p className="text-sm font-semibold">{l.platform}</p>
               <p className="mt-1 text-xs text-muted">{l.handle ?? l.url}</p>
-            </a>
+            </TrackedExternalLink>
           ))}
         </div>
         {safeLinks.length === 0 ? <p className="text-sm text-muted">Aún no hay enlaces configurados.</p> : null}

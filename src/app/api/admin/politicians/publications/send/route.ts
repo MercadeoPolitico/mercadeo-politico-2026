@@ -4,6 +4,7 @@ import { isAdminSession } from "@/lib/auth/adminSession";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { submitToN8n } from "@/lib/automation/n8n";
 import type { SubmitToN8nRequest } from "@/lib/automation/types";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -68,12 +69,16 @@ export async function POST(req: Request) {
 
   // Analytics event (no PII)
   try {
-    await supabase.from("analytics_events").insert({
+    const admin = createSupabaseAdminClient();
+    if (!admin) throw new Error("not_configured");
+    await admin.from("analytics_events").insert({
       candidate_id: pub.politician_id,
       event_type: "automation_submitted",
       municipality: null,
       content_id: pub.id,
       occurred_at: now,
+      source: "web",
+      ref: null,
     });
   } catch {
     // no logs

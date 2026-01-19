@@ -52,6 +52,7 @@ Ejecuta en Supabase (SQL Editor o migrations tooling), **en este orden**:
 - `supabase/migrations/20260119_000003_storage_politician_media.sql`
 - `supabase/migrations/20260119_000004_social_variants_bridge.sql`
 - `supabase/migrations/20260119_000005_analytics_events_citizen_panel.sql`
+- `supabase/migrations/20260119_000006_internal_pixel_events.sql`
 
 Incluye:
 - `public.profiles` como **source of truth** de roles

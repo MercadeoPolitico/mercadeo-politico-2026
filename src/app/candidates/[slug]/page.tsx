@@ -3,9 +3,11 @@ import { notFound } from "next/navigation";
 import { Section } from "@/components/Section";
 import { getCandidateBySlug } from "@/lib/candidates/getCandidateBySlug";
 import { getSiteUrlString } from "@/lib/site";
+import { PixelFire } from "@/components/analytics/PixelFire";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ ref?: string }>;
 };
 
 function titleFor(candidate: { name: string; role: string; region: string }): string {
@@ -29,10 +31,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function CandidatePage({ params }: PageProps) {
+export default async function CandidatePage({ params, searchParams }: PageProps) {
   const { slug } = await params;
   const candidate = getCandidateBySlug(slug);
   if (!candidate) notFound();
+
+  const sp = searchParams ? await searchParams : undefined;
+  const ref = sp?.ref;
+  const refType =
+    ref === "shared" ? ("shared" as const) : ref === "social" ? ("social" as const) : ref === "direct" ? ("direct" as const) : undefined;
 
   const paragraphs = candidate.biography
     .split(/\n{2,}/g)
@@ -41,6 +48,7 @@ export default async function CandidatePage({ params }: PageProps) {
 
   return (
     <div className="space-y-10">
+      <PixelFire candidateSlug={candidate.slug} eventType={ref === "shared" ? "shared_link_visit" : "profile_view"} refType={refType} />
       <Section>
         <header className="space-y-2">
           <h1 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">{candidate.name}</h1>
