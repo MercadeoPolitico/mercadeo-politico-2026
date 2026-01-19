@@ -48,12 +48,13 @@ Este repositorio es **exclusivo** para el proyecto político `mercadeo-politico-
 Ejecuta en Supabase (SQL Editor o migrations tooling), **en este orden**:
 
 - `supabase/migrations/20260119_000001_step1_profiles_roles_rls.sql`
-- `supabase/migrations/20260119_000002_politicians_workspace.sql`
-- `supabase/migrations/20260119_000003_storage_politician_media.sql`
-- `supabase/migrations/20260119_000004_social_variants_bridge.sql`
-- `supabase/migrations/20260119_000005_analytics_events_citizen_panel.sql`
-- `supabase/migrations/20260119_000006_internal_pixel_events.sql`
-- `supabase/migrations/20260119_000007_analytics_source_n8n.sql`
+- `supabase/migrations/20260119000200_politicians_workspace.sql`
+- `supabase/migrations/20260119000300_storage_politician_media.sql`
+- `supabase/migrations/20260119000350_ai_drafts.sql`
+- `supabase/migrations/20260119000400_social_variants_bridge.sql`
+- `supabase/migrations/20260119000500_analytics_events_citizen_panel.sql`
+- `supabase/migrations/20260119000600_internal_pixel_events.sql`
+- `supabase/migrations/20260119000700_analytics_source_n8n.sql`
 
 Incluye:
 - `public.profiles` como **source of truth** de roles

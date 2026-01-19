@@ -39,6 +39,9 @@ yarn-error.log*
 # workers build artifacts
 /workers/dist
 
+# supabase cli temp files (local only)
+/supabase/.temp/
+
 # local-only isolated Vercel CLI config (must never be committed)
 .vercel-mp26/
 
