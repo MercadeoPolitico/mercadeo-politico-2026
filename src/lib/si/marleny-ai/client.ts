@@ -1,0 +1,103 @@
+import "server-only";
+import type { ContentType } from "@/lib/automation/types";
+import { maxOutputCharsFor, maxPromptCharsFor } from "@/lib/automation/limits";
+
+export type MarlenyAiCallInput = {
+  candidateId: string;
+  contentType: ContentType;
+  topic: string;
+  tone?: string;
+};
+
+export type MarlenyAiCallResult =
+  | { ok: true; text: string }
+  | { ok: false; error: "disabled" | "not_configured" | "bad_request" | "upstream_error" };
+
+function isEnabled(): boolean {
+  // Disabled by default unless explicitly enabled.
+  return process.env.MARLENY_AI_ENABLED === "true";
+}
+
+function hasConfig(): boolean {
+  return Boolean(process.env.MARLENY_AI_API_KEY && process.env.MARLENY_AI_ENDPOINT);
+}
+
+function buildPrompt(input: MarlenyAiCallInput): { system: string; user: string } {
+  // Short, functional system prompt (cost-aware, no roleplay).
+  const system =
+    "Asistente de redacción cívica y política. Sé sobrio, institucional, verificable y ético. " +
+    "Prohibido: desinformación, urgencia falsa, miedo, ataques personales, segmentación psicológica o demográfica. " +
+    "No publiques ni sugieras acciones ilegales. Responde en español neutro para Colombia.";
+
+  const toneLine = input.tone ? `Tono: ${input.tone.trim()}` : "Tono: sobrio y humano";
+
+  const format =
+    input.contentType === "proposal"
+      ? "Formato: 4–6 bloques cortos con título y 2–3 líneas por bloque."
+      : input.contentType === "blog"
+        ? "Formato: (1) título sugerido, (2) resumen en 5–7 líneas, (3) esquema con 6–10 bullets."
+        : "Formato: un solo post (máx. ~350 caracteres) + 3 hashtags sobrios (opcionales).";
+
+  const user =
+    [
+      `CandidateID: ${input.candidateId}`,
+      `Tipo: ${input.contentType}`,
+      `Tema: ${input.topic}`,
+      toneLine,
+      format,
+      "Nota: No inventes datos biográficos ni promesas específicas si no están confirmadas. Evita slogans.",
+    ].join("\n");
+
+  return { system, user };
+}
+
+export async function callMarlenyAI(input: MarlenyAiCallInput): Promise<MarlenyAiCallResult> {
+  if (!isEnabled()) return { ok: false, error: "disabled" };
+  if (!hasConfig()) return { ok: false, error: "not_configured" };
+
+  const { system, user } = buildPrompt(input);
+
+  const maxPrompt = maxPromptCharsFor(input.contentType);
+  const maxOut = maxOutputCharsFor(input.contentType);
+
+  const truncatedUser = user.length > maxPrompt ? user.slice(0, maxPrompt) : user;
+
+  // We do not assume a proprietary API schema; we send a minimal, generic request.
+  // The Marleny service can adapt this contract server-side.
+  const payload = {
+    system,
+    user: truncatedUser,
+    constraints: {
+      max_output_chars: maxOut,
+      content_type: input.contentType,
+    },
+  };
+
+  try {
+    const resp = await fetch(process.env.MARLENY_AI_ENDPOINT!, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${process.env.MARLENY_AI_API_KEY!}`,
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+
+    if (!resp.ok) return { ok: false, error: resp.status === 400 ? "bad_request" : "upstream_error" };
+
+    const data = (await resp.json()) as unknown;
+    const text =
+      typeof data === "object" && data !== null && "text" in (data as Record<string, unknown>)
+        ? (data as Record<string, unknown>).text
+        : null;
+
+    if (typeof text !== "string" || text.trim().length === 0) return { ok: false, error: "upstream_error" };
+
+    const clipped = text.trim().slice(0, maxOut);
+    return { ok: true, text: clipped };
+  } catch {
+    return { ok: false, error: "upstream_error" };
+  }
+}
+

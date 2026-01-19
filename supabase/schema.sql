@@ -60,3 +60,19 @@ create table if not exists public.si_events (
   created_at timestamptz not null default now()
 );
 
+-- AI drafts (review queue)
+-- Stored by n8n or future server-side tooling (not by the generate endpoint).
+create table if not exists public.ai_drafts (
+  id uuid primary key default gen_random_uuid(),
+  candidate_id text not null,
+  content_type text not null, -- proposal|blog|social
+  topic text not null,
+  tone text null,
+  generated_text text not null,
+  source text not null default 'web', -- web|n8n|manual
+  status text not null default 'pending_review', -- pending_review|approved|rejected|edited
+  reviewer_notes text null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
