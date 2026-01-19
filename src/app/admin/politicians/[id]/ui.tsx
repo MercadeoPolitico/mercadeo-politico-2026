@@ -21,6 +21,7 @@ type SocialLink = {
   platform: string;
   handle: string | null;
   url: string;
+  status: string;
   created_at: string;
 };
 
@@ -94,7 +95,7 @@ export function PoliticianWorkspaceClient({
     if (!supabase) return;
     const { data } = await supabase
       .from("politician_social_links")
-      .select("id,platform,handle,url,created_at")
+      .select("id,platform,handle,url,status,created_at")
       .eq("politician_id", politician.id)
       .order("created_at", { ascending: true });
     if (data) setLinks(data as SocialLink[]);
@@ -143,6 +144,7 @@ export function PoliticianWorkspaceClient({
       platform: newPlatform,
       handle: newHandle.trim() ? newHandle.trim() : null,
       url,
+      status: "active",
     });
     if (error) {
       setLinkMsg("No fue posible agregar el enlace.");
@@ -159,6 +161,18 @@ export function PoliticianWorkspaceClient({
     const { error } = await supabase.from("politician_social_links").delete().eq("id", id);
     if (error) {
       setLinkMsg("No fue posible eliminar el enlace.");
+      return;
+    }
+    await refreshLinks();
+  }
+
+  async function toggleLinkStatus(link: SocialLink) {
+    setLinkMsg(null);
+    if (!supabase) return;
+    const next = link.status === "active" ? "inactive" : "active";
+    const { error } = await supabase.from("politician_social_links").update({ status: next }).eq("id", link.id);
+    if (error) {
+      setLinkMsg("No fue posible actualizar el estado.");
       return;
     }
     await refreshLinks();
@@ -403,12 +417,26 @@ export function PoliticianWorkspaceClient({
         <div className="grid gap-3 md:grid-cols-2">
           {links.map((l) => (
             <div key={l.id} className="rounded-2xl border border-border bg-background/60 p-4">
-              <p className="text-sm font-semibold">{l.platform}</p>
-              <p className="mt-1 text-xs text-muted">{l.handle ?? "—"}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">{l.platform}</p>
+                  <p className="mt-1 text-xs text-muted">{l.handle ?? "—"}</p>
+                </div>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    l.status === "active" ? "bg-emerald-500/15 text-emerald-200" : "bg-zinc-500/15 text-zinc-200"
+                  }`}
+                >
+                  {l.status === "active" ? "Activo" : "Inactivo"}
+                </span>
+              </div>
               <a className="mt-2 block break-all text-sm text-foreground underline" href={l.url} target="_blank" rel="noreferrer">
                 {l.url}
               </a>
               <div className="mt-3 flex gap-2">
+                <button className="glass-button" type="button" onClick={() => toggleLinkStatus(l)}>
+                  {l.status === "active" ? "Desactivar" : "Activar"}
+                </button>
                 <button className="glass-button" type="button" onClick={() => deleteLink(l.id)}>
                   Eliminar
                 </button>

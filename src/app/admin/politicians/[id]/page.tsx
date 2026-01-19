@@ -15,7 +15,7 @@ export default async function PoliticianWorkspacePage({ params }: { params: Prom
     supabase.from("politicians").select("id,slug,name,office,party,region,biography,proposals,updated_at").eq("id", id).maybeSingle(),
     supabase
       .from("politician_social_links")
-      .select("id,platform,handle,url,created_at")
+      .select("id,platform,handle,url,status,created_at")
       .eq("politician_id", id)
       .order("created_at", { ascending: true }),
     supabase

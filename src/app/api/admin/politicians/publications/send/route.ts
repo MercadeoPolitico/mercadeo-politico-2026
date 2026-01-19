@@ -66,6 +66,19 @@ export async function POST(req: Request) {
     .eq("id", pub.id);
   if (upErr) return NextResponse.json({ error: "db_error" }, { status: 500 });
 
+  // Analytics event (no PII)
+  try {
+    await supabase.from("analytics_events").insert({
+      candidate_id: pub.politician_id,
+      event_type: "automation_submitted",
+      municipality: null,
+      content_id: pub.id,
+      occurred_at: now,
+    });
+  } catch {
+    // no logs
+  }
+
   return NextResponse.json({ ok: true });
 }
 

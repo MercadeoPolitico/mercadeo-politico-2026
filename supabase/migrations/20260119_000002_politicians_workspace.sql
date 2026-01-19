@@ -74,6 +74,7 @@ create table if not exists public.politician_social_links (
   platform text not null, -- facebook|instagram|threads|tiktok|x|youtube|website|other
   handle text null,
   url text not null,
+  status text not null default 'active',
   created_at timestamptz not null default now()
 );
 

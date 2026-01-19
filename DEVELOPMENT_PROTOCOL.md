@@ -29,6 +29,7 @@ Aquí queda explícito **qué ya existe**, **qué NO se debe reconstruir**, y **
   - `/politico/access?token=...` → set cookie segura
   - `/politico/[slug]` (aprueba/rechaza)
   - **NO auto-envío** a n8n desde el portal (por seguridad)
+  - Incluye **Panel de Seguimiento Ciudadano** (solo lectura, sin cifras)
 
 ---
 
@@ -66,6 +67,7 @@ Requiere (server-only):
 - Admin crea publicaciones en `/admin/politicians/[id]` (con variantes + media)
 - Político aprueba en su celular (`/politico/access?token=...`)
 - Admin presiona “Enviar a automatización” (n8n recibe y se queda en WAIT)
+- El político ve el **Panel de Seguimiento Ciudadano** actualizado a partir de eventos reales (aprobación + envío a n8n)
 
 ---
 
