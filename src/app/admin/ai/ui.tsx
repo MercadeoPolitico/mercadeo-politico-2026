@@ -16,6 +16,8 @@ export function AdminAiPanel() {
   const [candidateId, setCandidateId] = useState("jose-angel-martinez");
   const [state, setState] = useState<GenState>({ status: "idle" });
   const [saveState, setSaveState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [variants, setVariants] = useState<{ facebook: string; instagram: string; x: string } | null>(null);
+  const [imageKeywords, setImageKeywords] = useState<string>("");
 
   const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
 
@@ -43,11 +45,22 @@ export function AdminAiPanel() {
 
     const data = (await res.json()) as GenerateResponse;
     setState({ status: "done", data });
+    setVariants(data.variants ?? null);
+    if (Array.isArray(data.image_keywords) && data.image_keywords.length) {
+      setImageKeywords(data.image_keywords.join(", "));
+    } else {
+      setImageKeywords("");
+    }
   }
 
   async function sendToReviewQueue() {
     if (state.status !== "done") return;
     setSaveState("loading");
+
+    const keywords = imageKeywords
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     const res = await fetch("/api/admin/drafts", {
       method: "POST",
@@ -58,6 +71,8 @@ export function AdminAiPanel() {
         topic,
         tone: tone.trim() ? tone.trim() : null,
         generated_text: state.data.generated_text,
+        variants: variants ?? null,
+        image_keywords: keywords.length ? keywords : null,
         status: "pending_review",
         metadata: { token_estimate: state.data.token_estimate },
         source: "web",
@@ -153,6 +168,44 @@ export function AdminAiPanel() {
             <div className="space-y-3">
               <div className="rounded-xl border border-border bg-background p-4">
                 <pre className="whitespace-pre-wrap text-sm text-foreground">{state.data.generated_text}</pre>
+              </div>
+              {variants ? (
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-xs font-semibold text-muted">Facebook</p>
+                    <textarea
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={variants.facebook}
+                      onChange={(e) => setVariants({ ...variants, facebook: e.target.value })}
+                    />
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-xs font-semibold text-muted">Instagram</p>
+                    <textarea
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={variants.instagram}
+                      onChange={(e) => setVariants({ ...variants, instagram: e.target.value })}
+                    />
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-xs font-semibold text-muted">X</p>
+                    <textarea
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={variants.x}
+                      onChange={(e) => setVariants({ ...variants, x: e.target.value })}
+                    />
+                  </div>
+                </div>
+              ) : null}
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">Keywords de imagen (comma-separado)</label>
+                <input
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  value={imageKeywords}
+                  onChange={(e) => setImageKeywords(e.target.value)}
+                  placeholder="ej.: Meta, campo, congreso, seguridad"
+                />
+                <p className="text-xs text-muted">Sugerencias únicamente; no scraping.</p>
               </div>
               <p className="text-xs text-muted">
                 token_estimate: <span className="text-foreground">{state.data.token_estimate}</span> · created_at:{" "}

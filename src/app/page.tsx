@@ -34,6 +34,12 @@ export default function Home() {
               >
                 Principios y transparencia
               </Link>
+              <Link
+                className="inline-flex items-center justify-center rounded-full border border-border px-5 py-3 text-sm font-semibold transition-colors hover:bg-surface"
+                href="/admin/login"
+              >
+                Admin login
+              </Link>
             </div>
           </div>
 
@@ -73,6 +79,52 @@ export default function Home() {
             <strong className="text-foreground">ética, legal y transparente</strong>. No promueve desinformación ni
             tácticas engañosas.
           </p>
+        </div>
+      </Section>
+
+      <Section title="Enlaces oficiales" subtitle="Accesos rápidos a redes sociales y páginas públicas.">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="glass-card p-6">
+            <p className="text-sm font-semibold">José Ángel Martínez</p>
+            <div className="mt-3 grid gap-2 text-sm">
+              <a className="underline" href="https://www.facebook.com/JoseAngelFirmesporlaPatria/" target="_blank" rel="noreferrer">
+                Facebook · Firmes por la Patria
+              </a>
+              <a className="underline" href="https://www.facebook.com/angelesparavillavicencio7/" target="_blank" rel="noreferrer">
+                Facebook · Ángeles para Villavicencio
+              </a>
+              <a className="underline" href="https://www.instagram.com/angelfirmesporlapatria/" target="_blank" rel="noreferrer">
+                Instagram · @angelfirmesporlapatria
+              </a>
+              <a className="underline" href="https://www.threads.net/@jose.martinez08121978" target="_blank" rel="noreferrer">
+                Threads · @jose.martinez08121978
+              </a>
+              <a className="underline" href="https://www.tiktok.com/@jose.angel.martin725" target="_blank" rel="noreferrer">
+                TikTok · @jose.angel.martin725
+              </a>
+              <a className="underline" href="https://x.com/joseangelFirmes" target="_blank" rel="noreferrer">
+                X · @joseangelFirmes
+              </a>
+            </div>
+          </div>
+
+          <div className="glass-card p-6">
+            <p className="text-sm font-semibold">Eduard Buitrago Acero</p>
+            <div className="mt-3 grid gap-2 text-sm">
+              <a className="underline" href="https://x.com/yosoyeduardb" target="_blank" rel="noreferrer">
+                X · @yosoyeduardb
+              </a>
+              <a className="underline" href="https://www.instagram.com/soyeduardbuitrago?igsh=bnpsNmI2MGZ3azQy" target="_blank" rel="noreferrer">
+                Instagram · @soyeduardbuitrago
+              </a>
+              <a className="underline" href="https://www.youtube.com/@soyeduardbuitrago7801" target="_blank" rel="noreferrer">
+                YouTube · @soyeduardbuitrago7801
+              </a>
+              <a className="underline" href="https://www.facebook.com/share/17x8kFiAGs/" target="_blank" rel="noreferrer">
+                Facebook
+              </a>
+            </div>
+          </div>
         </div>
       </Section>
     </div>

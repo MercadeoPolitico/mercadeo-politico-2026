@@ -36,7 +36,22 @@ function buildPrompt(input: MarlenyAiCallInput): { system: string; user: string 
       ? "Formato: 4–6 bloques cortos con título y 2–3 líneas por bloque."
       : input.contentType === "blog"
         ? "Formato: (1) título sugerido, (2) resumen en 5–7 líneas, (3) esquema con 6–10 bullets."
-        : "Formato: un solo post (máx. ~350 caracteres) + 3 hashtags sobrios (opcionales).";
+        : [
+            "IMPORTANTE: Responde SOLO en JSON válido (sin markdown).",
+            "JSON schema:",
+            "{",
+            '  "base": string,',
+            '  "variants": { "facebook": string, "instagram": string, "x": string },',
+            '  "image_keywords": string[]',
+            "}",
+            "Reglas:",
+            '- "base": mensaje principal (máx. ~500 caracteres).',
+            '- "variants.facebook": 1 variante (máx. ~700).',
+            '- "variants.instagram": 1 variante (máx. ~700) con 3–6 hashtags sobrios opcionales.',
+            '- "variants.x": 1 variante (máx. 280).',
+            "- Sin ataques personales. Sin miedo. Sin urgencia falsa. Sin inventar datos.",
+            "- image_keywords: 5–10 palabras clave para imágenes (solo texto; NO scraping).",
+          ].join("\n");
 
   const user =
     [

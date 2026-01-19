@@ -13,6 +13,19 @@ export type GenerateResponse = {
   candidate_id: string;
   token_estimate: number;
   created_at: string;
+  /**
+   * Optional variants (Phase 2.2).
+   * Stored server-side and editable by admin before approval/automation.
+   */
+  variants?: {
+    facebook: string;
+    instagram: string;
+    x: string;
+  };
+  /**
+   * Optional image keywords suggestion (text only).
+   */
+  image_keywords?: string[];
 };
 
 export type SubmitToN8nRequest = GenerateResponse & {

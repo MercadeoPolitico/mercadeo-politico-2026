@@ -10,6 +10,11 @@ type Draft = {
   topic: string;
   tone: string | null;
   generated_text: string;
+  variants?: {
+    facebook: string;
+    instagram: string;
+    x: string;
+  };
   status: string;
   reviewer_notes: string | null;
   rotation_window_days: number | null;
@@ -35,6 +40,7 @@ export function AdminContentPanel() {
   const [imageKeywords, setImageKeywords] = useState<string>("");
   const [genState, setGenState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [genResult, setGenResult] = useState<GenerateResponse | null>(null);
+  const [variants, setVariants] = useState<{ facebook: string; instagram: string; x: string } | null>(null);
 
   const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
 
@@ -98,6 +104,10 @@ export function AdminContentPanel() {
 
     const data = (await res.json()) as GenerateResponse;
     setGenResult(data);
+    setVariants(data.variants ?? null);
+    if (Array.isArray(data.image_keywords) && data.image_keywords.length) {
+      setImageKeywords(data.image_keywords.join(", "));
+    }
     setGenState("done");
   }
 
@@ -116,6 +126,7 @@ export function AdminContentPanel() {
       topic: topic.trim(),
       tone: tone.trim() ? tone.trim() : null,
       generated_text: genResult.generated_text,
+      variants: variants ?? null,
       status: "pending_review",
       rotation_window_days: Number.isFinite(rotation as number) ? rotation : null,
       expires_at: expiresAt.trim() ? new Date(expiresAt).toISOString() : null,
@@ -135,6 +146,7 @@ export function AdminContentPanel() {
     setTopic("");
     setTone("");
     setGenResult(null);
+    setVariants(null);
     setGenState("idle");
   }
 
@@ -164,6 +176,7 @@ export function AdminContentPanel() {
         created_at: draft.created_at,
         source: "web",
         metadata: {
+          variants: draft.variants ?? undefined,
           rotation_window_days: draft.rotation_window_days,
           expires_at: draft.expires_at,
           image_keywords: draft.image_keywords,
@@ -267,6 +280,34 @@ export function AdminContentPanel() {
             <div className="rounded-xl border border-border bg-background p-4">
               <pre className="whitespace-pre-wrap text-sm">{genResult.generated_text}</pre>
             </div>
+            {variants ? (
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Facebook</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={variants.facebook}
+                    onChange={(e) => setVariants({ ...variants, facebook: e.target.value })}
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Instagram</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={variants.instagram}
+                    onChange={(e) => setVariants({ ...variants, instagram: e.target.value })}
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">X</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={variants.x}
+                    onChange={(e) => setVariants({ ...variants, x: e.target.value })}
+                  />
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-2 sm:grid-cols-2">
               <button className="glass-button" type="button" onClick={() => navigator.clipboard.writeText(genResult.generated_text)}>
                 Copiar
@@ -346,9 +387,66 @@ export function AdminContentPanel() {
                 value={selected.generated_text}
                 onChange={(e) => setSelected({ ...selected, generated_text: e.target.value, status: "edited" })}
               />
+
+              {selected.variants ? (
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-xs font-semibold text-muted">Facebook</p>
+                    <textarea
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={selected.variants.facebook}
+                      onChange={(e) =>
+                        setSelected({
+                          ...selected,
+                          status: "edited",
+                          variants: { ...selected.variants!, facebook: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-xs font-semibold text-muted">Instagram</p>
+                    <textarea
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={selected.variants.instagram}
+                      onChange={(e) =>
+                        setSelected({
+                          ...selected,
+                          status: "edited",
+                          variants: { ...selected.variants!, instagram: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-xs font-semibold text-muted">X</p>
+                    <textarea
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                      value={selected.variants.x}
+                      onChange={(e) =>
+                        setSelected({
+                          ...selected,
+                          status: "edited",
+                          variants: { ...selected.variants!, x: e.target.value },
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               <button className="glass-button" type="button" onClick={() => updateDraft({ id: selected.id, generated_text: selected.generated_text, status: "edited" })}>
                 Guardar cambios
               </button>
+              {selected.variants ? (
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={() => updateDraft({ id: selected.id, variants: selected.variants, status: "edited" })}
+                >
+                  Guardar variantes
+                </button>
+              ) : null}
               <p className="text-xs text-muted">
                 “Enviar a n8n” solo se habilita cuando el borrador está en estado <span className="text-foreground">approved</span>.
               </p>

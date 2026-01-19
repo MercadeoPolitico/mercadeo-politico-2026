@@ -54,13 +54,60 @@ export async function POST(req: Request) {
   }
 
   const text = result.text.slice(0, maxOut);
-  const response: GenerateResponse = {
-    generated_text: text,
-    content_type,
-    candidate_id,
-    token_estimate: estimateTokens(text),
-    created_at: new Date().toISOString(),
-  };
+  const createdAt = new Date().toISOString();
+
+  // Phase 2.2: for social content, Marleny returns JSON with base + variants + image_keywords.
+  let response: GenerateResponse;
+  if (content_type === "social") {
+    let base = text;
+    let variants: GenerateResponse["variants"] | undefined;
+    let image_keywords: string[] | undefined;
+
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === "object") {
+        const obj = parsed as Record<string, unknown>;
+        const baseCandidate = typeof obj.base === "string" ? obj.base.trim() : "";
+        const v = typeof obj.variants === "object" && obj.variants !== null ? (obj.variants as Record<string, unknown>) : null;
+        const fb = v && typeof v.facebook === "string" ? v.facebook.trim() : "";
+        const ig = v && typeof v.instagram === "string" ? v.instagram.trim() : "";
+        const x = v && typeof v.x === "string" ? v.x.trim() : "";
+        const kws = Array.isArray(obj.image_keywords)
+          ? (obj.image_keywords.filter((k) => typeof k === "string").map((k) => k.trim()).filter(Boolean) as string[])
+          : [];
+
+        if (baseCandidate) base = baseCandidate.slice(0, 700);
+        if (fb && ig && x) {
+          variants = {
+            facebook: fb.slice(0, 900),
+            instagram: ig.slice(0, 900),
+            x: x.slice(0, 280),
+          };
+        }
+        if (kws.length) image_keywords = kws.slice(0, 12);
+      }
+    } catch {
+      // fallback to plain text
+    }
+
+    response = {
+      generated_text: base.slice(0, maxOut),
+      content_type,
+      candidate_id,
+      token_estimate: estimateTokens(base),
+      created_at: createdAt,
+      ...(variants ? { variants } : {}),
+      ...(image_keywords ? { image_keywords } : {}),
+    };
+  } else {
+    response = {
+      generated_text: text,
+      content_type,
+      candidate_id,
+      token_estimate: estimateTokens(text),
+      created_at: createdAt,
+    };
+  }
 
   return NextResponse.json(response);
 }

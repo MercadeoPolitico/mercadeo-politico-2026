@@ -13,6 +13,20 @@ function isAdminRole(role: unknown): boolean {
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
 
+  // Politician mobile portal: minimal gate (cookie presence). Full validation is server-side.
+  const pathname = req.nextUrl.pathname;
+  const isPoliticoArea = pathname === "/politico" || pathname.startsWith("/politico/");
+  const isPoliticoAccess = pathname === "/politico/access";
+
+  if (isPoliticoArea && !isPoliticoAccess) {
+    const hasCookie = Boolean(req.cookies.get("mp_politico")?.value);
+    if (!hasCookie) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = "/politico/access";
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
   const url = env("NEXT_PUBLIC_SUPABASE_URL");
   const anon = env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
@@ -32,9 +46,9 @@ export async function middleware(req: NextRequest) {
     },
   });
 
-  const pathname = req.nextUrl.pathname;
   const isAdminArea = pathname === "/admin" || pathname.startsWith("/admin/");
   const isLogin = pathname === "/admin/login";
+  const isForcePassword = pathname === "/admin/force-password-change";
 
   if (!isAdminArea || isLogin) return res;
 
@@ -42,11 +56,33 @@ export async function middleware(req: NextRequest) {
   const { data } = await supabase.auth.getUser();
   const user = data.user;
 
-  const role = user?.app_metadata?.role ?? user?.user_metadata?.role;
-  if (!user || !isAdminRole(role)) {
+  if (!user) {
     const redirectUrl = req.nextUrl.clone();
     redirectUrl.pathname = "/admin/login";
     redirectUrl.searchParams.set("next", pathname);
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  // Source of truth: public.profiles (RLS: user can read only their own profile)
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role = profile?.role;
+  if (!isAdminRole(role)) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/admin/login";
+    redirectUrl.searchParams.set("next", pathname);
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  // Enforce password change on first login (admin-managed flag; user cannot tamper)
+  const mustChangePassword = user.app_metadata?.must_change_password === true;
+  if (mustChangePassword && !isForcePassword) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/admin/force-password-change";
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -54,6 +90,6 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/admin/:path*"],
+  matcher: ["/admin/:path*", "/politico/:path*"],
 };
 

@@ -14,7 +14,9 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("ai_drafts")
-    .select("id,candidate_id,content_type,topic,tone,generated_text,metadata,image_keywords,rotation_window_days,expires_at,source,status,created_at,updated_at")
+    .select(
+      "id,candidate_id,content_type,topic,tone,generated_text,variants,metadata,image_keywords,rotation_window_days,expires_at,source,status,reviewer_notes,created_at,updated_at",
+    )
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -44,6 +46,12 @@ export async function POST(req: Request) {
   const image_keywords = Array.isArray(b.image_keywords) ? (b.image_keywords.filter((x) => typeof x === "string") as string[]) : null;
   const rotation_window_days = typeof b.rotation_window_days === "number" ? b.rotation_window_days : null;
   const expires_at = typeof b.expires_at === "string" ? b.expires_at : null;
+  const variants =
+    typeof b.variants === "object" && b.variants !== null
+      ? (b.variants as Record<string, unknown>)
+      : b.variants === null
+        ? null
+        : null;
 
   if (!candidate_id || !content_type || !topic || !generated_text) {
     return NextResponse.json({ error: "missing_required_fields" }, { status: 400 });
@@ -57,6 +65,7 @@ export async function POST(req: Request) {
       topic,
       tone,
       generated_text,
+      variants: variants ?? {},
       metadata,
       image_keywords,
       rotation_window_days,
@@ -89,6 +98,7 @@ export async function PATCH(req: Request) {
   if (typeof b.status === "string") patch.status = b.status;
   if (typeof b.reviewer_notes === "string") patch.reviewer_notes = b.reviewer_notes;
   if (typeof b.metadata === "object" && b.metadata !== null) patch.metadata = b.metadata;
+  if (typeof b.variants === "object" && b.variants !== null) patch.variants = b.variants;
   if (Array.isArray(b.image_keywords)) patch.image_keywords = b.image_keywords.filter((x) => typeof x === "string");
   if (typeof b.rotation_window_days === "number") patch.rotation_window_days = b.rotation_window_days;
   if (typeof b.expires_at === "string" || b.expires_at === null) patch.expires_at = b.expires_at;

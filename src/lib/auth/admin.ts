@@ -14,10 +14,20 @@ export async function requireAdmin() {
 
   const { data } = await supabase.auth.getUser();
   const user = data.user;
-  const role = user?.app_metadata?.role ?? user?.user_metadata?.role;
+  if (!user) redirect("/admin/login");
 
-  if (!user || !isAdminRole(role)) redirect("/admin/login");
+  // Source of truth: profiles table (RLS allows user to read only their own row)
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  const role = profile?.role;
 
-  return { user, role: role as AdminRole };
+  if (!isAdminRole(role)) redirect("/admin/login");
+
+  return { user, role: role as AdminRole, mustChangePassword: user.app_metadata?.must_change_password === true };
+}
+
+export async function requireSuperAdmin() {
+  const { user, role, mustChangePassword } = await requireAdmin();
+  if (role !== "super_admin") redirect("/admin");
+  return { user, role, mustChangePassword };
 }
 

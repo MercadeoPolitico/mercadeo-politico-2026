@@ -20,13 +20,32 @@ export default async function AdminDashboardPage() {
   const marlenyEnabled = envOn("MARLENY_AI_ENABLED") && has("MARLENY_AI_API_KEY") && has("MARLENY_AI_ENDPOINT");
   const n8nForwardEnabled = envOn("N8N_FORWARD_ENABLED") && has("N8N_WEBHOOK_URL") && has("N8N_WEBHOOK_TOKEN");
 
-  // Best-effort counts (requires ai_drafts table + policies)
+  // Best-effort counts (requires tables + policies)
   let draftsCount: string = "—";
+  let draftsApproved: string = "—";
+  let draftsSent: string = "—";
+  let pubsPending: string = "—";
+  let pubsApproved: string = "—";
+  let pubsSent: string = "—";
   try {
     const supabase = await createSupabaseServerClient();
     if (supabase) {
-      const { count } = await supabase.from("ai_drafts").select("*", { count: "exact", head: true });
-      if (typeof count === "number") draftsCount = String(count);
+      const [{ count: all }, { count: approved }, { count: sent }, { count: pPending }, { count: pApproved }, { count: pSent }] =
+        await Promise.all([
+          supabase.from("ai_drafts").select("*", { count: "exact", head: true }),
+          supabase.from("ai_drafts").select("*", { count: "exact", head: true }).eq("status", "approved"),
+          supabase.from("ai_drafts").select("*", { count: "exact", head: true }).eq("status", "sent_to_n8n"),
+          supabase.from("politician_publications").select("*", { count: "exact", head: true }).eq("status", "pending_approval"),
+          supabase.from("politician_publications").select("*", { count: "exact", head: true }).eq("status", "approved"),
+          supabase.from("politician_publications").select("*", { count: "exact", head: true }).eq("status", "sent_to_n8n"),
+        ]);
+
+      if (typeof all === "number") draftsCount = String(all);
+      if (typeof approved === "number") draftsApproved = String(approved);
+      if (typeof sent === "number") draftsSent = String(sent);
+      if (typeof pPending === "number") pubsPending = String(pPending);
+      if (typeof pApproved === "number") pubsApproved = String(pApproved);
+      if (typeof pSent === "number") pubsSent = String(pSent);
     }
   } catch {
     // keep as "—" (no logs)
@@ -37,20 +56,22 @@ export default async function AdminDashboardPage() {
       <Section title="Dashboard" subtitle={`Acceso: ${role}. Métricas en modo lectura (fase inicial).`}>
         <div className="grid gap-4 md:grid-cols-4">
           <div className="glass-card p-5">
-            <p className="text-xs text-muted">Total visitas</p>
-            <p className="mt-1 text-2xl font-semibold">—</p>
-          </div>
-          <div className="glass-card p-5">
-            <p className="text-xs text-muted">Vistas perfiles</p>
-            <p className="mt-1 text-2xl font-semibold">—</p>
-          </div>
-          <div className="glass-card p-5">
-            <p className="text-xs text-muted">Vistas propuestas</p>
-            <p className="mt-1 text-2xl font-semibold">—</p>
-          </div>
-          <div className="glass-card p-5">
-            <p className="text-xs text-muted">Borradores blog</p>
+            <p className="text-xs text-muted">Borradores (ai_drafts)</p>
             <p className="mt-1 text-2xl font-semibold">{draftsCount}</p>
+          </div>
+          <div className="glass-card p-5">
+            <p className="text-xs text-muted">Aprobados (ai_drafts)</p>
+            <p className="mt-1 text-2xl font-semibold">{draftsApproved}</p>
+          </div>
+          <div className="glass-card p-5">
+            <p className="text-xs text-muted">Enviados a n8n (ai_drafts)</p>
+            <p className="mt-1 text-2xl font-semibold">{draftsSent}</p>
+          </div>
+          <div className="glass-card p-5">
+            <p className="text-xs text-muted">Publicaciones (pendientes/aprobadas/enviadas)</p>
+            <p className="mt-1 text-2xl font-semibold">
+              {pubsPending} / {pubsApproved} / {pubsSent}
+            </p>
           </div>
         </div>
       </Section>

@@ -18,6 +18,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <Link className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground" href="/admin">
               Dashboard
             </Link>
+            <Link
+              className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
+              href="/admin/users"
+            >
+              Usuarios
+            </Link>
+            <Link
+              className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
+              href="/admin/politicians"
+            >
+              Políticos
+            </Link>
             <Link className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground" href="/admin/ai">
               Marleny AI
             </Link>
