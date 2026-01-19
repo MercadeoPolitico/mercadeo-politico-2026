@@ -1,6 +1,6 @@
 import "server-only";
 
-export type Trend = "subiendo" | "estable" | "bajando";
+export type Trend = "sube" | "estable" | "baja";
 export type TimeBlock = "mañana" | "tarde" | "noche";
 
 export type CitizenPanelData = {
@@ -28,14 +28,14 @@ function classifyTimeBlockBogota(iso: string): TimeBlock {
 
 function trendFromWindows(curr: number, prev: number): Trend {
   if (curr === 0 && prev === 0) return "estable";
-  if (prev === 0 && curr > 0) return "subiendo";
+  if (prev === 0 && curr > 0) return "sube";
 
   const diff = curr - prev;
   const rel = diff / Math.max(prev, 1);
 
   // Conservative thresholds; no numbers exposed to politician.
-  if (rel > 0.2 && diff >= 2) return "subiendo";
-  if (rel < -0.2 && diff <= -2) return "bajando";
+  if (rel > 0.2 && diff >= 2) return "sube";
+  if (rel < -0.2 && diff <= -2) return "baja";
   return "estable";
 }
 
@@ -74,13 +74,15 @@ export function computeCitizenPanelData(input: {
   events: { event_type: string; municipality: string | null; content_id: string | null; occurred_at: string }[];
   publicationTextsById: Record<string, string>;
 }): CitizenPanelData {
-  const approvedLifecycle = input.events.filter((e) => e.event_type === "approval_approved" || e.event_type === "automation_submitted");
+  const lifecycle = input.events.filter(
+    (e) => e.event_type === "approval_approved" || e.event_type === "approval_rejected" || e.event_type === "automation_submitted",
+  );
   const pixelSignals = input.events.filter(
     (e) => e.event_type === "profile_view" || e.event_type === "proposal_view" || e.event_type === "social_click" || e.event_type === "shared_link_visit",
   );
 
   // For "personas alcanzadas" and "horarios" we use pixel signals + approved lifecycle (still without numbers).
-  const contributing = [...pixelSignals, ...approvedLifecycle];
+  const contributing = [...pixelSignals, ...lifecycle];
 
   // Trend: last 7 days vs previous 7 days (based on occurred_at)
   const nowMs = Date.now();
@@ -111,7 +113,8 @@ export function computeCitizenPanelData(input: {
   // Affinity labels (from publication texts)
   const labelCounts = new Map<string, number>();
   // Affinity only from approved lifecycle content
-  for (const e of approvedLifecycle) {
+  for (const e of lifecycle) {
+    if (e.event_type !== "approval_approved" && e.event_type !== "automation_submitted") continue;
     const id = e.content_id ?? "";
     const text = id ? input.publicationTextsById[id] : "";
     if (!text) continue;
