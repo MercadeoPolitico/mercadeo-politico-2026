@@ -4,6 +4,7 @@ import { estimateTokens, maxOutputCharsFor } from "@/lib/automation/limits";
 import { validateGenerateRequest } from "@/lib/automation/validate";
 import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
 import type { GenerateResponse } from "@/lib/automation/types";
+import { isAdminSession } from "@/lib/auth/adminSession";
 
 export const runtime = "nodejs";
 
@@ -20,9 +21,14 @@ export async function POST(req: Request) {
   const apiToken = process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
 
-  // Off-by-default: if token not configured, behave as not found.
-  if (!apiToken) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Access control:
+  // - If admin session is present: allow (internal UI; no secrets exposed to browser)
+  // - Else: require AUTOMATION_API_TOKEN (off-by-default for public)
+  const adminOk = await isAdminSession();
+  if (!adminOk) {
+    if (!apiToken) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });

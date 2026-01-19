@@ -17,5 +17,6 @@ export type GenerateResponse = {
 
 export type SubmitToN8nRequest = GenerateResponse & {
   source: "web";
+  metadata?: Record<string, unknown>;
 };
 

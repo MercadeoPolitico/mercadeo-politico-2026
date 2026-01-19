@@ -1,0 +1,362 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import type { ContentType, GenerateResponse } from "@/lib/automation/types";
+
+type Draft = {
+  id: string;
+  candidate_id: string;
+  content_type: ContentType | string;
+  topic: string;
+  tone: string | null;
+  generated_text: string;
+  status: string;
+  reviewer_notes: string | null;
+  rotation_window_days: number | null;
+  expires_at: string | null;
+  image_keywords: string[] | null;
+  created_at: string;
+};
+
+type LoadState = "idle" | "loading" | "ready" | "error";
+
+export function AdminContentPanel() {
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [selected, setSelected] = useState<Draft | null>(null);
+
+  // Draft creation (generate + store)
+  const [candidateId, setCandidateId] = useState("jose-angel-martinez");
+  const [contentType, setContentType] = useState<ContentType>("blog");
+  const [topic, setTopic] = useState("");
+  const [tone, setTone] = useState("");
+  const [rotationDays, setRotationDays] = useState<string>("7");
+  const [expiresAt, setExpiresAt] = useState<string>("");
+  const [imageKeywords, setImageKeywords] = useState<string>("");
+  const [genState, setGenState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [genResult, setGenResult] = useState<GenerateResponse | null>(null);
+
+  const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
+
+  async function refresh() {
+    setLoadState("loading");
+    const res = await fetch("/api/admin/drafts", { method: "GET" });
+    if (!res.ok) {
+      setLoadState("error");
+      return;
+    }
+    const json = (await res.json()) as { ok: boolean; drafts: Draft[] };
+    setDrafts(json.drafts ?? []);
+    setLoadState("ready");
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/drafts", { method: "GET" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) {
+          setLoadState("error");
+          return;
+        }
+        const json = (await res.json()) as { ok: boolean; drafts: Draft[] };
+        if (cancelled) return;
+        setDrafts(json.drafts ?? []);
+        setLoadState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setLoadState("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function generate() {
+    if (!canGenerate) return;
+    setGenState("loading");
+    setGenResult(null);
+
+    const payload = {
+      candidate_id: candidateId.trim(),
+      content_type: contentType,
+      topic: topic.trim(),
+      tone: tone.trim() ? tone.trim() : undefined,
+    };
+
+    const res = await fetch("/api/automation/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      setGenState("error");
+      return;
+    }
+
+    const data = (await res.json()) as GenerateResponse;
+    setGenResult(data);
+    setGenState("done");
+  }
+
+  async function saveDraft() {
+    if (!genResult) return;
+
+    const rotation = rotationDays.trim() ? Number(rotationDays) : null;
+    const keywords = imageKeywords
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const body = {
+      candidate_id: genResult.candidate_id,
+      content_type: genResult.content_type,
+      topic: topic.trim(),
+      tone: tone.trim() ? tone.trim() : null,
+      generated_text: genResult.generated_text,
+      status: "pending_review",
+      rotation_window_days: Number.isFinite(rotation as number) ? rotation : null,
+      expires_at: expiresAt.trim() ? new Date(expiresAt).toISOString() : null,
+      image_keywords: keywords.length ? keywords : null,
+      metadata: { token_estimate: genResult.token_estimate },
+      source: "web",
+    };
+
+    const res = await fetch("/api/admin/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) return;
+    await refresh();
+    setTopic("");
+    setTone("");
+    setGenResult(null);
+    setGenState("idle");
+  }
+
+  async function updateDraft(patch: Partial<Draft> & { id: string }) {
+    const res = await fetch("/api/admin/drafts", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) return false;
+    await refresh();
+    return true;
+  }
+
+  async function sendToN8n(draft: Draft) {
+    // Only allow for approved drafts (human-gated)
+    if (draft.status !== "approved") return;
+
+    const res = await fetch("/api/automation/submit", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        candidate_id: draft.candidate_id,
+        content_type: draft.content_type,
+        generated_text: draft.generated_text,
+        token_estimate: 0,
+        created_at: draft.created_at,
+        source: "web",
+        metadata: {
+          rotation_window_days: draft.rotation_window_days,
+          expires_at: draft.expires_at,
+          image_keywords: draft.image_keywords,
+        },
+      }),
+    });
+
+    if (!res.ok) return;
+    await updateDraft({ id: draft.id, status: "sent_to_n8n" });
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="glass-card p-6">
+        <h3 className="text-base font-semibold">Generar borrador</h3>
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Candidate ID</label>
+              <input
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={candidateId}
+                onChange={(e) => setCandidateId(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Tipo</label>
+              <select
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={contentType}
+                onChange={(e) => setContentType(e.target.value as ContentType)}
+              >
+                <option value="blog">blog</option>
+                <option value="proposal">proposal</option>
+                <option value="social">social</option>
+              </select>
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Tema</label>
+              <textarea
+                className="min-h-[110px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                maxLength={160}
+              />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Tono (opcional)</label>
+              <input
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={tone}
+                onChange={(e) => setTone(e.target.value)}
+                maxLength={80}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Rotación sugerida (días)</label>
+              <input
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={rotationDays}
+                onChange={(e) => setRotationDays(e.target.value)}
+                inputMode="numeric"
+              />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Expira (opcional)</label>
+              <input
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                placeholder="YYYY-MM-DD"
+              />
+              <p className="text-xs text-muted">Solo metadata; no scheduler.</p>
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Keywords de imagen (coma-separado)</label>
+              <input
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={imageKeywords}
+                onChange={(e) => setImageKeywords(e.target.value)}
+                placeholder="ej.: llanos, villavicencio, meta, congreso"
+              />
+              <p className="text-xs text-muted">Sugerencias únicamente; no scraping.</p>
+            </div>
+
+            <button className="glass-button w-full" onClick={generate} disabled={!canGenerate || genState === "loading"}>
+              {genState === "loading" ? "Generando…" : "Generar con Marleny"}
+            </button>
+          </div>
+        </div>
+
+        {genState === "error" ? (
+          <p className="mt-3 text-sm text-amber-300">No se pudo generar (verifica permisos/configuración).</p>
+        ) : null}
+
+        {genResult ? (
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-border bg-background p-4">
+              <pre className="whitespace-pre-wrap text-sm">{genResult.generated_text}</pre>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button className="glass-button" type="button" onClick={() => navigator.clipboard.writeText(genResult.generated_text)}>
+                Copiar
+              </button>
+              <button className="glass-button" type="button" onClick={saveDraft}>
+                Guardar como pendiente de revisión
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="glass-card p-6">
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-base font-semibold">Cola de revisión</h3>
+          <button className="glass-button" type="button" onClick={refresh}>
+            Actualizar
+          </button>
+        </div>
+
+        {loadState === "loading" ? <p className="mt-3 text-sm text-muted">Cargando…</p> : null}
+        {loadState === "error" ? (
+          <p className="mt-3 text-sm text-amber-300">No se pudo cargar la cola (verifica tabla/políticas).</p>
+        ) : null}
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {drafts.map((d) => (
+            <button
+              key={d.id}
+              className="glass-card p-4 text-left transition hover:bg-white/10"
+              onClick={() => setSelected(d)}
+              type="button"
+            >
+              <p className="text-sm font-semibold">{d.content_type}</p>
+              <p className="mt-1 text-xs text-muted">{d.candidate_id}</p>
+              <p className="mt-2 line-clamp-2 text-sm text-muted">{d.topic}</p>
+              <p className="mt-2 text-xs text-muted">Estado: {d.status}</p>
+            </button>
+          ))}
+        </div>
+
+        {selected ? (
+          <div className="mt-6 rounded-2xl border border-border bg-background/60 p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold">Detalle</p>
+                <p className="text-xs text-muted">{selected.id}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button className="glass-button" type="button" onClick={() => setSelected(null)}>
+                  Cerrar
+                </button>
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={() => updateDraft({ id: selected.id, status: "approved" })}
+                >
+                  Aprobar
+                </button>
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={() => updateDraft({ id: selected.id, status: "rejected" })}
+                >
+                  Rechazar
+                </button>
+                <button className="glass-button" type="button" onClick={() => sendToN8n(selected)} disabled={selected.status !== "approved"}>
+                  Enviar a n8n (WAIT)
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="text-sm font-medium">Texto (editable)</label>
+              <textarea
+                className="min-h-[180px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={selected.generated_text}
+                onChange={(e) => setSelected({ ...selected, generated_text: e.target.value, status: "edited" })}
+              />
+              <button className="glass-button" type="button" onClick={() => updateDraft({ id: selected.id, generated_text: selected.generated_text, status: "edited" })}>
+                Guardar cambios
+              </button>
+              <p className="text-xs text-muted">
+                “Enviar a n8n” solo se habilita cuando el borrador está en estado <span className="text-foreground">approved</span>.
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+

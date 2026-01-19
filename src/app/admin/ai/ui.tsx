@@ -1,0 +1,189 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import type { ContentType, GenerateResponse } from "@/lib/automation/types";
+
+type GenState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "done"; data: GenerateResponse }
+  | { status: "error"; message: string };
+
+export function AdminAiPanel() {
+  const [contentType, setContentType] = useState<ContentType>("proposal");
+  const [topic, setTopic] = useState("");
+  const [tone, setTone] = useState("");
+  const [candidateId, setCandidateId] = useState("jose-angel-martinez");
+  const [state, setState] = useState<GenState>({ status: "idle" });
+  const [saveState, setSaveState] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
+
+  async function generate() {
+    if (!canGenerate) return;
+    setState({ status: "loading" });
+
+    const payload = {
+      candidate_id: candidateId.trim(),
+      content_type: contentType,
+      topic: topic.trim(),
+      tone: tone.trim() ? tone.trim() : undefined,
+    };
+
+    const res = await fetch("/api/automation/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      setState({ status: "error", message: "No fue posible generar el contenido (verifica permisos/configuración)." });
+      return;
+    }
+
+    const data = (await res.json()) as GenerateResponse;
+    setState({ status: "done", data });
+  }
+
+  async function sendToReviewQueue() {
+    if (state.status !== "done") return;
+    setSaveState("loading");
+
+    const res = await fetch("/api/admin/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        candidate_id: state.data.candidate_id,
+        content_type: state.data.content_type,
+        topic,
+        tone: tone.trim() ? tone.trim() : null,
+        generated_text: state.data.generated_text,
+        status: "pending_review",
+        metadata: { token_estimate: state.data.token_estimate },
+        source: "web",
+      }),
+    });
+
+    if (!res.ok) {
+      setSaveState("error");
+      return;
+    }
+
+    setSaveState("done");
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className="glass-card p-6">
+        <h3 className="text-base font-semibold">Solicitud</h3>
+        <div className="mt-4 grid gap-4">
+          <div className="grid gap-1">
+            <label className="text-sm font-medium" htmlFor="candidate">
+              Candidate ID
+            </label>
+            <input
+              id="candidate"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={candidateId}
+              onChange={(e) => setCandidateId(e.target.value)}
+            />
+            <p className="text-xs text-muted">Ej.: jose-angel-martinez, eduardo-buitrago</p>
+          </div>
+
+          <div className="grid gap-1">
+            <label className="text-sm font-medium" htmlFor="type">
+              Tipo de contenido
+            </label>
+            <select
+              id="type"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={contentType}
+              onChange={(e) => setContentType(e.target.value as ContentType)}
+            >
+              <option value="proposal">proposal</option>
+              <option value="blog">blog</option>
+              <option value="social">social</option>
+            </select>
+          </div>
+
+          <div className="grid gap-1">
+            <label className="text-sm font-medium" htmlFor="topic">
+              Tema / instrucción
+            </label>
+            <textarea
+              id="topic"
+              className="min-h-[120px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              maxLength={160}
+              placeholder="Escribe el tema con claridad. Evita slogans; busca precisión y verificabilidad."
+            />
+          </div>
+
+          <div className="grid gap-1">
+            <label className="text-sm font-medium" htmlFor="tone">
+              Tono (opcional)
+            </label>
+            <input
+              id="tone"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              maxLength={80}
+              placeholder="Ej.: institucional, sobrio, humano"
+            />
+          </div>
+
+          <button className="glass-button w-full" onClick={generate} disabled={!canGenerate || state.status === "loading"}>
+            {state.status === "loading" ? "Generando…" : "Generar"}
+          </button>
+
+          <p className="text-xs text-muted">
+            Este panel no publica ni guarda automáticamente. La generación ocurre solo al presionar “Generar”.
+          </p>
+        </div>
+      </div>
+
+      <div className="glass-card p-6">
+        <h3 className="text-base font-semibold">Resultado</h3>
+        <div className="mt-4">
+          {state.status === "idle" ? <p className="text-sm text-muted">Sin resultado aún.</p> : null}
+          {state.status === "error" ? <p className="text-sm text-amber-300">{state.message}</p> : null}
+          {state.status === "done" ? (
+            <div className="space-y-3">
+              <div className="rounded-xl border border-border bg-background p-4">
+                <pre className="whitespace-pre-wrap text-sm text-foreground">{state.data.generated_text}</pre>
+              </div>
+              <p className="text-xs text-muted">
+                token_estimate: <span className="text-foreground">{state.data.token_estimate}</span> · created_at:{" "}
+                <span className="text-foreground">{state.data.created_at}</span>
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  className="glass-button"
+                  onClick={() => navigator.clipboard.writeText(state.data.generated_text)}
+                  type="button"
+                >
+                  Copiar texto
+                </button>
+                <button className="glass-button" onClick={sendToReviewQueue} type="button" disabled={saveState === "loading"}>
+                  {saveState === "loading"
+                    ? "Guardando…"
+                    : saveState === "done"
+                      ? "Guardado en revisión"
+                      : "Guardar en cola de revisión"}
+                </button>
+              </div>
+              {saveState === "error" ? (
+                <p className="text-xs text-amber-300">
+                  No fue posible guardar en la cola de revisión (verifica acceso y la tabla ai_drafts en Supabase).
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+

@@ -47,6 +47,7 @@ export function validateSubmitToN8nRequest(
   if (obj.source !== "web") return { ok: false, error: "source must be 'web'." };
 
   const token_estimate = typeof obj.token_estimate === "number" && Number.isFinite(obj.token_estimate) ? obj.token_estimate : 0;
+  const metadata = typeof obj.metadata === "object" && obj.metadata !== null ? (obj.metadata as Record<string, unknown>) : undefined;
 
   return {
     ok: true,
@@ -57,6 +58,7 @@ export function validateSubmitToN8nRequest(
       created_at: String(obj.created_at),
       token_estimate,
       source: "web",
+      metadata,
     },
   };
 }

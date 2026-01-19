@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { validateSubmitToN8nRequest } from "@/lib/automation/validate";
 import { submitToN8n } from "@/lib/automation/n8n";
+import { isAdminSession } from "@/lib/auth/adminSession";
 
 export const runtime = "nodejs";
 
@@ -18,8 +19,11 @@ export async function POST(req: Request) {
   const apiToken = process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
 
-  if (!apiToken) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const adminOk = await isAdminSession();
+  if (!adminOk) {
+    if (!apiToken) return NextResponse.json({ error: "not_found" }, { status: 404 });
+    if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
