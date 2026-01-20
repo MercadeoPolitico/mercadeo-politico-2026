@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type EnvDiag = {
   NEXT_PUBLIC_SUPABASE_URL: boolean;
@@ -12,7 +11,6 @@ type EnvDiag = {
 
 export function ForcePasswordChangeClient() {
   const router = useRouter();
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -21,7 +19,6 @@ export function ForcePasswordChangeClient() {
   const [envDiag, setEnvDiag] = useState<EnvDiag | null>(null);
 
   useEffect(() => {
-    if (supabase) return;
     let cancelled = false;
     fetch("/api/health/supabase", { method: "GET", cache: "no-store" })
       .then(async (r) => (r.ok ? ((await r.json()) as { env?: EnvDiag }) : null))
@@ -32,16 +29,11 @@ export function ForcePasswordChangeClient() {
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
-    if (!supabase) {
-      setError("Supabase no está configurado en este entorno.");
-      return;
-    }
 
     if (password.length < 12) {
       setError("Usa una contraseña de al menos 12 caracteres.");
@@ -53,8 +45,12 @@ export function ForcePasswordChangeClient() {
     }
 
     setLoading(true);
-    const { error: updateErr } = await supabase.auth.updateUser({ password });
-    if (updateErr) {
+    const updateResp = await fetch("/api/auth/update-password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    if (!updateResp.ok) {
       setLoading(false);
       setError("No fue posible actualizar la contraseña.");
       return;
@@ -80,7 +76,7 @@ export function ForcePasswordChangeClient() {
       </header>
 
       <form onSubmit={onSubmit} className="glass-card space-y-4 p-6">
-        {!supabase ? (
+        {envDiag && (!envDiag.NEXT_PUBLIC_SUPABASE_URL || !envDiag.NEXT_PUBLIC_SUPABASE_ANON_KEY) ? (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
             <p className="font-semibold">Supabase no está configurado en este entorno.</p>
             {envDiag ? (
