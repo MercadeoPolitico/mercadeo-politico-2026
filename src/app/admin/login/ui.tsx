@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type EnvDiag = {
@@ -84,9 +85,32 @@ export function AdminLoginClient() {
     router.replace(next);
   }
 
+  async function resetSession() {
+    setError(null);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // ignore
+    }
+    router.replace("/admin/login");
+    router.refresh();
+  }
+
   return (
     <div className="mx-auto w-full max-w-md space-y-6">
       <header className="space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <Link className="rounded-full px-3 py-2 text-sm text-muted hover:bg-surface hover:text-foreground" href="/">
+            ← Volver
+          </Link>
+          <button
+            className="rounded-full px-3 py-2 text-sm text-muted hover:bg-surface hover:text-foreground"
+            type="button"
+            onClick={() => void resetSession()}
+          >
+            Restablecer sesión
+          </button>
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight">Ingreso admin</h1>
         <p className="text-sm text-muted">Acceso interno. Requiere rol admin o super_admin.</p>
       </header>
@@ -166,6 +190,12 @@ export function AdminLoginClient() {
         <button className="glass-button w-full" type="submit" disabled={loading}>
           {loading ? "Ingresando…" : "Ingresar"}
         </button>
+
+        <div className="pt-2 text-center text-xs text-muted">
+          <Link className="underline-offset-4 hover:underline" href="/admin">
+            Ir al dashboard
+          </Link>
+        </div>
       </form>
     </div>
   );
