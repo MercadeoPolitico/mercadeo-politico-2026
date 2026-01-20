@@ -82,7 +82,9 @@ export function AdminLoginClient() {
       return;
     }
 
-    router.replace(next);
+    // Force a full navigation to ensure Set-Cookie has been applied
+    // before middleware runs (avoids occasional session race on some browsers/CDNs).
+    window.location.assign(next);
   }
 
   async function resetSession() {
