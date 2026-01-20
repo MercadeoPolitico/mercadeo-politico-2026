@@ -66,10 +66,15 @@ async function main() {
     app_metadata: nextAppMetadata,
   });
   if (updErr) throw new Error("Failed to update user password.");
+
+  // Safe success marker (no secrets).
+  console.log("OK: super_admin password updated (must_change_password=true).");
 }
 
-main().catch(() => {
-  // Intentionally no logging to avoid accidental secret leakage.
+main().catch((err) => {
+  // Safe error logging: never prints keys/passwords, only high-level reason.
+  const msg = typeof err?.message === "string" ? err.message : "Unknown error";
+  console.error(`FAILED: ${msg}`);
   process.exit(1);
 });
 

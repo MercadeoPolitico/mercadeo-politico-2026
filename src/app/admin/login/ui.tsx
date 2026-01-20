@@ -50,7 +50,23 @@ export function AdminLoginClient() {
     setLoading(false);
 
     if (!resp.ok) {
-      setError("No fue posible iniciar sesión. Verifica tus credenciales.");
+      let reason: string | null = null;
+      try {
+        const j = (await resp.json()) as { reason?: string };
+        if (typeof j?.reason === "string") reason = j.reason;
+      } catch {
+        // ignore
+      }
+
+      if (reason === "invalid_api_key") {
+        setError("Falla de configuración: el key de Supabase en Vercel no corresponde a este proyecto (anon key inválido).");
+      } else if (reason === "email_not_confirmed") {
+        setError("El usuario existe pero el email no está confirmado en Supabase Auth.");
+      } else if (reason === "rate_limited") {
+        setError("Demasiados intentos. Espera un momento y vuelve a intentar.");
+      } else {
+        setError("No fue posible iniciar sesión. Verifica tus credenciales.");
+      }
       return;
     }
 
