@@ -7,7 +7,7 @@ export const eduardoBuitrago: Candidate = {
   role: "Senado de la República",
   ballotNumber: 22,
   party: "Salvación Nacional",
-  region: "Meta",
+  region: "Colombia",
   biography: `
 Eduard Buitrago Acero es un colombiano formado en el servicio, la disciplina y el trabajo desde temprana edad. Nació en Chiquinquirá, Boyacá, y creció en el campo, donde aprendió junto a sus padres el valor del esfuerzo diario, la palabra cumplida y el respeto por la tierra y las personas. Esa experiencia temprana marcó su carácter y su visión de país.
 

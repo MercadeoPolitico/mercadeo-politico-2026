@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type Politician = {
   id: string;
@@ -13,6 +13,7 @@ type Politician = {
   region: string;
   ballot_number: number | null;
   auto_publish_enabled: boolean;
+  auto_blog_enabled: boolean;
   biography: string;
   proposals: string;
   updated_at: string;
@@ -58,6 +59,7 @@ export function PoliticianWorkspaceClient({
   const [proposals, setProposals] = useState(politician.proposals ?? "");
   const [ballotNumber, setBallotNumber] = useState<string>(politician.ballot_number ? String(politician.ballot_number) : "");
   const [autoPublish, setAutoPublish] = useState<boolean>(Boolean(politician.auto_publish_enabled));
+  const [autoBlog, setAutoBlog] = useState<boolean>(Boolean(politician.auto_blog_enabled));
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
 
@@ -124,6 +126,7 @@ export function PoliticianWorkspaceClient({
         proposals,
         ballot_number: Number.isFinite(bn as number) ? (bn as number) : null,
         auto_publish_enabled: autoPublish,
+        auto_blog_enabled: autoBlog,
         updated_at: new Date().toISOString(),
       })
       .eq("id", politician.id);
@@ -314,9 +317,25 @@ export function PoliticianWorkspaceClient({
     setProfileMsg("Recuerda guardar el perfil para aplicar el cambio.");
   }
 
+  async function toggleAutoBlog(next: boolean) {
+    if (!next) {
+      const ok = window.confirm(
+        "Al desactivar auto-blog, este candidato no generará blogs automáticos ni por cron ni desde el botón del hub. ¿Deseas continuar?"
+      );
+      if (!ok) return;
+    }
+    setAutoBlog(next);
+    setProfileMsg("Recuerda guardar el perfil para aplicar el cambio.");
+  }
+
   async function generateNewsBlog() {
     setHubMsg(null);
     setHubLoading(true);
+    if (!autoBlog) {
+      setHubLoading(false);
+      setHubMsg("Auto-blog está OFF para este candidato. Actívalo y guarda el perfil para generar.");
+      return;
+    }
     const resp = await fetch("/api/admin/politicians/news-blog", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -434,6 +453,16 @@ export function PoliticianWorkspaceClient({
               {autoPublish ? "ON" : "OFF"}
             </button>
           </div>
+        </div>
+
+        <div className="flex items-end justify-between gap-3 rounded-2xl border border-border bg-background/60 p-4">
+          <div>
+            <p className="text-sm font-semibold">Auto-blog (noticias)</p>
+            <p className="text-xs text-muted">Controla la generación automática. Si está OFF, no se generan blogs.</p>
+          </div>
+          <button className="glass-button" type="button" onClick={() => void toggleAutoBlog(!autoBlog)}>
+            {autoBlog ? "ON" : "OFF"}
+          </button>
         </div>
 
         {profileMsg ? <p className="text-sm text-muted">{profileMsg}</p> : null}

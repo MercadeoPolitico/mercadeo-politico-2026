@@ -27,10 +27,11 @@ export async function POST(req: Request) {
 
   const { data: pol } = await admin
     .from("politicians")
-    .select("id,slug,name,office,region,party,ballot_number")
+    .select("id,slug,name,office,region,party,ballot_number,auto_blog_enabled,proposals")
     .eq("id", candidate_id)
     .maybeSingle();
   if (!pol) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (pol.auto_blog_enabled === false) return NextResponse.json({ error: "auto_blog_disabled" }, { status: 409 });
 
   const regionQuery =
     pol.region && pol.region.toLowerCase().includes("meta")
@@ -42,23 +43,27 @@ export async function POST(req: Request) {
   const article = await fetchTopGdeltArticle(regionQuery);
 
   const topicParts = [
-    "Centro informativo ciudadano: redacta una nota breve y verificable basada en un titular de actualidad.",
+    "Centro informativo ciudadano: redacta una nota breve y verificable basada en la actualidad.",
     "Reglas:",
     "- Máximo ~30 líneas (párrafos cortos).",
+    "- Prioriza noticias por geolocalización del candidato (región/territorio).",
+    "- Si hay un hecho nacional de alto impacto coherente con la propuesta del candidato, puedes usarlo.",
     "- Sin miedo, sin ataques personales, sin urgencia falsa.",
     "- Enfócate en seguridad proactiva y soluciones institucionales cuando aplique.",
     "- Incluye 1 línea final: “Fuente:” con un enlace si se proporciona.",
+    "- Agrega al final 3 hashtags relevantes para el incidente (línea 'Hashtags:').",
     "",
     `Candidato: ${pol.name} (${pol.office})`,
     `Región: ${pol.region}`,
     pol.ballot_number ? `Número: ${pol.ballot_number}` : "",
-    article ? `Titular: ${article.title}` : "Titular: (sin titular; redacta un resumen cívico del día para la región)",
+    pol.proposals && String(pol.proposals).trim().length ? `Propuesta (extracto):\n${String(pol.proposals).slice(0, 1200)}` : "",
+    article ? `Titular: ${article.title}` : "",
     article ? `Enlace: ${article.url}` : "",
     "",
     "Incluye:",
     "- Título sugerido",
     "- Cuerpo",
-    "- 5 keywords SEO (una por línea, prefijo “SEO:”)",
+    "- 5 keywords SEO tendencia (una por línea, prefijo “SEO:”)",
   ].filter(Boolean);
 
   const ai = await callMarlenyAI({

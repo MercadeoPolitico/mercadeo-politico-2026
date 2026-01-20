@@ -35,6 +35,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </Link>
             <Link
               className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
+              href="/admin/marleny-chat"
+            >
+              Chat SI
+            </Link>
+            <Link
+              className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground"
               href="/admin/content"
             >
               Contenido

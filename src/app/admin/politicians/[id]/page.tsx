@@ -14,7 +14,7 @@ export default async function PoliticianWorkspacePage({ params }: { params: Prom
   const [{ data: politician }, { data: links }, { data: publications }] = await Promise.all([
     supabase
       .from("politicians")
-      .select("id,slug,name,office,party,region,ballot_number,auto_publish_enabled,biography,proposals,updated_at")
+      .select("id,slug,name,office,party,region,ballot_number,auto_publish_enabled,auto_blog_enabled,biography,proposals,updated_at")
       .eq("id", id)
       .maybeSingle(),
     supabase
