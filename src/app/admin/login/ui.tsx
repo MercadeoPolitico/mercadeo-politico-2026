@@ -64,6 +64,10 @@ export function AdminLoginClient() {
         setError("El usuario existe pero el email no está confirmado en Supabase Auth.");
       } else if (reason === "rate_limited") {
         setError("Demasiados intentos. Espera un momento y vuelve a intentar.");
+      } else if (reason === "invalid_credentials") {
+        setError("Credenciales inválidas (email/contraseña). Si acabas de resetear, vuelve a ejecutar el reset para ESTE email.");
+      } else if (reason) {
+        setError(`No fue posible iniciar sesión. (reason: ${reason})`);
       } else {
         setError("No fue posible iniciar sesión. Verifica tus credenciales.");
       }
