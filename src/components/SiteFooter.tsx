@@ -6,6 +6,34 @@ export function SiteFooter() {
           Plataforma de comunicación política digital para Colombia 2026. Compromiso con transparencia, educación
           cívica y cumplimiento legal. Este sitio no promueve desinformación ni tácticas engañosas.
         </p>
+
+        <div className="mt-5 flex flex-col gap-3 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <a
+            className="inline-flex items-center gap-3 rounded-xl border border-border/60 bg-surface/50 px-3 py-2 text-xs text-muted hover:bg-surface"
+            href="https://marketbrain.tech/landing"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Marketbrain Technology (abrir en una nueva pestaña)"
+          >
+            <img
+              src="/icon.svg"
+              alt="Marketbrain"
+              width={22}
+              height={22}
+              className="h-[22px] w-[22px] shrink-0"
+            />
+            <span className="leading-snug">
+              <span className="font-semibold text-foreground">Powered by Marketbrain Technology™</span>
+              <span className="mx-2 text-muted">·</span>
+              <span>by Marleny AI Holdings LLC (Wyoming, USA)</span>
+              <span className="mx-2 text-muted">·</span>
+              <span>Marleny Synthetic Intelligence</span>
+              <span className="mx-2 text-muted">·</span>
+              <span>By JCG · US Army Veteran</span>
+            </span>
+          </a>
+        </div>
+
         <p className="mt-3 text-xs text-muted">
           © {new Date().getFullYear()} mercadeo-politico-2026 — Meta, Colombia.
         </p>
