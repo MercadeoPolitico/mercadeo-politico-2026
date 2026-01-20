@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { POLITICO_COOKIE_NAME, readPoliticoSessionCookieValue } from "@/lib/politico/session";
-import { computeCitizenPanelData } from "@/lib/analytics/citizenPanel";
+import { getCitizenPanelForCandidate } from "@/lib/analytics/citizenPanel";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
 export const runtime = "nodejs";
 
@@ -38,7 +38,7 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
     );
   }
 
-  const [{ data: links }, { data: pending }, { data: events }] = await Promise.all([
+  const [{ data: links }, { data: pending }, panel] = await Promise.all([
     admin
       .from("politician_social_links")
       .select("platform,handle,url,status")
@@ -52,12 +52,7 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
       .eq("status", "pending_approval")
       .order("created_at", { ascending: false })
       .limit(50),
-    admin
-      .from("analytics_events")
-      .select("event_type,municipality,content_id,occurred_at")
-      .eq("candidate_id", politician.id)
-      .order("occurred_at", { ascending: false })
-      .limit(400),
+    getCitizenPanelForCandidate(admin, politician.id),
   ]);
 
   const safeLinks = (links ?? []) as { platform: string; handle: string | null; url: string; status: string }[];
@@ -70,39 +65,6 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
     status: string;
     created_at: string;
   }[];
-
-  const safeEvents = (events ?? []) as {
-    event_type: string;
-    municipality: string | null;
-    content_id: string | null;
-    occurred_at: string;
-  }[];
-
-  // Load minimal publication text context for affinity classification (approved lifecycle only)
-  const contentIds = Array.from(
-    new Set(
-      safeEvents
-        .filter((e) => e.event_type === "approval_approved" || e.event_type === "automation_submitted")
-        .map((e) => e.content_id)
-        .filter((x): x is string => typeof x === "string" && x.length > 0),
-    ),
-  ).slice(0, 50);
-
-  const publicationTextsById: Record<string, string> = {};
-  if (contentIds.length) {
-    const { data: pubs } = await admin
-      .from("politician_publications")
-      .select("id,content,variants,status")
-      .in("id", contentIds)
-      .in("status", ["approved", "sent_to_n8n", "scheduled", "published"]);
-
-    for (const p of (pubs ?? []) as { id: string; content: string; variants: unknown }[]) {
-      const extra = typeof p.variants === "object" && p.variants !== null ? JSON.stringify(p.variants) : "";
-      publicationTextsById[p.id] = `${p.content}\n${extra}`;
-    }
-  }
-
-  const panel = computeCitizenPanelData({ events: safeEvents, publicationTextsById });
 
   async function decide(formData: FormData) {
     "use server";

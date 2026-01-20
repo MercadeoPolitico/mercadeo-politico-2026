@@ -14,6 +14,7 @@ Este proyecto sirve como base técnica, ética y escalable para campañas polít
 - Base para automatización de contenidos (Make en el futuro)
 - Comunicación ética, legal y transparente
 - Arquitectura preparada para múltiples candidatos
+- **Nota**: políticos y ciudadanía ven **impacto interpretado**, no métricas.
 
 ---
 

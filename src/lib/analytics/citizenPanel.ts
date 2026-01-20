@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Trend = "sube" | "estable" | "baja";
 export type TimeBlock = "mañana" | "tarde" | "noche";
@@ -8,6 +9,21 @@ export type CitizenPanelData = {
   municipalities: string[];
   affinityLabels: string[];
   bestTimeBlock: TimeBlock;
+};
+
+type AnalyticsEventRow = {
+  candidate_id: string;
+  event_type: string;
+  municipality: string | null;
+  content_id: string | null;
+  occurred_at: string;
+};
+
+type PublicationTextRow = {
+  id: string;
+  content: string;
+  variants: unknown;
+  status: string;
 };
 
 function classifyTimeBlockBogota(iso: string): TimeBlock {
@@ -71,7 +87,7 @@ export function classifyAffinityLabel(text: string): string {
 }
 
 export function computeCitizenPanelData(input: {
-  events: { event_type: string; municipality: string | null; content_id: string | null; occurred_at: string }[];
+  events: Pick<AnalyticsEventRow, "event_type" | "municipality" | "content_id" | "occurred_at">[];
   publicationTextsById: Record<string, string>;
 }): CitizenPanelData {
   const lifecycle = input.events.filter(
@@ -143,5 +159,90 @@ export function computeCitizenPanelData(input: {
   const bestTimeBlock = (Array.from(blockCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "tarde") as TimeBlock;
 
   return { reachedTrend, municipalities, affinityLabels, bestTimeBlock };
+}
+
+function groupEventsByCandidateId(events: AnalyticsEventRow[]): Record<string, AnalyticsEventRow[]> {
+  const map: Record<string, AnalyticsEventRow[]> = {};
+  for (const e of events) {
+    if (!e.candidate_id) continue;
+    (map[e.candidate_id] ??= []).push(e);
+  }
+  return map;
+}
+
+async function loadPublicationTextsById(supabaseAdmin: SupabaseClient, contentIds: string[]): Promise<Record<string, string>> {
+  if (contentIds.length === 0) return {};
+
+  const { data } = await supabaseAdmin
+    .from("politician_publications")
+    .select("id,content,variants,status")
+    .in("id", contentIds)
+    .in("status", ["approved", "sent_to_n8n", "scheduled", "published"])
+    .limit(200);
+
+  const out: Record<string, string> = {};
+  for (const p of (data ?? []) as PublicationTextRow[]) {
+    const extra = typeof p.variants === "object" && p.variants !== null ? JSON.stringify(p.variants) : "";
+    out[p.id] = `${p.content}\n${extra}`;
+  }
+  return out;
+}
+
+export async function getCitizenPanelForCandidate(supabaseAdmin: SupabaseClient, candidateId: string): Promise<CitizenPanelData> {
+  const { data } = await supabaseAdmin
+    .from("analytics_events")
+    .select("candidate_id,event_type,municipality,content_id,occurred_at")
+    .eq("candidate_id", candidateId)
+    .order("occurred_at", { ascending: false })
+    .limit(400);
+
+  const events = (data ?? []) as AnalyticsEventRow[];
+
+  const contentIds = Array.from(
+    new Set(
+      events
+        .filter((e) => e.event_type === "approval_approved" || e.event_type === "automation_submitted")
+        .map((e) => e.content_id)
+        .filter((x): x is string => typeof x === "string" && x.length > 0),
+    ),
+  ).slice(0, 50);
+
+  const publicationTextsById = await loadPublicationTextsById(supabaseAdmin, contentIds);
+  return computeCitizenPanelData({ events, publicationTextsById });
+}
+
+export async function getCitizenPanelsByCandidateId(
+  supabaseAdmin: SupabaseClient,
+  candidateIds: string[],
+): Promise<Record<string, CitizenPanelData>> {
+  const ids = Array.from(new Set(candidateIds.map((x) => x.trim()).filter(Boolean))).slice(0, 50);
+  if (ids.length === 0) return {};
+
+  const { data } = await supabaseAdmin
+    .from("analytics_events")
+    .select("candidate_id,event_type,municipality,content_id,occurred_at")
+    .in("candidate_id", ids)
+    .order("occurred_at", { ascending: false })
+    .limit(2000);
+
+  const grouped = groupEventsByCandidateId((data ?? []) as AnalyticsEventRow[]);
+  const out: Record<string, CitizenPanelData> = {};
+
+  for (const id of ids) {
+    const events = grouped[id] ?? [];
+    const contentIds = Array.from(
+      new Set(
+        events
+          .filter((e) => e.event_type === "approval_approved" || e.event_type === "automation_submitted")
+          .map((e) => e.content_id)
+          .filter((x): x is string => typeof x === "string" && x.length > 0),
+      ),
+    ).slice(0, 50);
+
+    const publicationTextsById = await loadPublicationTextsById(supabaseAdmin, contentIds);
+    out[id] = computeCitizenPanelData({ events, publicationTextsById });
+  }
+
+  return out;
 }
 
