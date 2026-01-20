@@ -21,7 +21,9 @@ export function AdminLoginClient() {
     setError(null);
 
     if (!supabase) {
-      setError("Supabase no está configurado en este entorno.");
+      setError(
+        "Supabase no está configurado en este entorno. Verifica que existan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en las variables del deployment (y redeploy) o en .env.local (y reinicia el servidor)."
+      );
       return;
     }
 

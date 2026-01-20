@@ -46,6 +46,13 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
     .map((p) => p.trim())
     .filter(Boolean);
 
+  const proposalParagraphs = candidate.proposal
+    ? candidate.proposal
+        .split(/\n{2,}/g)
+        .map((p) => p.trim())
+        .filter(Boolean)
+    : [];
+
   return (
     <div className="space-y-10">
       <PixelFire candidateSlug={candidate.slug} eventType={ref === "shared" ? "shared_link_visit" : "profile_view"} refType={refType} />
@@ -75,9 +82,13 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
 
         <article id="propuesta" className="glass-card p-6">
           <h2 className="text-lg font-semibold">Propuesta</h2>
-          <p className="mt-3 text-sm text-muted">
-            Contenido en preparación. Se publicará únicamente después de revisión y aprobación editorial.
-          </p>
+          <div className="mt-3 space-y-4 text-sm text-muted">
+            {proposalParagraphs.length > 0 ? (
+              proposalParagraphs.map((p, idx) => <p key={idx}>{p}</p>)
+            ) : (
+              <p>Contenido en preparación. Se publicará únicamente después de revisión y aprobación editorial.</p>
+            )}
+          </div>
         </article>
       </Section>
     </div>

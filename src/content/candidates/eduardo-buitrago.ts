@@ -31,4 +31,70 @@ Eduard Buitrago Acero no propone discursos extremos ni promesas vacías: propone
   `.trim(),
   shortBio:
     "Veterano del Ejército (29 años), abogado y magíster en Educación Militar. Candidato al Senado con enfoque en servicio, seguridad democrática, familia y fortalecimiento institucional.",
+  proposal: `
+Propuesta Programática
+Eduard Buitrago Acero
+Candidato al Senado de la República
+
+Esta propuesta nace del servicio, la experiencia y una convicción profunda: Colombia puede ser un país seguro, justo y con oportunidades reales si el Estado funciona con autoridad, ética y humanidad.
+
+EJE 1. LUCHA FRONTAL CONTRA LA CORRUPCIÓN
+La corrupción no es un delito abstracto: es un hospital que no funciona, una escuela que se cae y una vía que nunca llega.
+Propuesta:
+- Cárcel efectiva sin beneficios para corruptos.
+- Extinción de dominio inmediata.
+- Inhabilidad de por vida para ejercer cargos públicos.
+Impacto: Recuperación de recursos públicos y confianza ciudadana.
+
+EJE 2. SEGURIDAD CON LEGALIDAD Y ESTADO FUERTE
+La seguridad protege al ciudadano honesto y permite el desarrollo.
+Propuesta:
+- Control territorial permanente.
+- Seguridad jurídica para Fuerza Pública.
+- Golpe a economías criminales.
+Impacto: Reducción real de violencia y extorsión.
+
+EJE 3. EMPLEO Y SUPERACIÓN DE LA POBREZA
+La pobreza se combate con empleo, no con dependencia.
+Propuesta:
+- Incentivos al empleo formal.
+- Ingreso mínimo condicionado.
+- Reactivación productiva regional.
+Impacto: Ingresos dignos y desarrollo sostenible.
+
+EJE 4. EDUCACIÓN PARA EL FUTURO
+Un niño que no aprende a leer bien queda condenado desde temprano.
+Propuesta:
+- Prioridad a lectura y matemáticas.
+- Formación docente por mérito.
+- Educación conectada al trabajo.
+Impacto: Jóvenes con oportunidades reales.
+
+EJE 5. VETERANOS DE LA FUERZA PÚBLICA
+Cuidar al veterano no es un favor, es una deuda del Estado.
+Propuesta:
+- Blindaje legal del régimen prestacional.
+- Salud integral especializada.
+- Empleo y defensa jurídica.
+Impacto: Justicia y dignidad institucional.
+
+EJE 6. LIBERTAD RELIGIOSA Y TEJIDO SOCIAL
+Defender la fe no es imponer creencias, es garantizar libertades.
+Propuesta:
+- Protección a la libertad religiosa.
+- Alianza Estado–Iglesias para acción social.
+Impacto: Comunidad y valores fortalecidos.
+
+EJE 7. CAMPO, PYMES Y PRODUCTORES
+Quienes trabajan y producen sostienen el país.
+Propuesta:
+- Compra pública al campesino.
+- Crédito y asistencia técnica.
+- Menos impuestos y trámites para pymes.
+Impacto: Más producción, más empleo.
+
+CONCLUSIÓN
+Eduard Buitrago Acero no propone discursos extremos ni promesas vacías.
+Propone servicio, coherencia y compromiso real con Colombia.
+  `.trim(),
 };

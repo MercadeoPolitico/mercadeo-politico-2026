@@ -18,5 +18,6 @@ export type Candidate = {
   party?: string;
   biography: string; // long, multi-paragraph plain text
   shortBio: string; // 2–3 lines
+  proposal?: string; // optional long plain text (public)
 };
 
