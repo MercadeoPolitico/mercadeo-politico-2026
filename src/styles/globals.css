@@ -78,3 +78,23 @@ body::before {
   }
 }
 
+/* Marketbrain / Marleny owl: subtle glow + pulse */
+@keyframes mbOwlPulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35)) drop-shadow(0 0 24px rgba(59, 130, 246, 0.18));
+    opacity: 0.95;
+  }
+  50% {
+    transform: translateY(-1px) scale(1.045);
+    filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.55)) drop-shadow(0 0 34px rgba(59, 130, 246, 0.28));
+    opacity: 1;
+  }
+}
+
+.mb-owl-pulse {
+  animation: mbOwlPulse 2.6s ease-in-out infinite;
+  will-change: transform, filter, opacity;
+}
+

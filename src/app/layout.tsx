@@ -24,8 +24,8 @@ export const metadata: Metadata = {
   description: siteConfig.description,
   applicationName: siteConfig.name,
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
-    shortcut: ["/icon.svg"],
+    icon: [{ url: "/icon.png", type: "image/png" }],
+    shortcut: ["/icon.png"],
   },
   alternates: {
     canonical: "/",

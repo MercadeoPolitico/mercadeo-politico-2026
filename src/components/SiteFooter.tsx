@@ -15,13 +15,16 @@ export function SiteFooter() {
             rel="noreferrer"
             aria-label="Marketbrain Technology (abrir en una nueva pestaña)"
           >
-            <img
-              src="/icon.svg"
-              alt="Marketbrain"
-              width={22}
-              height={22}
-              className="h-[22px] w-[22px] shrink-0"
-            />
+            <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center">
+              <span className="absolute inset-0 rounded-full bg-cyan-400/25 blur-xl" />
+              <img
+                src="/icon.png"
+                alt="Marleny Owl"
+                width={36}
+                height={36}
+                className="relative h-9 w-9 rounded-full mb-owl-pulse"
+              />
+            </span>
             <span className="leading-snug">
               <span className="font-semibold text-foreground">Powered by Marketbrain Technology™</span>
               <span className="mx-2 text-muted">·</span>
