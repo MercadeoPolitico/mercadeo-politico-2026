@@ -13,6 +13,7 @@ export function AdminLoginClient() {
   const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") ?? "/admin";
+  const pageReason = search.get("reason");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -50,16 +51,20 @@ export function AdminLoginClient() {
     setLoading(false);
 
     if (!resp.ok) {
+      let errorCode: string | null = null;
       let reason: string | null = null;
       try {
-        const j = (await resp.json()) as { reason?: string };
+        const j = (await resp.json()) as { error?: string; reason?: string };
+        if (typeof j?.error === "string") errorCode = j.error;
         if (typeof j?.reason === "string") reason = j.reason;
       } catch {
-        // ignore
+        // ignore (non-json upstream)
       }
 
-      if (reason === "invalid_api_key") {
-        setError("Falla de configuración: el key de Supabase en Vercel no corresponde a este proyecto (anon key inválido).");
+      if (errorCode === "supabase_not_configured") {
+        setError("Supabase no está configurado en este entorno (server). Revisa NEXT_PUBLIC_SUPABASE_URL y ANON en Production y redeploy.");
+      } else if (reason === "invalid_api_key") {
+        setError("Falla de configuración: el ANON KEY en Vercel no corresponde a este proyecto (anon key inválido).");
       } else if (reason === "email_not_confirmed") {
         setError("El usuario existe pero el email no está confirmado en Supabase Auth.");
       } else if (reason === "rate_limited") {
@@ -68,6 +73,8 @@ export function AdminLoginClient() {
         setError("Credenciales inválidas (email/contraseña). Si acabas de resetear, vuelve a ejecutar el reset para ESTE email.");
       } else if (reason) {
         setError(`No fue posible iniciar sesión. (reason: ${reason})`);
+      } else if (errorCode) {
+        setError(`No fue posible iniciar sesión. (error: ${errorCode})`);
       } else {
         setError("No fue posible iniciar sesión. Verifica tus credenciales.");
       }
@@ -85,6 +92,17 @@ export function AdminLoginClient() {
       </header>
 
       <form onSubmit={onSubmit} className="glass-card space-y-4 p-6">
+        {pageReason === "forbidden" ? (
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">No tienes rol admin o super_admin.</p>
+            <p className="mt-2 text-xs opacity-90">Tu usuario inició sesión, pero en `profiles.role` no es admin/super_admin.</p>
+          </div>
+        ) : pageReason === "unauthorized" ? (
+          <div className="rounded-2xl border border-border/60 bg-white/5 p-4 text-sm text-muted">
+            Sesión no detectada. Inicia sesión para continuar.
+          </div>
+        ) : null}
+
         {envDiag && (!envDiag.NEXT_PUBLIC_SUPABASE_URL || !envDiag.NEXT_PUBLIC_SUPABASE_ANON_KEY) ? (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
             <p className="font-semibold">Supabase no está configurado en este entorno.</p>

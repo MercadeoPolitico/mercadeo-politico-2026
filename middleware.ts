@@ -60,6 +60,7 @@ export async function middleware(req: NextRequest) {
     const redirectUrl = req.nextUrl.clone();
     redirectUrl.pathname = "/admin/login";
     redirectUrl.searchParams.set("next", pathname);
+    redirectUrl.searchParams.set("reason", "unauthorized");
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -75,6 +76,7 @@ export async function middleware(req: NextRequest) {
     const redirectUrl = req.nextUrl.clone();
     redirectUrl.pathname = "/admin/login";
     redirectUrl.searchParams.set("next", pathname);
+    redirectUrl.searchParams.set("reason", "forbidden");
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -83,6 +85,7 @@ export async function middleware(req: NextRequest) {
   if (mustChangePassword && !isForcePassword) {
     const redirectUrl = req.nextUrl.clone();
     redirectUrl.pathname = "/admin/force-password-change";
+    redirectUrl.searchParams.set("reason", "must_change_password");
     return NextResponse.redirect(redirectUrl);
   }
 

@@ -17,6 +17,33 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import fs from "node:fs";
+import path from "node:path";
+
+function loadDotenvIfPresent() {
+  // Node does NOT auto-load .env.local. Make recovery script more foolproof.
+  try {
+    const p = path.resolve(process.cwd(), ".env.local");
+    if (!fs.existsSync(p)) return;
+    const raw = fs.readFileSync(p, "utf8");
+    for (const line of raw.split(/\r?\n/g)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let val = trimmed.slice(eq + 1).trim();
+      if (!key) continue;
+      // Strip optional quotes
+      if ((val.startsWith("\"") && val.endsWith("\"")) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (!process.env[key] && val) process.env[key] = val;
+    }
+  } catch {
+    // ignore (do not log)
+  }
+}
 
 function env(name) {
   const v = process.env[name];
@@ -25,6 +52,7 @@ function env(name) {
 }
 
 async function main() {
+  loadDotenvIfPresent();
   const url = env("NEXT_PUBLIC_SUPABASE_URL");
   const serviceRoleKey = env("SUPABASE_SERVICE_ROLE_KEY");
   const email = env("RESET_SUPER_ADMIN_EMAIL").toLowerCase();
