@@ -3,40 +3,40 @@ import { Section } from "@/components/Section";
 export const metadata = {
   title: "Acerca de",
   description:
-    "Principios, ética y transparencia para comunicación política digital (Colombia 2026, Meta).",
+    "Principios, ética y transparencia para comunicación política digital (Colombia 2026).",
 };
 
 export default function AboutPage() {
   return (
     <div className="space-y-10">
       <Section
-        title="Acerca del proyecto"
-        subtitle="Fundación técnica y estratégica para comunicación política digital responsable."
+        title="Principios y confianza"
+        subtitle="Comunicación serena para una seguridad proactiva: verificable, respetuosa y enfocada en el territorio."
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-border bg-surface p-6">
+          <div className="glass-card p-6">
             <h2 className="text-base font-semibold">Ética y legalidad</h2>
             <p className="mt-2 text-sm text-muted">
-              Este proyecto prioriza comunicación verificable, transparente y alineada con buenas prácticas. No
-              promueve desinformación, impersonación, ni tácticas de manipulación.
+              Priorizamos comunicación verificable y responsable. No promovemos desinformación, suplantación de identidad,
+              manipulación emocional ni ataques personales.
             </p>
           </div>
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="text-base font-semibold">Escalabilidad</h2>
+          <div className="glass-card p-6">
+            <h2 className="text-base font-semibold">Seguridad proactiva</h2>
             <p className="mt-2 text-sm text-muted">
-              La arquitectura (Next.js + Supabase) está diseñada para crecer a múltiples candidatos, blogs, y flujos
-              automatizados futuros (Make), sin depender de servicios pagos.
+              El enfoque es anticiparse: prevención, presencia institucional y soluciones con legalidad. La jerarquía visual
+              y el contenido guían al ciudadano hacia información clara y contextual.
             </p>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-surface p-6">
-          <h2 className="text-base font-semibold">Transparencia técnica</h2>
+        <div className="glass-card p-6">
+          <h2 className="text-base font-semibold">Centro informativo ciudadano</h2>
           <ul className="mt-3 space-y-2 text-sm text-muted">
-            <li>- Variables de entorno obligatorias para credenciales y URLs.</li>
-            <li>- Código legible y mantenible (TypeScript, ESLint, Tailwind).</li>
-            <li>- Preparación para sitemap/robots y OpenGraph.</li>
-            <li>- Preparación para workers (Railway) sin implementar servicios aún.</li>
+            <li>- Publica notas breves con revisión humana.</li>
+            <li>- Cuando hay fuente disponible, se muestra enlace.</li>
+            <li>- No se muestran métricas ni datos personales.</li>
+            <li>- El contenido automático queda primero en cola de revisión.</li>
           </ul>
         </div>
       </Section>

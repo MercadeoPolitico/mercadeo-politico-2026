@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function SiteFooter() {
   return (
     <footer className="border-t border-border bg-background">
@@ -6,6 +8,18 @@ export function SiteFooter() {
           Plataforma de comunicación política digital para Colombia 2026. Compromiso con transparencia, educación
           cívica y cumplimiento legal. Este sitio no promueve desinformación ni tácticas engañosas.
         </p>
+
+        <div className="mt-4 flex flex-wrap gap-2 text-sm">
+          <Link className="rounded-full px-3 py-2 text-muted transition hover:bg-white/5 hover:text-foreground" href="/centro-informativo">
+            Centro informativo
+          </Link>
+          <Link className="rounded-full px-3 py-2 text-muted transition hover:bg-white/5 hover:text-foreground" href="/candidates">
+            Candidatos
+          </Link>
+          <Link className="rounded-full px-3 py-2 text-muted transition hover:bg-white/5 hover:text-foreground" href="/about">
+            Principios
+          </Link>
+        </div>
 
         <div className="mt-5 flex flex-col gap-3 border-t border-border/60 pt-5 sm:flex-row sm:items-center sm:justify-between">
           <a

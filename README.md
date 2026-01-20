@@ -48,7 +48,7 @@ Este repositorio es **exclusivo** para el proyecto político `mercadeo-politico-
 
 Ejecuta en Supabase (SQL Editor o migrations tooling), **en este orden**:
 
-- `supabase/migrations/20260119_000001_step1_profiles_roles_rls.sql`
+- `supabase/migrations/20260119_step1_profiles_roles_rls.sql`
 - `supabase/migrations/20260119000200_politicians_workspace.sql`
 - `supabase/migrations/20260119000300_storage_politician_media.sql`
 - `supabase/migrations/20260119000350_ai_drafts.sql`
@@ -56,6 +56,7 @@ Ejecuta en Supabase (SQL Editor o migrations tooling), **en este orden**:
 - `supabase/migrations/20260119000500_analytics_events_citizen_panel.sql`
 - `supabase/migrations/20260119000600_internal_pixel_events.sql`
 - `supabase/migrations/20260119000700_analytics_source_n8n.sql`
+- `supabase/migrations/20260120000100_citizen_news_public.sql`
 
 Incluye:
 - `public.profiles` como **source of truth** de roles
@@ -78,6 +79,8 @@ Opcionales (automatización):
 - `N8N_FORWARD_ENABLED="true"`
 - `N8N_WEBHOOK_URL`
 - `N8N_WEBHOOK_TOKEN`
+Opcional (cron / generación programada):
+- `CRON_SECRET` (Vercel Cron → Authorization Bearer)
 
 ### 3) Bootstrap del SUPER ADMIN (una sola vez)
 

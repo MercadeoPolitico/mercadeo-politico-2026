@@ -11,6 +11,8 @@ type Politician = {
   office: string;
   party: string | null;
   region: string;
+  ballot_number: number | null;
+  auto_publish_enabled: boolean;
   biography: string;
   proposals: string;
   updated_at: string;
@@ -54,6 +56,8 @@ export function PoliticianWorkspaceClient({
 
   const [bio, setBio] = useState(politician.biography ?? "");
   const [proposals, setProposals] = useState(politician.proposals ?? "");
+  const [ballotNumber, setBallotNumber] = useState<string>(politician.ballot_number ? String(politician.ballot_number) : "");
+  const [autoPublish, setAutoPublish] = useState<boolean>(Boolean(politician.auto_publish_enabled));
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
 
@@ -79,6 +83,10 @@ export function PoliticianWorkspaceClient({
   const [accessMsg, setAccessMsg] = useState<string | null>(null);
   const [accessLink, setAccessLink] = useState<string | null>(null);
   const [accessLoading, setAccessLoading] = useState(false);
+
+  const [hubMsg, setHubMsg] = useState<string | null>(null);
+  const [hubLoading, setHubLoading] = useState(false);
+  const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
 
   async function refreshPublications() {
     if (!supabase) return;
@@ -108,9 +116,16 @@ export function PoliticianWorkspaceClient({
       return;
     }
     setSavingProfile(true);
+    const bn = ballotNumber.trim() ? Number(ballotNumber.trim()) : null;
     const { error } = await supabase
       .from("politicians")
-      .update({ biography: bio, proposals, updated_at: new Date().toISOString() })
+      .update({
+        biography: bio,
+        proposals,
+        ballot_number: Number.isFinite(bn as number) ? (bn as number) : null,
+        auto_publish_enabled: autoPublish,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", politician.id);
     setSavingProfile(false);
     if (error) {
@@ -270,6 +285,51 @@ export function PoliticianWorkspaceClient({
     setUploadMsg("Archivo subido. Se agregó el URL al campo de media.");
   }
 
+  async function refreshFiles() {
+    setHubMsg(null);
+    if (!supabase) return;
+    const { data, error } = await supabase.storage.from("politician-media").list(politician.id, {
+      limit: 50,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+    if (error || !data) return;
+    const next = data
+      .filter((o) => o.name && !o.name.endsWith("/"))
+      .map((o) => {
+        const path = `${politician.id}/${o.name}`;
+        const { data: u } = supabase.storage.from("politician-media").getPublicUrl(path);
+        return { name: o.name, url: u.publicUrl };
+      });
+    setFiles(next);
+  }
+
+  async function toggleAutoPublish(next: boolean) {
+    if (next) {
+      const ok = window.confirm(
+        "ADVERTENCIA: Al activar auto-publicación, el sistema podrá generar y enviar contenido automáticamente (sin aprobación manual). ¿Deseas continuar?"
+      );
+      if (!ok) return;
+    }
+    setAutoPublish(next);
+    setProfileMsg("Recuerda guardar el perfil para aplicar el cambio.");
+  }
+
+  async function generateNewsBlog() {
+    setHubMsg(null);
+    setHubLoading(true);
+    const resp = await fetch("/api/admin/politicians/news-blog", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ candidate_id: politician.id }),
+    });
+    setHubLoading(false);
+    if (!resp.ok) {
+      setHubMsg("No fue posible generar el blog automático (verifica Marleny AI / Supabase).");
+      return;
+    }
+    setHubMsg("Borrador generado y enviado a la cola de revisión.");
+  }
+
   async function sendPublicationToAutomation(p: Publication) {
     setPubMsg(null);
     if (p.status !== "approved") return;
@@ -354,10 +414,102 @@ export function PoliticianWorkspaceClient({
           </div>
         </div>
 
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-1">
+            <label className="text-sm font-medium">Número de tarjetón (opcional)</label>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={ballotNumber}
+              onChange={(e) => setBallotNumber(e.target.value)}
+              inputMode="numeric"
+              placeholder="ej: 22"
+            />
+          </div>
+          <div className="flex items-end justify-between gap-3 rounded-2xl border border-border bg-background/60 p-4">
+            <div>
+              <p className="text-sm font-semibold">Auto-publicación (avance)</p>
+              <p className="text-xs text-muted">Si está ON, cron podrá publicar y/o enviar automáticamente.</p>
+            </div>
+            <button className="glass-button" type="button" onClick={() => void toggleAutoPublish(!autoPublish)}>
+              {autoPublish ? "ON" : "OFF"}
+            </button>
+          </div>
+        </div>
+
         {profileMsg ? <p className="text-sm text-muted">{profileMsg}</p> : null}
         <button className="glass-button" type="button" onClick={saveProfile} disabled={savingProfile}>
           {savingProfile ? "Guardando…" : "Guardar perfil"}
         </button>
+      </section>
+
+      <section className="glass-card space-y-4 p-6">
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold">Marketing Hub</h2>
+          <p className="text-sm text-muted">
+            Archivos (imágenes, videos, PDFs) + generación de blogs para el Centro informativo ciudadano (con revisión humana).
+          </p>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-border bg-background/60 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold">Zona de archivos</p>
+              <button className="glass-button" type="button" onClick={refreshFiles}>
+                Ver archivos
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-muted">Sube y copia URLs públicas para embeber en biografía/propuesta o publicaciones.</p>
+
+            <div className="mt-3 grid gap-2">
+              <input
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                type="file"
+                accept="image/*,video/*,application/pdf"
+                disabled={uploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadMedia(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+              {uploadMsg ? <p className="text-xs text-muted">{uploadMsg}</p> : null}
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              {files.map((f) => (
+                <div key={f.url} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/50 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">{f.name}</p>
+                    <p className="truncate text-xs text-muted">{f.url}</p>
+                  </div>
+                  <button className="glass-button" type="button" onClick={() => navigator.clipboard.writeText(f.url)}>
+                    Copiar URL
+                  </button>
+                </div>
+              ))}
+              {files.length === 0 ? <p className="text-sm text-muted">Sin archivos listados aún.</p> : null}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-background/60 p-4">
+            <p className="text-sm font-semibold">Generación de blogs (Marleny AI)</p>
+            <p className="mt-1 text-xs text-muted">
+              Genera un borrador basado en noticias recientes por geolocalización (sin scraping de imágenes). Queda en cola de revisión.
+            </p>
+            {hubMsg ? <p className="mt-3 text-sm text-muted">{hubMsg}</p> : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button className="glass-button" type="button" onClick={generateNewsBlog} disabled={hubLoading}>
+                {hubLoading ? "Generando…" : "Generar blog automático (noticias)"}
+              </button>
+              <Link className="glass-button" href="/admin/content">
+                Ir a cola de revisión
+              </Link>
+            </div>
+            <p className="mt-3 text-xs text-muted">
+              Importante: el contenido se publica solo después de aprobación humana, salvo que actives auto-publicación (y guardes el perfil).
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="glass-card space-y-4 p-6">

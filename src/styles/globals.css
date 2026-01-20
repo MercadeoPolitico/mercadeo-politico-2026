@@ -1,11 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --surface: #fafafa;
-  --border: rgba(0, 0, 0, 0.08);
-  --muted: #52525b;
+  /* Default: dark, serene, glass-forward */
+  --background: #0b1220; /* slate-950-ish */
+  --foreground: #eef2ff;
+  --surface: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.16);
+  --muted: rgba(226, 232, 240, 0.78);
 }
 
 @theme inline {
@@ -20,11 +21,21 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --surface: #111113;
+    --background: #0b1220;
+    --foreground: #eef2ff;
+    --surface: rgba(255, 255, 255, 0.06);
     --border: rgba(255, 255, 255, 0.16);
-    --muted: #a1a1aa;
+    --muted: rgba(226, 232, 240, 0.78);
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #ffffff;
+    --foreground: #0b1220;
+    --surface: rgba(2, 6, 23, 0.04);
+    --border: rgba(2, 6, 23, 0.10);
+    --muted: rgba(15, 23, 42, 0.72);
   }
 }
 
@@ -47,27 +58,23 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(60% 50% at 20% 20%, rgba(245, 158, 11, 0.20), transparent 55%),
-    radial-gradient(55% 45% at 70% 25%, rgba(34, 197, 94, 0.18), transparent 60%),
-    radial-gradient(65% 55% at 45% 80%, rgba(15, 23, 42, 0.25), transparent 60%);
+    radial-gradient(55% 45% at 18% 18%, rgba(250, 204, 21, 0.18), transparent 60%),
+    radial-gradient(50% 45% at 82% 20%, rgba(59, 130, 246, 0.16), transparent 62%),
+    radial-gradient(55% 50% at 55% 86%, rgba(239, 68, 68, 0.12), transparent 62%),
+    radial-gradient(60% 55% at 45% 55%, rgba(2, 6, 23, 0.35), transparent 60%);
   filter: blur(24px);
   opacity: 0.9;
 }
 
 @layer components {
   .glass-card {
-    @apply rounded-2xl border border-border bg-white/70 backdrop-blur-md;
-  }
-  @media (prefers-color-scheme: dark) {
-    .glass-card {
-      @apply border-white/15 bg-white/5;
-    }
+    @apply rounded-3xl border border-white/20 bg-white/10 backdrop-blur-md;
   }
 
   .glass-button {
     @apply inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition;
-    @apply border-white/15 bg-white/10 text-foreground backdrop-blur-md;
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+    @apply border-white/20 bg-white/10 text-foreground backdrop-blur-md;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
   .glass-button:hover {
     @apply bg-white/15;

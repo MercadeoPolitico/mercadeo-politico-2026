@@ -62,7 +62,7 @@ export default function CandidatesPage() {
 
         <div className="mt-6 text-sm">
           <Link className="font-semibold underline-offset-4 hover:underline" href="/blog">
-            Ver blog
+            Centro informativo ciudadano
           </Link>
         </div>
 

@@ -12,7 +12,11 @@ export default async function PoliticianWorkspacePage({ params }: { params: Prom
   if (!supabase) notFound();
 
   const [{ data: politician }, { data: links }, { data: publications }] = await Promise.all([
-    supabase.from("politicians").select("id,slug,name,office,party,region,biography,proposals,updated_at").eq("id", id).maybeSingle(),
+    supabase
+      .from("politicians")
+      .select("id,slug,name,office,party,region,ballot_number,auto_publish_enabled,biography,proposals,updated_at")
+      .eq("id", id)
+      .maybeSingle(),
     supabase
       .from("politician_social_links")
       .select("id,platform,handle,url,status,created_at")

@@ -1,8 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+type EnvDiag = {
+  NEXT_PUBLIC_SUPABASE_URL: boolean;
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: boolean;
+  SUPABASE_SERVICE_ROLE_KEY: boolean;
+};
 
 export function AdminLoginClient() {
   const router = useRouter();
@@ -15,15 +21,29 @@ export function AdminLoginClient() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [envDiag, setEnvDiag] = useState<EnvDiag | null>(null);
+
+  useEffect(() => {
+    // If the browser client isn't configured, fetch a server-side boolean diag (no secrets).
+    if (supabase) return;
+    let cancelled = false;
+    fetch("/api/health/supabase", { method: "GET", cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as { env?: EnvDiag }) : null))
+      .then((j) => {
+        if (!cancelled && j?.env) setEnvDiag(j.env);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
     if (!supabase) {
-      setError(
-        "Supabase no está configurado en este entorno. Verifica que existan NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en las variables del deployment (y redeploy) o en .env.local (y reinicia el servidor)."
-      );
+      setError("Supabase no está configurado en este entorno.");
       return;
     }
 
@@ -47,6 +67,30 @@ export function AdminLoginClient() {
       </header>
 
       <form onSubmit={onSubmit} className="glass-card space-y-4 p-6">
+        {!supabase ? (
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">Supabase no está configurado en este entorno.</p>
+            <p className="mt-2 text-xs opacity-90">
+              En Vercel, confirma variables en <strong>Production</strong> y haz{" "}
+              <strong>Redeploy (Clear build cache)</strong>. En local, revisa <code>.env.local</code> y reinicia{" "}
+              <code>npm run dev</code>.
+            </p>
+            {envDiag ? (
+              <ul className="mt-3 space-y-1 text-xs">
+                <li>
+                  NEXT_PUBLIC_SUPABASE_URL: <strong>{envDiag.NEXT_PUBLIC_SUPABASE_URL ? "OK" : "FALTA"}</strong>
+                </li>
+                <li>
+                  NEXT_PUBLIC_SUPABASE_ANON_KEY: <strong>{envDiag.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "OK" : "FALTA"}</strong>
+                </li>
+                <li>
+                  SUPABASE_SERVICE_ROLE_KEY: <strong>{envDiag.SUPABASE_SERVICE_ROLE_KEY ? "OK" : "FALTA"}</strong>
+                </li>
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="email">
             Email

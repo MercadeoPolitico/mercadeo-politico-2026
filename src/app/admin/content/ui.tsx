@@ -188,6 +188,18 @@ export function AdminContentPanel() {
     await updateDraft({ id: draft.id, status: "sent_to_n8n" });
   }
 
+  async function publishToCitizenCenter(draft: Draft) {
+    if (draft.content_type !== "blog") return;
+    if (draft.status !== "approved" && draft.status !== "edited") return;
+    const res = await fetch("/api/admin/news/publish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draft_id: draft.id }),
+    });
+    if (!res.ok) return;
+    await refresh();
+  }
+
   return (
     <div className="space-y-8">
       <div className="glass-card p-6">
@@ -373,6 +385,14 @@ export function AdminContentPanel() {
                   onClick={() => updateDraft({ id: selected.id, status: "rejected" })}
                 >
                   Rechazar
+                </button>
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={() => publishToCitizenCenter(selected)}
+                  disabled={selected.content_type !== "blog" || (selected.status !== "approved" && selected.status !== "edited")}
+                >
+                  Publicar en Centro informativo
                 </button>
                 <button className="glass-button" type="button" onClick={() => sendToN8n(selected)} disabled={selected.status !== "approved"}>
                   Enviar a n8n (WAIT)

@@ -1,8 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+type EnvDiag = {
+  NEXT_PUBLIC_SUPABASE_URL: boolean;
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: boolean;
+  SUPABASE_SERVICE_ROLE_KEY: boolean;
+};
 
 export function ForcePasswordChangeClient() {
   const router = useRouter();
@@ -12,6 +18,21 @@ export function ForcePasswordChangeClient() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [envDiag, setEnvDiag] = useState<EnvDiag | null>(null);
+
+  useEffect(() => {
+    if (supabase) return;
+    let cancelled = false;
+    fetch("/api/health/supabase", { method: "GET", cache: "no-store" })
+      .then(async (r) => (r.ok ? ((await r.json()) as { env?: EnvDiag }) : null))
+      .then((j) => {
+        if (!cancelled && j?.env) setEnvDiag(j.env);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,6 +80,22 @@ export function ForcePasswordChangeClient() {
       </header>
 
       <form onSubmit={onSubmit} className="glass-card space-y-4 p-6">
+        {!supabase ? (
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">Supabase no está configurado en este entorno.</p>
+            {envDiag ? (
+              <ul className="mt-3 space-y-1 text-xs">
+                <li>
+                  NEXT_PUBLIC_SUPABASE_URL: <strong>{envDiag.NEXT_PUBLIC_SUPABASE_URL ? "OK" : "FALTA"}</strong>
+                </li>
+                <li>
+                  NEXT_PUBLIC_SUPABASE_ANON_KEY: <strong>{envDiag.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "OK" : "FALTA"}</strong>
+                </li>
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="password">
             Nueva contraseña
