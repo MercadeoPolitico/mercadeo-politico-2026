@@ -1,0 +1,211 @@
+{
+  "name": "MP26 — Master Editorial Orchestrator",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 6,
+              "unit": "hours"
+            }
+          ]
+        }
+      },
+      "id": "cron-6h",
+      "name": "Cron (every 6h)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        280,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.MP26_BASE_URL + \"/api/automation/candidates\"}}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-automation-token",
+              "value": "={{$env.MP26_AUTOMATION_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "get-candidates",
+      "name": "GET candidates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        520,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const payload = items[0].json;\nconst candidates = Array.isArray(payload.candidates) ? payload.candidates : [];\n\n// Only active automation candidates\nconst enabled = candidates.filter(c => c && c.auto_blog_enabled !== false);\n\n// Stagger: deterministic hour-slot selection (simple hash)\n// - Senado: allow up to 4/day (every 6h) => always eligible\n// - Cámara: run only on 2 of the 4 slots/day (roughly 50%) to reduce volume\nconst now = new Date();\nconst slot = Math.floor(now.getUTCHours() / 6) % 4; // 0..3\n\nfunction hashMod(str, mod) {\n  let h = 0;\n  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;\n  return h % mod;\n}\n\nconst selected = [];\nfor (const c of enabled) {\n  const office = String(c.office || \"\");\n  const isSenate = office.toLowerCase().includes(\"senado\");\n  if (isSenate) {\n    selected.push({ candidate_id: c.id, office: c.office, region: c.region });\n    continue;\n  }\n  // Cámara: 2 slots/day\n  const m = hashMod(String(c.id), 4);\n  if ((slot + m) % 2 === 0) selected.push({ candidate_id: c.id, office: c.office, region: c.region });\n}\n\nreturn selected.map(s => ({ json: s }));"
+      },
+      "id": "select-candidates",
+      "name": "Select candidates (stagger)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-batches",
+      "name": "Split In Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.MP26_BASE_URL + \"/api/automation/editorial-orchestrate\"}}",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-automation-token",
+              "value": "={{$env.MP26_AUTOMATION_TOKEN}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"candidate_id\": $json.candidate_id, \"max_items\": 1}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "orchestrate",
+      "name": "Orchestrate (create ai_draft)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1220,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "next-batch",
+      "name": "Next Batch",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1460,
+        260
+      ]
+    }
+  ],
+  "connections": {
+    "Cron (every 6h)": {
+      "main": [
+        [
+          {
+            "node": "GET candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET candidates": {
+      "main": [
+        [
+          {
+            "node": "Select candidates (stagger)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select candidates (stagger)": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [
+          {
+            "node": "Orchestrate (create ai_draft)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Next Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Orchestrate (create ai_draft)": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Next Batch": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionTimeout": 3600,
+    "saveExecutionProgress": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "none"
+  },
+  "versionId": "v1"
+}
+
