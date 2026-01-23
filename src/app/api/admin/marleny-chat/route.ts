@@ -119,11 +119,11 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
             role: "system",
             content:
               "Synthetic Intelligence. Responde como asistente para admins. " +
-              "Sé sobrio, útil, verificable. Prohibido: desinformación, ataques personales, urgencia falsa.",
+              "Sé sobrio, útil, verificable. Prohibido: desinformación, ataques personales, urgencia falsa. " +
+              "Responde en texto plano, con bullets cuando aplique.",
           },
           { role: "user", content: args.prompt },
         ],
-        response_format: { type: "json_object" },
       }),
       cache: "no-store",
     }),
@@ -137,8 +137,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
 
   const json = (await resp.json().catch(() => null)) as any;
   const content = json?.choices?.[0]?.message?.content;
-  const parsed = typeof content === "string" ? (() => { try { return JSON.parse(content); } catch { return null; } })() : null;
-  const reply = nonEmptyReply(parsed?.reply ?? parsed?.answer ?? parsed?.text ?? content);
+  const reply = nonEmptyReply(content);
   if (!reply) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
   return { ok: true, engine: "OpenAI", ms, reply };
 }
@@ -147,6 +146,27 @@ function newsQueryFor(office: string, region: string): string {
   const off = office.toLowerCase();
   if (off.includes("senado")) return `Colombia seguridad`;
   return `${region} Colombia seguridad`;
+}
+
+async function pickTopNewsFor(office: string, region: string) {
+  const regionTrim = (region || "").trim();
+  const queries = [
+    `${regionTrim} Villavicencio seguridad`,
+    `${regionTrim} orden público`,
+    `${regionTrim} extorsión`,
+    `${regionTrim} vías terciarias`,
+    `${regionTrim} economía`,
+    `${regionTrim} turismo`,
+    newsQueryFor(office, regionTrim || "Colombia"),
+    "Colombia seguridad",
+  ].filter((q) => q.trim().length > 0);
+
+  for (const q of queries) {
+    // eslint-disable-next-line no-await-in-loop
+    const a = await fetchTopGdeltArticle(q);
+    if (a) return { article: a, query: q };
+  }
+  return { article: null as any, query: queries[0] ?? "Colombia seguridad" };
 }
 
 export async function POST(req: Request) {
@@ -200,8 +220,6 @@ export async function POST(req: Request) {
     "",
     "Conversación reciente:",
     transcript,
-    "",
-    "Responde SOLO JSON: {\"reply\": string}",
   ]
     .filter(Boolean)
     .join("\n");
@@ -229,11 +247,15 @@ export async function POST(req: Request) {
   if (!winner) {
     // Continuity fallback (non-AI): still give a useful answer instead of "nada".
     // This keeps the admin governance surface operational even if both engines are down.
-    const query = newsQueryFor(pol.office, pol.region);
-    const article = await fetchTopGdeltArticle(query);
-    const reply = article
+    const msiConfigured = Boolean(pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") && pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY"));
+    const openAiConfigured = Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim().length);
+
+    const picked = await pickTopNewsFor(pol.office, pol.region);
+    const article = picked.article as any;
+    const reply = article?.title && article?.url
       ? [
           `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
+          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : "FALTA"} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
           "",
           `Noticia sugerida para ${pol.name} (${pol.office}, ${pol.region}):`,
           `- Titular: ${article.title}`,
@@ -243,8 +265,9 @@ export async function POST(req: Request) {
         ].join("\n")
       : [
           `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
+          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : "FALTA"} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
           "",
-          `Además, no encontré una noticia destacada en este momento para la consulta: ${query}`,
+          `Además, no encontré una noticia destacada en este momento para las consultas: ${picked.query}`,
           "Intenta de nuevo en 5–10 minutos o pega un enlace de noticia aquí para que lo use como input.",
         ].join("\n");
 
