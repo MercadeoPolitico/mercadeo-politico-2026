@@ -55,13 +55,32 @@ export function PoliticianWorkspaceClient({
 }) {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  const [bio, setBio] = useState(politician.biography ?? "");
-  const [proposals, setProposals] = useState(politician.proposals ?? "");
-  const [ballotNumber, setBallotNumber] = useState<string>(politician.ballot_number ? String(politician.ballot_number) : "");
-  const [autoPublish, setAutoPublish] = useState<boolean>(Boolean(politician.auto_publish_enabled));
-  const [autoBlog, setAutoBlog] = useState<boolean>(Boolean(politician.auto_blog_enabled));
+  const initialSnapshot = useMemo(
+    () => ({
+      bio: politician.biography ?? "",
+      proposals: politician.proposals ?? "",
+      ballotNumber: politician.ballot_number ? String(politician.ballot_number) : "",
+      autoPublish: Boolean(politician.auto_publish_enabled),
+      autoBlog: Boolean(politician.auto_blog_enabled),
+    }),
+    [politician.auto_blog_enabled, politician.auto_publish_enabled, politician.ballot_number, politician.biography, politician.proposals]
+  );
+
+  const [bio, setBio] = useState(initialSnapshot.bio);
+  const [proposals, setProposals] = useState(initialSnapshot.proposals);
+  const [ballotNumber, setBallotNumber] = useState<string>(initialSnapshot.ballotNumber);
+  const [autoPublish, setAutoPublish] = useState<boolean>(initialSnapshot.autoPublish);
+  const [autoBlog, setAutoBlog] = useState<boolean>(initialSnapshot.autoBlog);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState(initialSnapshot);
+
+  const hasUnsavedProfileChanges =
+    bio !== savedSnapshot.bio ||
+    proposals !== savedSnapshot.proposals ||
+    ballotNumber !== savedSnapshot.ballotNumber ||
+    autoPublish !== savedSnapshot.autoPublish ||
+    autoBlog !== savedSnapshot.autoBlog;
 
   const [links, setLinks] = useState<SocialLink[]>(initialLinks);
   const [newPlatform, setNewPlatform] = useState("facebook");
@@ -136,6 +155,7 @@ export function PoliticianWorkspaceClient({
       return;
     }
     setProfileMsg("Guardado.");
+    setSavedSnapshot({ bio, proposals, ballotNumber, autoPublish, autoBlog });
   }
 
   async function addLink() {
@@ -434,10 +454,16 @@ export function PoliticianWorkspaceClient({
               {politician.office} · {politician.region}
               {politician.party ? ` · ${politician.party}` : ""}
             </p>
+            {hasUnsavedProfileChanges ? <p className="mt-2 text-xs text-amber-200">Cambios sin guardar.</p> : null}
           </div>
-          <Link className="glass-button inline-flex items-center justify-center" href="/admin/politicians">
-            Volver
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <button className="glass-button" type="button" onClick={saveProfile} disabled={savingProfile || !hasUnsavedProfileChanges}>
+              {savingProfile ? "Guardando…" : "Guardar cambios"}
+            </button>
+            <Link className="glass-button inline-flex items-center justify-center" href="/admin/politicians">
+              Volver
+            </Link>
+          </div>
         </div>
       </header>
 

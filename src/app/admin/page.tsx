@@ -18,6 +18,7 @@ export default async function AdminDashboardPage() {
 
   // Read-only, best-effort status (no secrets)
   const marlenyEnabled = envOn("MARLENY_AI_ENABLED") && has("MARLENY_AI_API_KEY") && has("MARLENY_AI_ENDPOINT");
+  const openAiEnabled = envOn("OPENAI_ENABLED") && has("OPENAI_API_KEY");
   const n8nForwardEnabled = envOn("N8N_FORWARD_ENABLED") && has("N8N_WEBHOOK_URL") && has("N8N_WEBHOOK_TOKEN");
 
   // Best-effort counts (requires tables + policies)
@@ -89,10 +90,14 @@ export default async function AdminDashboardPage() {
       </Section>
 
       <Section title="Automatización" subtitle="Estado de integraciones (solo lectura).">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <div className="glass-card p-6">
             <p className="text-sm font-semibold">Marleny AI</p>
             <p className="mt-1 text-sm text-muted">{marlenyEnabled ? "Habilitado" : "Deshabilitado"}</p>
+          </div>
+          <div className="glass-card p-6">
+            <p className="text-sm font-semibold">OpenAI (análisis/variantes)</p>
+            <p className="mt-1 text-sm text-muted">{openAiEnabled ? "Habilitado" : "Deshabilitado"}</p>
           </div>
           <div className="glass-card p-6">
             <p className="text-sm font-semibold">n8n forwarding</p>
