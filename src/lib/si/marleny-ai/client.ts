@@ -14,12 +14,20 @@ export type MarlenyAiCallResult =
   | { ok: false; error: "disabled" | "not_configured" | "bad_request" | "upstream_error" };
 
 function isEnabled(): boolean {
-  // Disabled by default unless explicitly enabled.
-  return process.env.MARLENY_AI_ENABLED === "true";
+  // Continuity-first:
+  // - If MARLENY_AI_ENABLED="false" => disabled.
+  // - If MARLENY_AI_ENABLED="true"  => enabled.
+  // - If unset but config exists => enabled (common Vercel setup).
+  const flag = process.env.MARLENY_AI_ENABLED;
+  if (flag === "false") return false;
+  if (flag === "true") return true;
+  return hasConfig();
 }
 
 function hasConfig(): boolean {
-  return Boolean(process.env.MARLENY_AI_API_KEY && process.env.MARLENY_AI_ENDPOINT);
+  const key = process.env.MARLENY_AI_API_KEY ?? process.env.MARLENY_API_KEY ?? process.env.MARLENY_TOKEN;
+  const endpoint = process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT;
+  return Boolean(key && key.trim().length && endpoint && endpoint.trim().length);
 }
 
 function buildPrompt(input: MarlenyAiCallInput): { system: string; user: string } {
@@ -89,11 +97,13 @@ export async function callMarlenyAI(input: MarlenyAiCallInput): Promise<MarlenyA
   };
 
   try {
-    const resp = await fetch(process.env.MARLENY_AI_ENDPOINT!, {
+    const endpoint = (process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT)!.trim();
+    const key = (process.env.MARLENY_AI_API_KEY ?? process.env.MARLENY_API_KEY ?? process.env.MARLENY_TOKEN)!.trim();
+    const resp = await fetch(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${process.env.MARLENY_AI_API_KEY!}`,
+        authorization: `Bearer ${key}`,
       },
       body: JSON.stringify(payload),
       cache: "no-store",

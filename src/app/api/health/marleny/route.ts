@@ -16,18 +16,21 @@ function hostOf(url: string | undefined): string | null {
  * Returns only booleans + endpoint hostnames.
  */
 export async function GET() {
-  const aiEnabled = process.env.MARLENY_AI_ENABLED === "true";
-  const aiHasConfig = Boolean(process.env.MARLENY_AI_ENDPOINT && process.env.MARLENY_AI_API_KEY);
+  const aiFlag = process.env.MARLENY_AI_ENABLED;
+  const aiEnabled = aiFlag === "false" ? false : aiFlag === "true" ? true : true;
+  const aiHasConfig = Boolean(
+    (process.env.MARLENY_AI_ENDPOINT || process.env.MARLENY_ENDPOINT) && (process.env.MARLENY_AI_API_KEY || process.env.MARLENY_API_KEY || process.env.MARLENY_TOKEN),
+  );
 
   const gatewayEnabled = process.env.MARLENY_ENABLED === "true";
-  const gatewayHasConfig = Boolean(process.env.MARLENY_ENDPOINT && process.env.MARLENY_TOKEN);
+  const gatewayHasConfig = Boolean(process.env.MARLENY_ENDPOINT && (process.env.MARLENY_TOKEN || process.env.MARLENY_API_KEY));
 
   return NextResponse.json({
     ok: true,
     marleny_ai: {
       enabled: aiEnabled,
       configured: aiEnabled && aiHasConfig,
-      endpoint_host: hostOf(process.env.MARLENY_AI_ENDPOINT),
+      endpoint_host: hostOf(process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT),
     },
     marleny_gateway: {
       enabled: gatewayEnabled,

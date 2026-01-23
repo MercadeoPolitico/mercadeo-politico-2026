@@ -4,11 +4,20 @@ import type { SubmitToN8nRequest } from "./types";
 export type N8nSubmitResult = { ok: true } | { ok: false; error: "disabled" | "not_configured" | "upstream_error" };
 
 function isEnabled(): boolean {
-  return process.env.N8N_FORWARD_ENABLED === "true";
+  // Continuity-first:
+  // - If N8N_FORWARD_ENABLED="false" => disabled.
+  // - If N8N_FORWARD_ENABLED="true"  => enabled.
+  // - If unset, enable only when config is present (common setup).
+  const flag = process.env.N8N_FORWARD_ENABLED;
+  if (flag === "false") return false;
+  if (flag === "true") return true;
+  return hasConfig();
 }
 
 function hasConfig(): boolean {
-  return Boolean(process.env.N8N_WEBHOOK_URL && process.env.N8N_WEBHOOK_TOKEN);
+  const url = process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL;
+  const token = process.env.N8N_WEBHOOK_TOKEN ?? process.env.WEBHOOK_TOKEN;
+  return Boolean(url && url.trim().length && token && token.trim().length);
 }
 
 export async function submitToN8n(payload: SubmitToN8nRequest): Promise<N8nSubmitResult> {
@@ -16,11 +25,13 @@ export async function submitToN8n(payload: SubmitToN8nRequest): Promise<N8nSubmi
   if (!hasConfig()) return { ok: false, error: "not_configured" };
 
   try {
-    const resp = await fetch(process.env.N8N_WEBHOOK_URL!, {
+    const url = (process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL)!.trim();
+    const token = (process.env.N8N_WEBHOOK_TOKEN ?? process.env.WEBHOOK_TOKEN)!.trim();
+    const resp = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-n8n-webhook-token": process.env.N8N_WEBHOOK_TOKEN!,
+        "x-n8n-webhook-token": token,
       },
       body: JSON.stringify(payload),
       cache: "no-store",

@@ -16,7 +16,7 @@ export const runtime = "nodejs";
  * - Forwarding itself is disabled by default unless N8N_FORWARD_ENABLED="true"
  */
 export async function POST(req: Request) {
-  const apiToken = process.env.AUTOMATION_API_TOKEN;
+  const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
 
   const adminOk = await isAdminSession();

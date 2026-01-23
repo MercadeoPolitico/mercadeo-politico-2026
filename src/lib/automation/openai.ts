@@ -3,8 +3,14 @@ import "server-only";
 export type OpenAiResult<T> = { ok: true; data: T } | { ok: false; error: "disabled" | "not_configured" | "bad_response" | "upstream_error" };
 
 function isEnabled(): boolean {
-  // Disabled-by-default unless explicitly enabled.
-  return process.env.OPENAI_ENABLED === "true";
+  // Continuity-first:
+  // - If OPENAI_ENABLED="false" => disabled.
+  // - If OPENAI_ENABLED="true"  => enabled.
+  // - If OPENAI_ENABLED is unset but OPENAI_API_KEY exists => enabled (common Vercel setup).
+  const flag = process.env.OPENAI_ENABLED;
+  if (flag === "false") return false;
+  if (flag === "true") return true;
+  return Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim().length);
 }
 
 function hasConfig(): boolean {

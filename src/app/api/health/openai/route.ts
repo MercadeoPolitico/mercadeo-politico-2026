@@ -12,8 +12,9 @@ function hostOf(url: string | undefined): string | null {
 }
 
 export async function GET() {
-  const enabled = process.env.OPENAI_ENABLED === "true";
-  const configured = enabled && Boolean(process.env.OPENAI_API_KEY);
+  const flag = process.env.OPENAI_ENABLED;
+  const enabled = flag === "false" ? false : flag === "true" ? true : Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim().length);
+  const configured = enabled && Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim().length);
 
   return NextResponse.json({
     ok: true,

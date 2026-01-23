@@ -12,14 +12,29 @@ function has(name: string): boolean {
   return Boolean(v && v.trim().length);
 }
 
+function hasAny(...names: string[]): boolean {
+  return names.some((n) => has(n));
+}
+
+function envNotFalse(name: string): boolean {
+  return process.env[name] !== "false";
+}
+
 export default async function AdminDashboardPage() {
   const { role } = await requireAdmin();
   const candidates = getCandidates();
 
   // Read-only, best-effort status (no secrets)
-  const marlenyEnabled = envOn("MARLENY_AI_ENABLED") && has("MARLENY_AI_API_KEY") && has("MARLENY_AI_ENDPOINT");
-  const openAiEnabled = envOn("OPENAI_ENABLED") && has("OPENAI_API_KEY");
-  const n8nForwardEnabled = envOn("N8N_FORWARD_ENABLED") && has("N8N_WEBHOOK_URL") && has("N8N_WEBHOOK_TOKEN");
+  // Continuity-first: accept common env aliases and treat "configured" as active unless explicitly disabled.
+  const marlenyEnabled =
+    envNotFalse("MARLENY_AI_ENABLED") &&
+    hasAny("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") &&
+    hasAny("MARLENY_AI_API_KEY", "MARLENY_API_KEY", "MARLENY_TOKEN");
+
+  const openAiEnabled = envNotFalse("OPENAI_ENABLED") && has("OPENAI_API_KEY");
+
+  const n8nForwardEnabled =
+    envNotFalse("N8N_FORWARD_ENABLED") && hasAny("N8N_WEBHOOK_URL", "WEBHOOK_URL") && hasAny("N8N_WEBHOOK_TOKEN", "WEBHOOK_TOKEN");
 
   // Best-effort counts (requires tables + policies)
   let draftsCount: string = "—";
