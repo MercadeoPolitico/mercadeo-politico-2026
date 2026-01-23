@@ -3,6 +3,21 @@
   "nodes": [
     {
       "parameters": {
+        "path": "mp26-editorial-orchestrator",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "manual-webhook",
+      "name": "Manual trigger (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        280,
+        120
+      ]
+    },
+    {
+      "parameters": {
         "triggerTimes": {
           "item": [
             {
@@ -51,7 +66,7 @@
     },
     {
       "parameters": {
-        "functionCode": "const payload = items[0].json;\nconst candidates = Array.isArray(payload.candidates) ? payload.candidates : [];\n\n// Only active automation candidates\nconst enabled = candidates.filter(c => c && c.auto_blog_enabled !== false);\n\n// Stagger: deterministic hour-slot selection (simple hash)\n// - Senado: allow up to 4/day (every 6h) => always eligible\n// - Cámara: run only on 2 of the 4 slots/day (roughly 50%) to reduce volume\nconst now = new Date();\nconst slot = Math.floor(now.getUTCHours() / 6) % 4; // 0..3\n\nfunction hashMod(str, mod) {\n  let h = 0;\n  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;\n  return h % mod;\n}\n\nconst selected = [];\nfor (const c of enabled) {\n  const office = String(c.office || \"\");\n  const isSenate = office.toLowerCase().includes(\"senado\");\n  if (isSenate) {\n    selected.push({ candidate_id: c.id, office: c.office, region: c.region });\n    continue;\n  }\n  // Cámara: 2 slots/day\n  const m = hashMod(String(c.id), 4);\n  if ((slot + m) % 2 === 0) selected.push({ candidate_id: c.id, office: c.office, region: c.region });\n}\n\nreturn selected.map(s => ({ json: s }));"
+        "functionCode": "const payload = items[0].json;\nconst candidates = Array.isArray(payload.candidates) ? payload.candidates : [];\n\n// Only active automation candidates\nconst enabled = candidates.filter(c => c && c.auto_blog_enabled !== false);\n\n// Stagger: deterministic hour-slot selection (simple hash)\n// - Senado: allow up to 4/day (every 6h) => always eligible\n// - Cámara: run only on 2 of the 4 slots/day (roughly 50%) to reduce volume\nconst now = new Date();\nconst slot = Math.floor(now.getUTCHours() / 6) % 4; // 0..3\n\nfunction hashMod(str, mod) {\n  let h = 0;\n  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;\n  return h % mod;\n}\n\nconst selected = [];\nfor (const c of enabled) {\n  const office = String(c.office || \"\");\n  const isSenate = office.toLowerCase().includes(\"senado\");\n  if (isSenate) {\n    // Senado: allow up to 2 news items per run\n    selected.push({ candidate_id: c.id, office: c.office, region: c.region, max_items: 2 });\n    continue;\n  }\n  // Cámara: 2 slots/day, 1 item per run\n  const m = hashMod(String(c.id), 4);\n  if ((slot + m) % 2 === 0) selected.push({ candidate_id: c.id, office: c.office, region: c.region, max_items: 1 });\n}\n\nreturn selected.map(s => ({ json: s }));"
       },
       "id": "select-candidates",
       "name": "Select candidates (stagger)",
@@ -96,7 +111,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\"candidate_id\": $json.candidate_id, \"max_items\": 1}",
+        "jsonBody": "={\"candidate_id\": $json.candidate_id, \"max_items\": ($json.max_items || 1)}",
         "options": {
           "timeout": 120000
         }
@@ -125,6 +140,17 @@
     }
   ],
   "connections": {
+    "Manual trigger (Webhook)": {
+      "main": [
+        [
+          {
+            "node": "GET candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Cron (every 6h)": {
       "main": [
         [
