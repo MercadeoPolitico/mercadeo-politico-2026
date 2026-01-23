@@ -508,7 +508,11 @@ export function PoliticianWorkspaceClient({
               <p className="text-sm font-semibold">Auto-publicación (avance)</p>
               <p className="text-xs text-muted">Si está ON, cron podrá publicar y/o enviar automáticamente.</p>
             </div>
-            <button className="glass-button" type="button" onClick={() => void toggleAutoPublish(!autoPublish)}>
+            <button
+              className={`glass-button ${autoPublish ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100" : ""}`}
+              type="button"
+              onClick={() => void toggleAutoPublish(!autoPublish)}
+            >
               {autoPublish ? "ON" : "OFF"}
             </button>
           </div>
@@ -519,7 +523,11 @@ export function PoliticianWorkspaceClient({
             <p className="text-sm font-semibold">Auto-blog (noticias)</p>
             <p className="text-xs text-muted">Controla la generación automática. Si está OFF, no se generan blogs.</p>
           </div>
-          <button className="glass-button" type="button" onClick={() => void toggleAutoBlog(!autoBlog)}>
+          <button
+            className={`glass-button ${autoBlog ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100" : ""}`}
+            type="button"
+            onClick={() => void toggleAutoBlog(!autoBlog)}
+          >
             {autoBlog ? "ON" : "OFF"}
           </button>
         </div>

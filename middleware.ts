@@ -63,6 +63,13 @@ export async function middleware(req: NextRequest) {
     redirectUrl.searchParams.set("reason", "unauthorized");
     return NextResponse.redirect(redirectUrl);
   }
+  if (user.app_metadata?.disabled === true) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = "/admin/login";
+    redirectUrl.searchParams.set("next", pathname);
+    redirectUrl.searchParams.set("reason", "disabled");
+    return NextResponse.redirect(redirectUrl);
+  }
 
   // Source of truth: public.profiles (RLS: user can read only their own profile)
   const { data: profile } = await supabase

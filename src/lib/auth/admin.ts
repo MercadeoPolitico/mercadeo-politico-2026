@@ -15,6 +15,7 @@ export async function requireAdmin() {
   const { data } = await supabase.auth.getUser();
   const user = data.user;
   if (!user) redirect("/admin/login");
+  if (user.app_metadata?.disabled === true) redirect("/admin/login?reason=disabled");
 
   // Source of truth: profiles table (RLS allows user to read only their own row)
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();

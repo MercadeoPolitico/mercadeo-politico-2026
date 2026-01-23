@@ -92,12 +92,30 @@ export default async function AdminDashboardPage() {
       <Section title="Automatización" subtitle="Estado de integraciones (solo lectura).">
         <div className="grid gap-4 md:grid-cols-3">
           <div className="glass-card p-6">
-            <p className="text-sm font-semibold">Marleny AI</p>
-            <p className="mt-1 text-sm text-muted">{marlenyEnabled ? "Habilitado" : "Deshabilitado"}</p>
+            <p className="text-sm font-semibold">Synthetic Intelligence</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="text-xs text-muted">Actuation</p>
+              <span className={`si-meter ${marlenyEnabled ? "si-meter--on" : "si-meter--off"}`}>
+                <span className="si-bar" />
+                <span className="si-bar" />
+                <span className="si-bar" />
+                <span className="si-bar" />
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-muted">{marlenyEnabled ? "Activo" : "Inactivo"}</p>
           </div>
           <div className="glass-card p-6">
-            <p className="text-sm font-semibold">OpenAI (análisis/variantes)</p>
-            <p className="mt-1 text-sm text-muted">{openAiEnabled ? "Habilitado" : "Deshabilitado"}</p>
+            <p className="text-sm font-semibold">Synthetic Intelligence</p>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="text-xs text-muted">Volume</p>
+              <span className={`si-meter ${openAiEnabled ? "si-meter--on" : "si-meter--off"}`}>
+                <span className="si-bar" />
+                <span className="si-bar" />
+                <span className="si-bar" />
+                <span className="si-bar" />
+              </span>
+            </div>
+            <p className="mt-2 text-sm text-muted">{openAiEnabled ? "Activo" : "Inactivo"}</p>
           </div>
           <div className="glass-card p-6">
             <p className="text-sm font-semibold">n8n forwarding</p>

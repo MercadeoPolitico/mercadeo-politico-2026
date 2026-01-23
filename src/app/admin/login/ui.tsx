@@ -118,7 +118,12 @@ export function AdminLoginClient() {
       </header>
 
       <form onSubmit={onSubmit} className="glass-card space-y-4 p-6">
-        {pageReason === "forbidden" ? (
+        {pageReason === "disabled" ? (
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <p className="font-semibold">Tu acceso fue desactivado.</p>
+            <p className="mt-2 text-xs opacity-90">Contacta al super admin para reactivar tu usuario.</p>
+          </div>
+        ) : pageReason === "forbidden" ? (
           <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">
             <p className="font-semibold">No tienes rol admin o super_admin.</p>
             <p className="mt-2 text-xs opacity-90">Tu usuario inició sesión, pero en `profiles.role` no es admin/super_admin.</p>

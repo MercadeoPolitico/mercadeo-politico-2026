@@ -105,3 +105,61 @@ body::before {
   will-change: transform, filter, opacity;
 }
 
+/* Synthetic Intelligence meters (admin) */
+@keyframes siBarPulse {
+  0% {
+    opacity: 0.55;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+  100% {
+    opacity: 0.7;
+    transform: translateY(0);
+  }
+}
+
+.si-meter {
+  display: inline-flex;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.si-bar {
+  width: 6px;
+  border-radius: 9999px;
+  background: rgba(34, 211, 238, 0.35);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  animation: siBarPulse 1.6s ease-in-out infinite;
+}
+
+.si-bar:nth-child(1) {
+  height: 6px;
+  animation-delay: 0ms;
+}
+.si-bar:nth-child(2) {
+  height: 10px;
+  animation-delay: 120ms;
+}
+.si-bar:nth-child(3) {
+  height: 14px;
+  animation-delay: 240ms;
+}
+.si-bar:nth-child(4) {
+  height: 18px;
+  animation-delay: 360ms;
+}
+
+.si-meter--on .si-bar {
+  background: rgba(52, 211, 153, 0.35);
+  border-color: rgba(52, 211, 153, 0.25);
+}
+.si-meter--off .si-bar {
+  background: rgba(148, 163, 184, 0.25);
+  border-color: rgba(148, 163, 184, 0.2);
+  animation: none;
+  opacity: 0.55;
+}
+

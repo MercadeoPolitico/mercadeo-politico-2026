@@ -5,6 +5,7 @@ import { getCandidateBySlug } from "@/lib/candidates/getCandidateBySlug";
 import { getSiteUrlString } from "@/lib/site";
 import { PixelFire } from "@/components/analytics/PixelFire";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { AutoFormatText } from "@/components/AutoFormatText";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
@@ -66,18 +67,7 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
   const refType =
     ref === "shared" ? ("shared" as const) : ref === "social" ? ("social" as const) : ref === "direct" ? ("direct" as const) : undefined;
 
-  const paragraphs = view.biography
-    .split(/\n{2,}/g)
-    .map((p: string) => p.trim())
-    .filter(Boolean);
-
   const proposalText = "proposal" in view ? (view.proposal as string) : "";
-  const proposalParagraphs = proposalText
-    ? proposalText
-        .split(/\n{2,}/g)
-        .map((p: string) => p.trim())
-        .filter(Boolean)
-    : [];
 
   return (
     <div className="space-y-10">
@@ -97,22 +87,18 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
 
         <article className="glass-card p-6">
           <h2 className="text-lg font-semibold">Biografía</h2>
-          <div className="mt-3 space-y-4 text-sm text-muted">
-            {paragraphs.length > 0 ? (
-              paragraphs.map((p: string, idx: number) => <p key={idx}>{p}</p>)
-            ) : (
-              <p>{"biography" in view ? view.biography : candidate.biography}</p>
-            )}
+          <div className="mt-4">
+            <AutoFormatText text={"biography" in view ? view.biography : candidate.biography} />
           </div>
         </article>
 
         <article id="propuesta" className="glass-card p-6">
           <h2 className="text-lg font-semibold">Propuesta</h2>
-          <div className="mt-3 space-y-4 text-sm text-muted">
-            {proposalParagraphs.length > 0 ? (
-              proposalParagraphs.map((p: string, idx: number) => <p key={idx}>{p}</p>)
+          <div className="mt-4">
+            {proposalText.trim().length ? (
+              <AutoFormatText text={proposalText} />
             ) : (
-              <p>Contenido en preparación. Se publicará únicamente después de revisión y aprobación editorial.</p>
+              <p className="text-sm text-muted">Contenido en preparación. Se publicará únicamente después de revisión y aprobación editorial.</p>
             )}
           </div>
         </article>
