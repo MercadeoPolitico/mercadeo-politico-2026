@@ -19,7 +19,9 @@ function hasConfig(): boolean {
 
 function baseUrl(): string {
   // Allow override (self-hosted gateway), default OpenAI API.
-  return (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com").replace(/\/+$/, "");
+  const raw = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com").replace(/\/+$/, "");
+  // Many users accidentally set OPENAI_BASE_URL to ".../v1". Normalize to host root.
+  return raw.endsWith("/v1") ? raw.slice(0, -3) : raw;
 }
 
 function model(): string {

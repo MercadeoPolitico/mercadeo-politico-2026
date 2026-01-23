@@ -28,7 +28,7 @@ export default async function AdminDashboardPage() {
   // Continuity-first: accept common env aliases and treat "configured" as active unless explicitly disabled.
   const marlenyEnabled =
     envNotFalse("MARLENY_AI_ENABLED") &&
-    hasAny("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") &&
+    hasAny("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT", "MARLENY_API_URL") &&
     hasAny("MARLENY_AI_API_KEY", "MARLENY_API_KEY", "MARLENY_TOKEN");
 
   const openAiEnabled = envNotFalse("OPENAI_ENABLED") && has("OPENAI_API_KEY");

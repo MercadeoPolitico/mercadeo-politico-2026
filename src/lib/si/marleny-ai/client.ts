@@ -26,7 +26,7 @@ function isEnabled(): boolean {
 
 function hasConfig(): boolean {
   const key = process.env.MARLENY_AI_API_KEY ?? process.env.MARLENY_API_KEY ?? process.env.MARLENY_TOKEN;
-  const endpoint = process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT;
+  const endpoint = process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT ?? process.env.MARLENY_API_URL;
   return Boolean(key && key.trim().length && endpoint && endpoint.trim().length);
 }
 
@@ -97,7 +97,7 @@ export async function callMarlenyAI(input: MarlenyAiCallInput): Promise<MarlenyA
   };
 
   try {
-    const endpoint = (process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT)!.trim();
+    const endpoint = (process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT ?? process.env.MARLENY_API_URL)!.trim();
     const key = (process.env.MARLENY_AI_API_KEY ?? process.env.MARLENY_API_KEY ?? process.env.MARLENY_TOKEN)!.trim();
     const resp = await fetch(endpoint, {
       method: "POST",

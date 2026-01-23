@@ -19,7 +19,8 @@ export async function GET() {
   const aiFlag = process.env.MARLENY_AI_ENABLED;
   const aiEnabled = aiFlag === "false" ? false : aiFlag === "true" ? true : true;
   const aiHasConfig = Boolean(
-    (process.env.MARLENY_AI_ENDPOINT || process.env.MARLENY_ENDPOINT) && (process.env.MARLENY_AI_API_KEY || process.env.MARLENY_API_KEY || process.env.MARLENY_TOKEN),
+    (process.env.MARLENY_AI_ENDPOINT || process.env.MARLENY_ENDPOINT || process.env.MARLENY_API_URL) &&
+      (process.env.MARLENY_AI_API_KEY || process.env.MARLENY_API_KEY || process.env.MARLENY_TOKEN),
   );
 
   const gatewayEnabled = process.env.MARLENY_ENABLED === "true";
@@ -30,7 +31,7 @@ export async function GET() {
     marleny_ai: {
       enabled: aiEnabled,
       configured: aiEnabled && aiHasConfig,
-      endpoint_host: hostOf(process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT),
+      endpoint_host: hostOf(process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT ?? process.env.MARLENY_API_URL),
     },
     marleny_gateway: {
       enabled: gatewayEnabled,
