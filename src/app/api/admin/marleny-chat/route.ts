@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchTopGdeltArticle } from "@/lib/news/gdelt";
 
 export const runtime = "nodejs";
 
@@ -142,6 +143,12 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
   return { ok: true, engine: "OpenAI", ms, reply };
 }
 
+function newsQueryFor(office: string, region: string): string {
+  const off = office.toLowerCase();
+  if (off.includes("senado")) return `Colombia seguridad`;
+  return `${region} Colombia seguridad`;
+}
+
 export async function POST(req: Request) {
   await requireAdmin();
 
@@ -155,14 +162,19 @@ export async function POST(req: Request) {
   if (!candidate_id) return NextResponse.json({ error: "candidate_id_required" }, { status: 400 });
   if (!isChatMsgArray(messages)) return NextResponse.json({ error: "invalid_messages" }, { status: 400 });
 
-  const admin = createSupabaseAdminClient();
-  if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+  // IMPORTANT:
+  // Use the SSR cookie client (admin session) to avoid depending on SUPABASE_SERVICE_ROLE_KEY
+  // in Vercel Production. Admin panel already works with cookies, so chat should too.
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
-  const { data: pol } = await admin
+  const { data: pol, error: polErr } = await supabase
     .from("politicians")
     .select("id,slug,name,office,party,region,ballot_number,biography,proposals")
     .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
     .maybeSingle();
+
+  if (polErr) return NextResponse.json({ error: "candidate_lookup_failed" }, { status: 500 });
 
   if (!pol) return NextResponse.json({ error: "candidate_not_found" }, { status: 404 });
 
@@ -215,10 +227,33 @@ export async function POST(req: Request) {
   }
 
   if (!winner) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "no_engine_available",
+    // Continuity fallback (non-AI): still give a useful answer instead of "nada".
+    // This keeps the admin governance surface operational even if both engines are down.
+    const query = newsQueryFor(pol.office, pol.region);
+    const article = await fetchTopGdeltArticle(query);
+    const reply = article
+      ? [
+          `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
+          "",
+          `Noticia sugerida para ${pol.name} (${pol.office}, ${pol.region}):`,
+          `- Titular: ${article.title}`,
+          `- Fuente: ${article.url}`,
+          "",
+          `Si quieres, dime: “redacta un borrador alineado a su propuesta” y lo intento de nuevo.`,
+        ].join("\n")
+      : [
+          `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
+          "",
+          `Además, no encontré una noticia destacada en este momento para la consulta: ${query}`,
+          "Intenta de nuevo en 5–10 minutos o pega un enlace de noticia aquí para que lo use como input.",
+        ].join("\n");
+
+    return NextResponse.json({
+      ok: true,
+      reply,
+      meta: {
+        source_engine: "fallback_news",
+        arbitration_reason: "no_engine_available",
         engines: {
           MSI: results.MSI?.ok ? { ok: true, ms: results.MSI.ms } : { ok: false, ms: results.MSI?.ms ?? null, error: results.MSI?.error ?? null },
           OpenAI: results.OpenAI?.ok
@@ -226,8 +261,7 @@ export async function POST(req: Request) {
             : { ok: false, ms: results.OpenAI?.ms ?? null, error: results.OpenAI?.error ?? null },
         },
       },
-      { status: 503 },
-    );
+    });
   }
 
   const arbitration_reason =
