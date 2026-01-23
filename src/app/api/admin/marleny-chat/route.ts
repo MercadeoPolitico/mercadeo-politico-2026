@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
-import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -20,6 +20,128 @@ function isChatMsgArray(v: unknown): v is ChatMsg[] {
   );
 }
 
+type EngineName = "MSI" | "OpenAI";
+type EngineResult =
+  | { ok: true; engine: EngineName; ms: number; reply: string }
+  | { ok: false; engine: EngineName; ms: number; error: "timeout" | "not_configured" | "upstream_error" | "bad_response" };
+
+function nowMs(): number {
+  return Date.now();
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<{ ok: true; value: T } | { ok: false; error: "timeout" }> {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve({ ok: false, error: "timeout" }), ms);
+    p.then(
+      (v) => {
+        clearTimeout(t);
+        resolve({ ok: true, value: v });
+      },
+      () => {
+        clearTimeout(t);
+        resolve({ ok: true, value: null as any });
+      },
+    );
+  });
+}
+
+function nonEmptyReply(s: unknown): string | null {
+  if (typeof s !== "string") return null;
+  const t = s.trim();
+  if (!t) return null;
+  return t;
+}
+
+function pickEnv(nameA: string, nameB: string): string | null {
+  const a = process.env[nameA];
+  if (a && a.trim().length) return a.trim();
+  const b = process.env[nameB];
+  if (b && b.trim().length) return b.trim();
+  return null;
+}
+
+async function callMsiChat(args: { candidateId: string; prompt: string }): Promise<EngineResult> {
+  const started = nowMs();
+  const endpoint = pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT");
+  const apiKey = pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY");
+  if (!endpoint || !apiKey) return { ok: false, engine: "MSI", ms: nowMs() - started, error: "not_configured" };
+
+  const wrapped = await withTimeout(
+    fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        system:
+          "Synthetic Intelligence (MSI). Responde como asistente para admins. " +
+          "Sé sobrio, útil, verificable. Prohibido: desinformación, ataques personales, urgencia falsa.",
+        user: args.prompt,
+        constraints: { content_type: "chat", max_output_chars: 4000 },
+      }),
+      cache: "no-store",
+    }),
+    20000,
+  );
+
+  const ms = nowMs() - started;
+  if (!wrapped.ok) return { ok: false, engine: "MSI", ms, error: "timeout" };
+  const resp = wrapped.value;
+  if (!resp?.ok) return { ok: false, engine: "MSI", ms, error: "upstream_error" };
+  const data = (await resp.json().catch(() => null)) as any;
+  const reply = nonEmptyReply(data?.text ?? data?.reply ?? data?.message);
+  if (!reply) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+  return { ok: true, engine: "MSI", ms, reply };
+}
+
+async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
+  const started = nowMs();
+  const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
+  if (!apiKey) return { ok: false, engine: "OpenAI", ms: nowMs() - started, error: "not_configured" };
+
+  const base = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com").replace(/\/+$/, "");
+  const model = (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
+
+  const wrapped = await withTimeout(
+    fetch(`${base}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Synthetic Intelligence. Responde como asistente para admins. " +
+              "Sé sobrio, útil, verificable. Prohibido: desinformación, ataques personales, urgencia falsa.",
+          },
+          { role: "user", content: args.prompt },
+        ],
+        response_format: { type: "json_object" },
+      }),
+      cache: "no-store",
+    }),
+    15000,
+  );
+
+  const ms = nowMs() - started;
+  if (!wrapped.ok) return { ok: false, engine: "OpenAI", ms, error: "timeout" };
+  const resp = wrapped.value;
+  if (!resp?.ok) return { ok: false, engine: "OpenAI", ms, error: "upstream_error" };
+
+  const json = (await resp.json().catch(() => null)) as any;
+  const content = json?.choices?.[0]?.message?.content;
+  const parsed = typeof content === "string" ? (() => { try { return JSON.parse(content); } catch { return null; } })() : null;
+  const reply = nonEmptyReply(parsed?.reply ?? parsed?.answer ?? parsed?.text ?? content);
+  if (!reply) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
+  return { ok: true, engine: "OpenAI", ms, reply };
+}
+
 export async function POST(req: Request) {
   await requireAdmin();
 
@@ -33,29 +155,98 @@ export async function POST(req: Request) {
   if (!candidate_id) return NextResponse.json({ error: "candidate_id_required" }, { status: 400 });
   if (!isChatMsgArray(messages)) return NextResponse.json({ error: "invalid_messages" }, { status: 400 });
 
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+
+  const { data: pol } = await admin
+    .from("politicians")
+    .select("id,slug,name,office,party,region,ballot_number,biography,proposals")
+    .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
+    .maybeSingle();
+
+  if (!pol) return NextResponse.json({ error: "candidate_not_found" }, { status: 404 });
+
   const transcript = messages
     .slice(-12)
     .map((m) => `${m.role === "user" ? "Usuario" : "Asistente"}: ${m.content}`)
     .join("\n\n");
 
-  const result = await callMarlenyAI({
-    candidateId: candidate_id,
-    contentType: "blog",
-    topic: [
-      "Modo chat. Responde de forma breve, útil y segura para un admin.",
-      "Prohibido: desinformación, ataques personales, miedo, urgencia falsa.",
-      "Si falta información, pide un dato concreto.",
-      "",
-      transcript,
-    ].join("\n"),
-    tone: "Groq-style: directo, sobrio, sin relleno",
-  });
+  const prompt = [
+    "Modo chat (admin). Responde breve, útil y segura.",
+    "Si falta info, pide 1 dato concreto.",
+    "",
+    `Candidato: ${pol.name} (${pol.office})`,
+    pol.party ? `Partido: ${pol.party}` : "",
+    `Región: ${pol.region}`,
+    pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
+    "",
+    "Biografía (extracto):",
+    String(pol.biography || "").slice(0, 1200),
+    "",
+    "Propuestas (extracto):",
+    String(pol.proposals || "").slice(0, 1600),
+    "",
+    "Conversación reciente:",
+    transcript,
+    "",
+    "Responde SOLO JSON: {\"reply\": string}",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-  if (!result.ok) {
-    const status = result.error === "disabled" || result.error === "not_configured" ? 503 : 502;
-    return NextResponse.json({ error: result.error }, { status });
+  // Dual-engine arbiter (parallel): MSI first-valid wins, otherwise OpenAI.
+  const msiP = callMsiChat({ candidateId: pol.id, prompt });
+  const oaP = callOpenAiChat({ prompt });
+
+  const pending: Array<Promise<EngineResult>> = [msiP, oaP];
+  const results: Record<EngineName, EngineResult | null> = { MSI: null, OpenAI: null };
+  let winner: (EngineResult & { ok: true }) | null = null;
+
+  while (pending.length) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await Promise.race(pending);
+    results[r.engine] = r;
+    const idx = pending.findIndex((p) => p === (r.engine === "MSI" ? msiP : oaP));
+    if (idx >= 0) pending.splice(idx, 1);
+    if (r.ok && !winner) {
+      winner = r as any;
+      break;
+    }
   }
 
-  return NextResponse.json({ ok: true, reply: result.text });
+  if (!winner) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "no_engine_available",
+        engines: {
+          MSI: results.MSI?.ok ? { ok: true, ms: results.MSI.ms } : { ok: false, ms: results.MSI?.ms ?? null, error: results.MSI?.error ?? null },
+          OpenAI: results.OpenAI?.ok
+            ? { ok: true, ms: results.OpenAI.ms }
+            : { ok: false, ms: results.OpenAI?.ms ?? null, error: results.OpenAI?.error ?? null },
+        },
+      },
+      { status: 503 },
+    );
+  }
+
+  const arbitration_reason =
+    winner.engine === "MSI"
+      ? "first_valid_response"
+      : results.MSI && !results.MSI.ok && results.MSI.error === "timeout"
+        ? "msi_timeout"
+        : results.MSI && !results.MSI.ok
+          ? "msi_error"
+          : "openai_faster";
+
+  return NextResponse.json({
+    ok: true,
+    reply: winner.reply,
+    meta: {
+      source_engine: winner.engine,
+      arbitration_reason,
+      response_times_ms: { MSI: results.MSI?.ms ?? null, OpenAI: results.OpenAI?.ms ?? null },
+    },
+  });
 }
 
