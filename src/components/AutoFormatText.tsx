@@ -3,8 +3,27 @@ type Block =
   | { type: "list"; items: string[] }
   | { type: "paragraph"; text: string };
 
+const MAJOR_ICONS = ["🛡️", "⚖️", "🛣️", "🎖️", "🎓", "🌎", "🗺️"] as const;
+const MINOR_ICONS = ["📌", "✅", "🎯", "✔", "🏗️", "👥", "🌿", "🌍", "📍", "🌾", "🌳", "🚜", "🌊"] as const;
+const ALL_ICONS = [...MAJOR_ICONS, ...MINOR_ICONS] as const;
+
+function normalizeIconSections(input: string): string {
+  // Goal: if the user pasted everything in one line, inject section breaks at icons.
+  let s = (input ?? "").replace(/\r\n/g, "\n");
+  for (const icon of ALL_ICONS) {
+    // Insert a blank line before icon when it's not already at a line start.
+    // Example: "... texto ✅ Propuestas ..." -> "... texto\n\n✅ Propuestas ..."
+    s = s.replaceAll(` ${icon}`, `\n\n${icon}`);
+  }
+  // For repeated checkmarks without a space before them.
+  s = s.replaceAll("✔", "\n✔");
+  // Collapse excessive blank lines.
+  s = s.replace(/\n{3,}/g, "\n\n");
+  return s;
+}
+
 function toBlocks(input: string): Block[] {
-  const text = (input ?? "").replace(/\r\n/g, "\n").trim();
+  const text = normalizeIconSections(input).trim();
   if (!text) return [];
 
   const lines = text.split("\n");
@@ -28,6 +47,16 @@ function toBlocks(input: string): Block[] {
     if (!line) {
       flushList();
       flushPara();
+      continue;
+    }
+
+    // Emoji-driven section headings (common in proposals pasted from WhatsApp/docs).
+    const isMajor = MAJOR_ICONS.some((i) => line.startsWith(i));
+    const isMinor = MINOR_ICONS.some((i) => line.startsWith(i));
+    if (isMajor || isMinor) {
+      flushList();
+      flushPara();
+      blocks.push({ type: "heading", level: isMajor ? 2 : 3, text: line });
       continue;
     }
 
