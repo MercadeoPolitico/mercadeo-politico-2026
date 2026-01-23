@@ -8,6 +8,18 @@ import { openAiJson } from "@/lib/automation/openai";
 
 export const runtime = "nodejs";
 
+function logSupabaseError(args: { requestId: string; step: string; error: any }) {
+  const e = args.error as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+  console.error("[editorial-orchestrate] supabase_error", {
+    requestId: args.requestId,
+    step: args.step,
+    message: typeof e?.message === "string" ? e.message : null,
+    code: typeof e?.code === "string" ? e.code : null,
+    details: typeof e?.details === "string" ? e.details : null,
+    hint: typeof e?.hint === "string" ? e.hint : null,
+  });
+}
+
 function allowAutomation(req: Request): boolean {
   // Prefer MP26_AUTOMATION_TOKEN (n8n contract), fallback to legacy AUTOMATION_API_TOKEN.
   const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
@@ -179,14 +191,23 @@ export async function POST(req: Request) {
     console.info("[editorial-orchestrate] request", { requestId, candidate_id, max_items, testMode, actor: "admin" });
   }
 
-  const { data: polRow } = await admin
+  const { data: polRow, error: polErr } = await admin
     .from("politicians")
     .select("id,slug,name,office,party,region,ballot_number,auto_blog_enabled,auto_publish_enabled,biography,proposals")
     .eq("id", candidate_id)
     .maybeSingle();
+  if (polErr) {
+    logSupabaseError({ requestId, step: "select_politician", error: polErr });
+    return NextResponse.json({ error: "candidate_lookup_failed", request_id: requestId }, { status: 500 });
+  }
   if (!polRow) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (polRow.auto_blog_enabled === false) return NextResponse.json({ ok: true, skipped: true, reason: "auto_blog_disabled" });
   const pol = polRow;
+
+  console.info("[editorial-orchestrate] candidate_resolved", {
+    requestId,
+    candidate: { id: pol.id, slug: pol.slug, office: pol.office, region: pol.region },
+  });
 
   // Admin-provided inputs (phase-1, backend-only):
   // - uploaded media references from Storage (no scraping)
@@ -213,42 +234,17 @@ export async function POST(req: Request) {
 
   // TEST MODE: generate exactly ONE draft, bypass external APIs.
   if (testMode) {
-    const topic = "TEST MODE · Orquestación editorial (sin APIs externas)";
-    const generated_text = [
-      "TEST MODE (sin APIs externas)",
-      "",
-      `Candidato: ${pol.name} (${pol.office})`,
-      `Región: ${pol.region}`,
-      pol.ballot_number ? `Número: ${pol.ballot_number}` : "",
-      "",
-      "Nota:",
-      "Esta es una ejecución de prueba para validar el loop n8n → backend → ai_drafts → admin/content.",
-      "No se consultó GDELT, ni se llamó a ningún motor externo.",
-      "",
-      "Sugerencia (admin): revisa que este borrador aparezca en /admin/content.",
-      "",
-      recentMediaUrls.length ? `Media sugerida (subida por admin):\n- ${recentMediaUrls.join("\n- ")}` : "Media sugerida: (sin archivos recientes)",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
+    // Guaranteed insert path: no external calls, fail loudly.
     const { data: inserted, error: insErr } = await admin
       .from("ai_drafts")
       .insert({
         candidate_id: pol.id,
         content_type: "blog",
-        topic,
-        tone: "orchestrated_test",
-        generated_text,
+        topic: "TEST DRAFT – DELETE",
+        tone: "test",
+        generated_text: "TEST DRAFT – DELETE\n\nThis is a static test draft created by /api/automation/editorial-orchestrate?test=true.",
         variants: {},
-        metadata: {
-          orchestrator: { source: "n8n", version: "v1" },
-          request_id: requestId,
-          mode: "test",
-          source_mode: "automatic",
-          candidate: { id: pol.id, slug: pol.slug, office: pol.office, region: pol.region, ballot_number: pol.ballot_number ?? null },
-          admin_inputs: { recent_media_urls: recentMediaUrls },
-        },
+        metadata: { test: true, request_id: requestId },
         image_keywords: null,
         source: "n8n",
         status: "draft",
@@ -256,8 +252,29 @@ export async function POST(req: Request) {
       .select("id")
       .single();
 
-    if (insErr || !inserted?.id) return NextResponse.json({ error: "db_error" }, { status: 500 });
-    return NextResponse.json({ ok: true, id: inserted.id, test: true });
+    if (insErr || !inserted?.id) {
+      if (insErr) logSupabaseError({ requestId, step: "insert_ai_draft_test", error: insErr });
+      return NextResponse.json({ ok: false, error: "insert_failed", request_id: requestId }, { status: 500 });
+    }
+
+    const { count, error: countErr } = await admin.from("ai_drafts").select("*", { count: "exact", head: true });
+    if (countErr) {
+      logSupabaseError({ requestId, step: "count_ai_drafts_test", error: countErr });
+      return NextResponse.json({ ok: false, error: "count_failed", request_id: requestId }, { status: 500 });
+    }
+
+    // Final assertion: ensure the inserted row is visible immediately.
+    const { data: verifyRow, error: verifyErr } = await admin.from("ai_drafts").select("id").eq("id", inserted.id).maybeSingle();
+    if (verifyErr) {
+      logSupabaseError({ requestId, step: "verify_ai_draft_test", error: verifyErr });
+      return NextResponse.json({ ok: false, error: "verify_failed", request_id: requestId }, { status: 500 });
+    }
+    if (!verifyRow?.id) {
+      console.error("[editorial-orchestrate] assertion_failed_no_row_after_insert", { requestId, inserted_id: inserted.id });
+      return NextResponse.json({ ok: false, error: "assertion_failed", request_id: requestId }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, id: inserted.id, total_drafts_count: count ?? null, test: true, request_id: requestId });
   }
 
   const query = newsQueryFor(pol.office, pol.region);
@@ -492,7 +509,20 @@ export async function POST(req: Request) {
     .select("id")
     .single();
 
-  if (insErr || !inserted?.id) return NextResponse.json({ error: "db_error" }, { status: 500 });
+  if (insErr || !inserted?.id) {
+    if (insErr) logSupabaseError({ requestId, step: "insert_ai_draft", error: insErr });
+    return NextResponse.json({ ok: false, error: "db_error", request_id: requestId }, { status: 500 });
+  }
+
+  const { data: verifyRow, error: verifyErr } = await admin.from("ai_drafts").select("id").eq("id", inserted.id).maybeSingle();
+  if (verifyErr) {
+    logSupabaseError({ requestId, step: "verify_ai_draft", error: verifyErr });
+    return NextResponse.json({ ok: false, error: "verify_failed", request_id: requestId }, { status: 500 });
+  }
+  if (!verifyRow?.id) {
+    console.error("[editorial-orchestrate] assertion_failed_no_row_after_insert", { requestId, inserted_id: inserted.id });
+    return NextResponse.json({ ok: false, error: "assertion_failed", request_id: requestId }, { status: 500 });
+  }
 
   return NextResponse.json({
     ok: true,
