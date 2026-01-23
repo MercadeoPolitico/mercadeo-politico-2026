@@ -34,7 +34,9 @@ export default async function AdminDashboardPage() {
   const openAiEnabled = envNotFalse("OPENAI_ENABLED") && has("OPENAI_API_KEY");
 
   const n8nForwardEnabled =
-    envNotFalse("N8N_FORWARD_ENABLED") && hasAny("N8N_WEBHOOK_URL", "WEBHOOK_URL") && hasAny("N8N_WEBHOOK_TOKEN", "WEBHOOK_TOKEN");
+    envNotFalse("N8N_FORWARD_ENABLED") &&
+    hasAny("N8N_WEBHOOK_URL", "WEBHOOK_URL") &&
+    hasAny("N8N_WEBHOOK_TOKEN", "WEBHOOK_TOKEN", "MP26_AUTOMATION_TOKEN", "AUTOMATION_API_TOKEN");
 
   // Best-effort counts (requires tables + policies)
   let draftsCount: string = "—";

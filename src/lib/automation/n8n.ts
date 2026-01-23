@@ -16,7 +16,12 @@ function isEnabled(): boolean {
 
 function hasConfig(): boolean {
   const url = process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL;
-  const token = process.env.N8N_WEBHOOK_TOKEN ?? process.env.WEBHOOK_TOKEN;
+  const token =
+    process.env.N8N_WEBHOOK_TOKEN ??
+    process.env.WEBHOOK_TOKEN ??
+    // Continuity-first fallback: reuse existing automation token if a dedicated webhook token is not set.
+    process.env.MP26_AUTOMATION_TOKEN ??
+    process.env.AUTOMATION_API_TOKEN;
   return Boolean(url && url.trim().length && token && token.trim().length);
 }
 
@@ -26,7 +31,12 @@ export async function submitToN8n(payload: SubmitToN8nRequest): Promise<N8nSubmi
 
   try {
     const url = (process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL)!.trim();
-    const token = (process.env.N8N_WEBHOOK_TOKEN ?? process.env.WEBHOOK_TOKEN)!.trim();
+    const token =
+      (process.env.N8N_WEBHOOK_TOKEN ??
+        process.env.WEBHOOK_TOKEN ??
+        process.env.MP26_AUTOMATION_TOKEN ??
+        process.env.AUTOMATION_API_TOKEN)!
+        .trim();
     const resp = await fetch(url, {
       method: "POST",
       headers: {
