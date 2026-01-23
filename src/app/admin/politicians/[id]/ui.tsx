@@ -349,6 +349,39 @@ export function PoliticianWorkspaceClient({
     setHubMsg("Borrador generado y enviado a la cola de revisión.");
   }
 
+  async function orchestrateEditorial() {
+    setHubMsg(null);
+    setHubLoading(true);
+    if (!autoBlog) {
+      setHubLoading(false);
+      setHubMsg("Auto-blog está OFF para este candidato. Actívalo y guarda el perfil para generar.");
+      return;
+    }
+
+    const resp = await fetch("/api/automation/editorial-orchestrate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ candidate_id: politician.id, max_items: 1 }),
+    });
+
+    setHubLoading(false);
+    if (!resp.ok) {
+      setHubMsg("No fue posible orquestar el borrador (verifica Marleny/OpenAI y configuración).");
+      return;
+    }
+
+    const data = (await resp.json()) as { ok?: unknown; skipped?: unknown; id?: unknown };
+    if (data.skipped === true) {
+      setHubMsg("Auto-blog está OFF para este candidato (skip).");
+      return;
+    }
+    if (data.ok === true) {
+      setHubMsg("Borrador creado en cola de revisión (ai_drafts).");
+      return;
+    }
+    setHubMsg("Respuesta inválida.");
+  }
+
   async function sendPublicationToAutomation(p: Publication) {
     setPubMsg(null);
     if (p.status !== "approved") return;
@@ -529,6 +562,9 @@ export function PoliticianWorkspaceClient({
             <div className="mt-3 flex flex-wrap gap-2">
               <button className="glass-button" type="button" onClick={generateNewsBlog} disabled={hubLoading}>
                 {hubLoading ? "Generando…" : "Generar blog automático (noticias)"}
+              </button>
+              <button className="glass-button" type="button" onClick={orchestrateEditorial} disabled={hubLoading}>
+                {hubLoading ? "Orquestando…" : "Orquestación editorial (n8n/2-AI)"}
               </button>
               <Link className="glass-button" href="/admin/content">
                 Ir a cola de revisión
