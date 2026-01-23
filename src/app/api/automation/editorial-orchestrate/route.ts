@@ -9,7 +9,8 @@ import { openAiJson } from "@/lib/automation/openai";
 export const runtime = "nodejs";
 
 function allowAutomation(req: Request): boolean {
-  const apiToken = process.env.AUTOMATION_API_TOKEN;
+  // Prefer MP26_AUTOMATION_TOKEN (n8n contract), fallback to legacy AUTOMATION_API_TOKEN.
+  const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
   if (!apiToken) return false;
   return headerToken === apiToken;
@@ -40,11 +41,22 @@ type OpenAiVariants = {
 };
 
 export async function POST(req: Request) {
+  const url = new URL(req.url);
+  const testMode = url.searchParams.get("test") === "true";
+
   const adminOk = await isAdminSession();
   if (!adminOk && !allowAutomation(req)) {
     // Disabled-by-default for public; n8n must send x-automation-token.
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+
+  const requestId = (() => {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      return `req_${Date.now()}`;
+    }
+  })();
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -59,6 +71,19 @@ export async function POST(req: Request) {
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
+  // Safe logging (no secrets)
+  if (!adminOk) {
+    console.info("[editorial-orchestrate] request", {
+      requestId,
+      candidate_id,
+      max_items,
+      testMode,
+      actor: "automation",
+    });
+  } else {
+    console.info("[editorial-orchestrate] request", { requestId, candidate_id, max_items, testMode, actor: "admin" });
+  }
+
   const { data: pol } = await admin
     .from("politicians")
     .select("id,slug,name,office,party,region,ballot_number,auto_blog_enabled,auto_publish_enabled,biography,proposals")
@@ -66,6 +91,78 @@ export async function POST(req: Request) {
     .maybeSingle();
   if (!pol) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (pol.auto_blog_enabled === false) return NextResponse.json({ ok: true, skipped: true, reason: "auto_blog_disabled" });
+
+  // Admin-provided inputs (phase-1, backend-only):
+  // - uploaded media references from Storage (no scraping)
+  // These are included as preferred embed references in prompts/metadata.
+  let recentMediaUrls: string[] = [];
+  try {
+    const { data: objs } = await admin.storage.from("politician-media").list(pol.id, {
+      limit: 8,
+      sortBy: { column: "created_at", order: "desc" },
+    });
+    recentMediaUrls =
+      (objs ?? [])
+        .filter((o) => o?.name && !String(o.name).endsWith("/"))
+        .slice(0, 5)
+        .map((o) => {
+          const path = `${pol.id}/${o.name}`;
+          const { data } = admin.storage.from("politician-media").getPublicUrl(path);
+          return data.publicUrl;
+        })
+        .filter((u) => typeof u === "string" && u.startsWith("http"));
+  } catch {
+    // ignore (best-effort only)
+  }
+
+  // TEST MODE: generate exactly ONE draft, bypass external APIs.
+  if (testMode) {
+    const topic = "TEST MODE · Orquestación editorial (sin APIs externas)";
+    const generated_text = [
+      "TEST MODE (sin APIs externas)",
+      "",
+      `Candidato: ${pol.name} (${pol.office})`,
+      `Región: ${pol.region}`,
+      pol.ballot_number ? `Número: ${pol.ballot_number}` : "",
+      "",
+      "Nota:",
+      "Esta es una ejecución de prueba para validar el loop n8n → backend → ai_drafts → admin/content.",
+      "No se consultó GDELT, ni se llamó a ningún motor externo.",
+      "",
+      "Sugerencia (admin): revisa que este borrador aparezca en /admin/content.",
+      "",
+      recentMediaUrls.length ? `Media sugerida (subida por admin):\n- ${recentMediaUrls.join("\n- ")}` : "Media sugerida: (sin archivos recientes)",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const { data: inserted, error: insErr } = await admin
+      .from("ai_drafts")
+      .insert({
+        candidate_id: pol.id,
+        content_type: "blog",
+        topic,
+        tone: "orchestrated_test",
+        generated_text,
+        variants: {},
+        metadata: {
+          orchestrator: { source: "n8n", version: "v1" },
+          request_id: requestId,
+          mode: "test",
+          source_mode: "automatic",
+          candidate: { id: pol.id, slug: pol.slug, office: pol.office, region: pol.region, ballot_number: pol.ballot_number ?? null },
+          admin_inputs: { recent_media_urls: recentMediaUrls },
+        },
+        image_keywords: null,
+        source: "n8n",
+        status: "pending_review",
+      })
+      .select("id")
+      .single();
+
+    if (insErr || !inserted?.id) return NextResponse.json({ error: "db_error" }, { status: 500 });
+    return NextResponse.json({ ok: true, id: inserted.id, test: true });
+  }
 
   // 1) News selection (GDELT)
   const query = newsQueryFor(pol.office, pol.region);
@@ -116,6 +213,9 @@ export async function POST(req: Request) {
     "- Al final incluye 1 línea: “Hashtags:” + 3 hashtags relevantes (no polarizantes).",
     "- Incluye 5 líneas “SEO:” (una keyword por línea) usando tendencia cuando sea posible.",
     "",
+    "Media disponible (subida por admin, usar solo estas referencias; NO scraping):",
+    recentMediaUrls.length ? recentMediaUrls.map((u) => `- ${u}`).join("\n") : "- (sin archivos recientes)",
+    "",
     `Candidato: ${pol.name} (${pol.office})`,
     pol.party ? `Partido: ${pol.party}` : "",
     `Región: ${pol.region}`,
@@ -153,7 +253,30 @@ export async function POST(req: Request) {
 
   if (!marleny.ok) {
     const status = marleny.error === "disabled" || marleny.error === "not_configured" ? 503 : 502;
-    return NextResponse.json({ error: "marleny_failed", reason: marleny.error }, { status });
+    // Store failure reason for admin governance (safe, no secrets).
+    try {
+      await admin.from("ai_drafts").insert({
+        candidate_id: pol.id,
+        content_type: "blog",
+        topic: "FALLÓ automatización (Marleny)",
+        tone: "orchestrated_error",
+        generated_text: `Automation failed: marleny_failed (${marleny.error}).`,
+        variants: {},
+        metadata: {
+          orchestrator: { source: "n8n", version: "v1" },
+          request_id: requestId,
+          mode: "automatic",
+          error: { code: "marleny_failed", reason: marleny.error },
+          admin_inputs: { recent_media_urls: recentMediaUrls },
+        },
+        image_keywords: null,
+        source: "n8n",
+        status: "rejected",
+      });
+    } catch {
+      // ignore
+    }
+    return NextResponse.json({ error: "marleny_failed", reason: marleny.error, request_id: requestId }, { status });
   }
 
   // 5) OpenAI: multi-platform adaptation (optional)
@@ -191,6 +314,7 @@ export async function POST(req: Request) {
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v1" },
+    request_id: requestId,
     candidate: { id: pol.id, slug: pol.slug, office: pol.office, region: pol.region, ballot_number: pol.ballot_number ?? null },
     news: article
       ? { provider: "gdelt", title: article.title, url: article.url, seendate: article.seendate, query }
@@ -199,6 +323,7 @@ export async function POST(req: Request) {
         : { provider: "none", query },
     openai: openAiAnalysis.ok ? openAiAnalysis.data : { enabled: false },
     flags: { auto_blog_enabled: pol.auto_blog_enabled, auto_publish_enabled: pol.auto_publish_enabled },
+    admin_inputs: { recent_media_urls: recentMediaUrls },
   };
 
   const topic = article ? `Noticias: ${article.title}` : "Noticias: (sin titular; reescritura editorial)";
@@ -227,6 +352,7 @@ export async function POST(req: Request) {
     id: inserted.id,
     used_openai: openAiAnalysis.ok && variants.ok,
     article_found: Boolean(article),
+    request_id: requestId,
   });
 }
 

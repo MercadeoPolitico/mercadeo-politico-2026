@@ -4,7 +4,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 export const runtime = "nodejs";
 
 function allow(req: Request): boolean {
-  const apiToken = process.env.AUTOMATION_API_TOKEN;
+  // Prefer MP26_AUTOMATION_TOKEN (n8n contract), fallback to legacy AUTOMATION_API_TOKEN.
+  const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
   if (!apiToken) return false;
   return headerToken === apiToken;
@@ -20,6 +21,8 @@ export async function GET(req: Request) {
   const { data, error } = await admin
     .from("politicians")
     .select("id,slug,name,office,party,region,ballot_number,auto_blog_enabled,auto_publish_enabled,biography,proposals,updated_at")
+    // Only candidates eligible for automation (mandatory control surface).
+    .eq("auto_blog_enabled", true)
     .order("updated_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
