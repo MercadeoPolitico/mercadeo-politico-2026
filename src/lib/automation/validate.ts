@@ -49,6 +49,39 @@ export function validateSubmitToN8nRequest(
   const token_estimate = typeof obj.token_estimate === "number" && Number.isFinite(obj.token_estimate) ? obj.token_estimate : 0;
   const metadata = typeof obj.metadata === "object" && obj.metadata !== null ? (obj.metadata as Record<string, unknown>) : undefined;
 
+  // Optional draft envelope (preferred by n8n), validated softly for compatibility.
+  const draft =
+    obj.draft && typeof obj.draft === "object"
+      ? (() => {
+          const d = obj.draft as Record<string, unknown>;
+          if (!isNonEmptyString(d.candidate_id)) return undefined;
+          if (!isNonEmptyString(d.generated_text)) return undefined;
+          const v = d.variants && typeof d.variants === "object" ? (d.variants as Record<string, unknown>) : null;
+          const hasAll =
+            v &&
+            typeof v.facebook === "string" &&
+            typeof v.instagram === "string" &&
+            typeof v.threads === "string" &&
+            typeof v.x === "string" &&
+            typeof v.telegram === "string" &&
+            typeof v.reddit === "string";
+          if (!hasAll) return undefined;
+          return {
+            id: typeof d.id === "string" ? d.id : d.id === null ? null : undefined,
+            candidate_id: String(d.candidate_id),
+            generated_text: String(d.generated_text),
+            variants: {
+              facebook: String(v.facebook),
+              instagram: String(v.instagram),
+              threads: String(v.threads),
+              x: String(v.x),
+              telegram: String(v.telegram),
+              reddit: String(v.reddit),
+            },
+          } as SubmitToN8nRequest["draft"];
+        })()
+      : undefined;
+
   return {
     ok: true,
     data: {
@@ -59,6 +92,7 @@ export function validateSubmitToN8nRequest(
       token_estimate,
       source: "web",
       metadata,
+      ...(draft ? { draft } : {}),
     },
   };
 }

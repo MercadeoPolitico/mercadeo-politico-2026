@@ -43,7 +43,7 @@ En `/admin/content`:
 3. Acciones:
    - **Aprobar**: cambia el estado a `approved`.
    - **Publicar en Centro informativo**: publica en `/centro-informativo` (solo para `blog` y si está `approved` o `edited`).
-   - **Enviar a n8n (WAIT)**: envía el borrador aprobado a n8n para flujos externos (publicación, scheduling, etc.).
+   - **Enviar a redes (auto)**: envía el borrador a n8n usando `metadata.destinations` (solo redes **approved** + **active**). n8n ejecuta publicación por red, sin decisiones editoriales.
 
 ## 6) Publicaciones en redes (manual y autorizado)
 El sistema funciona así (sin guardar tokens en la app):

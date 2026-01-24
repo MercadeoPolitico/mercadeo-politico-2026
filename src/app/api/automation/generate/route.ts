@@ -6,6 +6,7 @@ import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
 import type { GenerateResponse } from "@/lib/automation/types";
 import { isAdminSession } from "@/lib/auth/adminSession";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { ensureSocialVariants } from "@/lib/automation/socialVariants";
 
 export const runtime = "nodejs";
 
@@ -261,7 +262,7 @@ export async function POST(req: Request) {
             "JSON schema:",
             "{",
             '  "base": string,',
-            '  "variants": { "facebook": string, "instagram": string, "x": string },',
+            '  "variants": { "facebook": string, "instagram": string, "threads": string, "x": string, "telegram": string, "reddit": string },',
             '  "image_keywords": string[]',
             "}",
           ].join("\n");
@@ -352,7 +353,7 @@ export async function POST(req: Request) {
   let response: GenerateResponse;
   if (content_type === "social") {
     let base = text;
-    let variants: GenerateResponse["variants"] | undefined;
+    let variantsRaw: Partial<NonNullable<GenerateResponse["variants"]>> | undefined;
     let image_keywords: string[] | undefined;
 
     try {
@@ -363,24 +364,35 @@ export async function POST(req: Request) {
         const v = typeof obj.variants === "object" && obj.variants !== null ? (obj.variants as Record<string, unknown>) : null;
         const fb = v && typeof v.facebook === "string" ? v.facebook.trim() : "";
         const ig = v && typeof v.instagram === "string" ? v.instagram.trim() : "";
+        const th = v && typeof v.threads === "string" ? v.threads.trim() : "";
         const x = v && typeof v.x === "string" ? v.x.trim() : "";
+        const tg = v && typeof v.telegram === "string" ? v.telegram.trim() : "";
+        const rd = v && typeof v.reddit === "string" ? v.reddit.trim() : "";
         const kws = Array.isArray(obj.image_keywords)
           ? (obj.image_keywords.filter((k) => typeof k === "string").map((k) => k.trim()).filter(Boolean) as string[])
           : [];
 
         if (baseCandidate) base = baseCandidate.slice(0, 700);
-        if (fb && ig && x) {
-          variants = {
-            facebook: fb.slice(0, 900),
-            instagram: ig.slice(0, 900),
-            x: x.slice(0, 280),
-          };
-        }
+        variantsRaw = {
+          ...(fb ? { facebook: fb.slice(0, 1100) } : {}),
+          ...(ig ? { instagram: ig.slice(0, 1100) } : {}),
+          ...(th ? { threads: th.slice(0, 1100) } : {}),
+          ...(x ? { x: x.slice(0, 280) } : {}),
+          ...(tg ? { telegram: tg.slice(0, 3800) } : {}),
+          ...(rd ? { reddit: rd.slice(0, 3800) } : {}),
+        };
         if (kws.length) image_keywords = kws.slice(0, 12);
       }
     } catch {
       // fallback to plain text
     }
+
+    const variants = ensureSocialVariants({
+      baseText: base,
+      variants: variantsRaw ?? null,
+      seo_keywords: image_keywords ?? [],
+      candidate: null,
+    });
 
     response = {
       generated_text: base.slice(0, maxOut),
@@ -388,7 +400,7 @@ export async function POST(req: Request) {
       candidate_id,
       token_estimate: estimateTokens(base),
       created_at: createdAt,
-      ...(variants ? { variants } : {}),
+      variants,
       ...(image_keywords ? { image_keywords } : {}),
     };
   } else {

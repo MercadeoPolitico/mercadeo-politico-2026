@@ -4,7 +4,7 @@
     {
       "parameters": {
         "path": "mp26-editorial-orchestrator",
-        "responseMode": "onReceived",
+        "responseMode": "lastNode",
         "options": {}
       },
       "id": "manual-webhook",
@@ -13,6 +13,26 @@
       "typeVersion": 2,
       "position": [
         280,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{Array.isArray($json?.metadata?.destinations)}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "if-publish",
+      "name": "IF publish payload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
         120
       ]
     },
@@ -137,6 +157,136 @@
         1460,
         260
       ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const p = items[0].json || {};\nconst meta = (p.metadata && typeof p.metadata === 'object') ? p.metadata : {};\nconst raw = Array.isArray(meta.destinations) ? meta.destinations : [];\n\nfunction normalizeNetworkKeyFrom(name, url) {\n  const hay = `${String(name||'')} ${String(url||'')}`.toLowerCase();\n  if (hay.includes('facebook') || hay.includes('fb.com') || hay.includes('facebook.com')) return 'facebook';\n  if (hay.includes('instagram') || hay.includes('instagr.am') || hay.includes('instagram.com')) return 'instagram';\n  if (hay.includes('threads') || hay.includes('threads.net')) return 'threads';\n  if (hay.includes('twitter') || hay.includes('x.com') || hay.includes('t.co')) return 'x';\n  if (hay.includes('telegram') || hay.includes('t.me')) return 'telegram';\n  if (hay.includes('reddit') || hay.includes('reddit.com')) return 'reddit';\n  return 'unknown';\n}\n\nfunction normalizeDestination(d) {\n  if (!d || typeof d !== 'object') return null;\n  const o = d;\n  const network = (typeof o.network === 'string' && o.network.trim())\n    ? o.network.trim().toLowerCase()\n    : normalizeNetworkKeyFrom(o.network_name || o.name || '', o.profile_or_page_url || o.url || '');\n\n  const scope = (typeof o.scope === 'string' && o.scope.trim()) ? o.scope.trim().toLowerCase() : 'profile';\n  const credential_ref = (typeof o.credential_ref === 'string' && o.credential_ref.trim()) ? o.credential_ref.trim() : 'default';\n\n  const page_id = typeof o.page_id === 'string' ? o.page_id : null;\n  const account_id = typeof o.account_id === 'string' ? o.account_id : null;\n  const channel_id = typeof o.channel_id === 'string' ? o.channel_id : null;\n\n  return {\n    network,\n    scope,\n    credential_ref,\n    page_id,\n    account_id,\n    channel_id,\n    candidate_id: o.candidate_id || p.candidate_id || null,\n    region: o.region || (meta.candidate && meta.candidate.region ? meta.candidate.region : null),\n    destination_id: o.destination_id || o.id || null,\n    profile_or_page_url: o.profile_or_page_url || o.url || null,\n    network_name: o.network_name || o.name || null,\n    network_type: o.network_type || o.type || null\n  };\n}\n\n// Prefer canonical 'draft' envelope when present (backend now sends it).\nconst draftIn = (p.draft && typeof p.draft === 'object') ? p.draft : null;\nconst variants = (draftIn && typeof draftIn.variants === 'object') ? draftIn.variants : ((p.variants && typeof p.variants === 'object') ? p.variants : ((meta.variants && typeof meta.variants === 'object') ? meta.variants : {}));\nconst draft = {\n  id: (draftIn && (draftIn.id || draftIn.id === null)) ? draftIn.id : (meta.draft_id || null),\n  candidate_id: (draftIn && draftIn.candidate_id) ? draftIn.candidate_id : (p.candidate_id || null),\n  variants,\n  generated_text: (draftIn && typeof draftIn.generated_text === 'string') ? draftIn.generated_text : (p.generated_text || '')\n};\n\nconst media = (meta.media && typeof meta.media === 'object') ? meta.media : null;\n\nconst out = [];\nfor (const d of raw) {\n  const norm = normalizeDestination(d);\n  if (!norm) continue;\n  out.push({ json: { destination: norm, draft, media, metadata: meta } });\n}\n\nif (!out.length) return [{ json: { destination: { network: 'unknown' }, draft, media, metadata: meta, __skipped: true, reason: 'no_destinations' } }];\nreturn out;"
+      },
+      "id": "normalize-destinations",
+      "name": "Normalize destinations (canonical)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        760,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "value1": "={{$json.destination.network}}",
+        "rules": [
+          { "operation": "equal", "value2": "facebook" },
+          { "operation": "equal", "value2": "instagram" },
+          { "operation": "equal", "value2": "threads" },
+          { "operation": "equal", "value2": "x" },
+          { "operation": "equal", "value2": "telegram" },
+          { "operation": "equal", "value2": "reddit" }
+        ]
+      },
+      "id": "switch-network",
+      "name": "Switch by destination.network",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [
+        980,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0].json || {};\nconst destination = item.destination || {};\nconst draft = item.draft || {};\nconst media = item.media || null;\n\nfunction envKey(ref) {\n  return String(ref || 'default').toUpperCase().replace(/[^A-Z0-9]+/g, '_');\n}\n\nfunction tokenFor(prefix) {\n  const k = `${prefix}${envKey(destination.credential_ref)}`;\n  return String(process.env[k] || '').trim();\n}\n\nconst token = tokenFor('MP26_META_TOKEN_');\nconst pageId = destination.page_id;\nif (!token) return [{ json: { ok: false, status: 'failed', reason: 'missing_credential', destination, draft_id: draft.id || null } }];\nif (!pageId) return [{ json: { ok: false, status: 'skipped', reason: 'missing_page_id', destination, draft_id: draft.id || null } }];\n\nconst text = (draft.variants && draft.variants.facebook) ? String(draft.variants.facebook) : '';\nif (!text.trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_variant', destination, draft_id: draft.id || null } }];\n\nconst imageUrl = media && typeof media.image_url === 'string' ? String(media.image_url) : null;\nconst version = String(process.env.MP26_META_GRAPH_VERSION || 'v20.0');\n\ntry {\n  let resp;\n  if (imageUrl) {\n    resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `https://graph.facebook.com/${version}/${pageId}/photos`,\n      qs: { url: imageUrl, caption: text, published: true, access_token: token },\n      json: true,\n      returnFullResponse: true,\n      timeout: 60000,\n    });\n  } else {\n    resp = await this.helpers.httpRequest({\n      method: 'POST',\n      url: `https://graph.facebook.com/${version}/${pageId}/feed`,\n      qs: { message: text, access_token: token },\n      json: true,\n      returnFullResponse: true,\n      timeout: 60000,\n    });\n  }\n\n  const ok = resp && resp.statusCode && String(resp.statusCode).startsWith('2');\n  if (!ok) return [{ json: { ok: false, status: 'failed', reason: `http_${resp ? resp.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n  return [{ json: { ok: true, status: 'published', destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n} catch {\n  return [{ json: { ok: false, status: 'failed', reason: 'exception', destination, draft_id: draft.id || null } }];\n}"
+      },
+      "id": "pub-facebook",
+      "name": "PUBLISH facebook",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 0 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0].json || {};\nconst destination = item.destination || {};\nconst draft = item.draft || {};\nconst media = item.media || null;\n\nfunction envKey(ref) {\n  return String(ref || 'default').toUpperCase().replace(/[^A-Z0-9]+/g, '_');\n}\n\nfunction tokenFor(prefix) {\n  const k = `${prefix}${envKey(destination.credential_ref)}`;\n  return String(process.env[k] || '').trim();\n}\n\nconst token = tokenFor('MP26_META_TOKEN_');\nconst igUserId = destination.account_id;\nif (!token) return [{ json: { ok: false, status: 'failed', reason: 'missing_credential', destination, draft_id: draft.id || null } }];\nif (!igUserId) return [{ json: { ok: false, status: 'skipped', reason: 'missing_account_id', destination, draft_id: draft.id || null } }];\n\nconst text = (draft.variants && draft.variants.instagram) ? String(draft.variants.instagram) : '';\nif (!text.trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_variant', destination, draft_id: draft.id || null } }];\n\nconst imageUrl = media && typeof media.image_url === 'string' ? String(media.image_url) : null;\nif (!imageUrl) return [{ json: { ok: false, status: 'skipped', reason: 'instagram_requires_image', destination, draft_id: draft.id || null } }];\n\nconst version = String(process.env.MP26_META_GRAPH_VERSION || 'v20.0');\n\ntry {\n  const create = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `https://graph.facebook.com/${version}/${igUserId}/media`,\n    qs: { image_url: imageUrl, caption: text, access_token: token },\n    json: true,\n    returnFullResponse: true,\n    timeout: 90000,\n  });\n  const okCreate = create && create.statusCode && String(create.statusCode).startsWith('2');\n  const creationId = okCreate && create.body && create.body.id ? String(create.body.id) : '';\n  if (!okCreate || !creationId) {\n    return [{ json: { ok: false, status: 'failed', reason: `http_${create ? create.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: create ? create.body : null } }];\n  }\n\n  const pub = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `https://graph.facebook.com/${version}/${igUserId}/media_publish`,\n    qs: { creation_id: creationId, access_token: token },\n    json: true,\n    returnFullResponse: true,\n    timeout: 90000,\n  });\n  const okPub = pub && pub.statusCode && String(pub.statusCode).startsWith('2');\n  if (!okPub) {\n    return [{ json: { ok: false, status: 'failed', reason: `http_${pub ? pub.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: pub ? pub.body : null } }];\n  }\n\n  return [{ json: { ok: true, status: 'published', destination, draft_id: draft.id || null, response: pub ? pub.body : null } }];\n} catch {\n  return [{ json: { ok: false, status: 'failed', reason: 'exception', destination, draft_id: draft.id || null } }];\n}"
+      },
+      "id": "pub-instagram",
+      "name": "PUBLISH instagram",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 60 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0].json || {};\nconst destination = item.destination || {};\nconst draft = item.draft || {};\n\nfunction envKey(ref) {\n  return String(ref || 'default').toUpperCase().replace(/[^A-Z0-9]+/g, '_');\n}\n\nfunction tokenFor(prefix) {\n  const k = `${prefix}${envKey(destination.credential_ref)}`;\n  return String(process.env[k] || '').trim();\n}\n\nconst token = tokenFor('MP26_META_TOKEN_');\nconst threadsUserId = destination.account_id;\nif (!token) return [{ json: { ok: false, status: 'failed', reason: 'missing_credential', destination, draft_id: draft.id || null } }];\nif (!threadsUserId) return [{ json: { ok: false, status: 'skipped', reason: 'missing_account_id', destination, draft_id: draft.id || null } }];\n\nconst text = (draft.variants && draft.variants.threads) ? String(draft.variants.threads) : '';\nif (!text.trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_variant', destination, draft_id: draft.id || null } }];\n\nconst base = String(process.env.MP26_THREADS_GRAPH_BASE || 'https://graph.threads.net/v1.0');\n\ntry {\n  const create = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `${base}/${threadsUserId}/threads`,\n    qs: { media_type: 'TEXT', text: text.slice(0, 500), access_token: token },\n    json: true,\n    returnFullResponse: true,\n    timeout: 60000,\n  });\n  const okCreate = create && create.statusCode && String(create.statusCode).startsWith('2');\n  const creationId = okCreate && create.body && create.body.id ? String(create.body.id) : '';\n  if (!okCreate || !creationId) {\n    return [{ json: { ok: false, status: 'failed', reason: `http_${create ? create.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: create ? create.body : null } }];\n  }\n\n  const pub = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `${base}/${threadsUserId}/threads_publish`,\n    qs: { creation_id: creationId, access_token: token },\n    json: true,\n    returnFullResponse: true,\n    timeout: 60000,\n  });\n  const okPub = pub && pub.statusCode && String(pub.statusCode).startsWith('2');\n  if (!okPub) {\n    return [{ json: { ok: false, status: 'failed', reason: `http_${pub ? pub.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: pub ? pub.body : null } }];\n  }\n\n  return [{ json: { ok: true, status: 'published', destination, draft_id: draft.id || null, response: pub ? pub.body : null } }];\n} catch {\n  return [{ json: { ok: false, status: 'failed', reason: 'exception', destination, draft_id: draft.id || null } }];\n}"
+      },
+      "id": "pub-threads",
+      "name": "PUBLISH threads",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 120 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0].json || {};\nconst destination = item.destination || {};\nconst draft = item.draft || {};\n\nfunction envKey(ref) {\n  return String(ref || 'default').toUpperCase().replace(/[^A-Z0-9]+/g, '_');\n}\n\nfunction tokenFor(prefix) {\n  const k = `${prefix}${envKey(destination.credential_ref)}`;\n  return String(process.env[k] || '').trim();\n}\n\n// X requires user-context token. Store it in n8n env.\nconst token = tokenFor('MP26_X_TOKEN_');\nif (!token) return [{ json: { ok: false, status: 'failed', reason: 'missing_credential', destination, draft_id: draft.id || null } }];\n\nconst text = (draft.variants && draft.variants.x) ? String(draft.variants.x) : '';\nif (!text.trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_variant', destination, draft_id: draft.id || null } }];\n\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://api.x.com/2/tweets',\n    headers: { Authorization: `Bearer ${token}` },\n    body: { text: text.slice(0, 280) },\n    json: true,\n    returnFullResponse: true,\n    timeout: 60000,\n  });\n\n  const ok = resp && resp.statusCode && String(resp.statusCode).startsWith('2');\n  if (!ok) return [{ json: { ok: false, status: 'failed', reason: `http_${resp ? resp.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n  return [{ json: { ok: true, status: 'published', destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n} catch {\n  return [{ json: { ok: false, status: 'failed', reason: 'exception', destination, draft_id: draft.id || null } }];\n}"
+      },
+      "id": "pub-x",
+      "name": "PUBLISH x",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 180 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0].json || {};\nconst destination = item.destination || {};\nconst draft = item.draft || {};\n\nfunction envKey(ref) {\n  return String(ref || 'default').toUpperCase().replace(/[^A-Z0-9]+/g, '_');\n}\n\nfunction tokenFor(prefix) {\n  const k = `${prefix}${envKey(destination.credential_ref)}`;\n  return String(process.env[k] || '').trim();\n}\n\nconst botToken = tokenFor('MP26_TELEGRAM_BOT_TOKEN_');\nconst chatId = destination.channel_id;\nif (!botToken) return [{ json: { ok: false, status: 'failed', reason: 'missing_credential', destination, draft_id: draft.id || null } }];\nif (!chatId) return [{ json: { ok: false, status: 'skipped', reason: 'missing_channel_id', destination, draft_id: draft.id || null } }];\n\nconst text = (draft.variants && draft.variants.telegram) ? String(draft.variants.telegram) : '';\nif (!text.trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_variant', destination, draft_id: draft.id || null } }];\n\ntry {\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: `https://api.telegram.org/bot${botToken}/sendMessage`,\n    body: { chat_id: chatId, text },\n    json: true,\n    returnFullResponse: true,\n    timeout: 60000,\n  });\n\n  const ok = resp && resp.statusCode && String(resp.statusCode).startsWith('2') && resp.body && resp.body.ok === true;\n  if (!ok) return [{ json: { ok: false, status: 'failed', reason: `http_${resp ? resp.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n  return [{ json: { ok: true, status: 'published', destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n} catch {\n  return [{ json: { ok: false, status: 'failed', reason: 'exception', destination, draft_id: draft.id || null } }];\n}"
+      },
+      "id": "pub-telegram",
+      "name": "PUBLISH telegram",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 240 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = items[0].json || {};\nconst destination = item.destination || {};\nconst draft = item.draft || {};\n\nfunction envKey(ref) {\n  return String(ref || 'default').toUpperCase().replace(/[^A-Z0-9]+/g, '_');\n}\n\nfunction tokenFor(prefix) {\n  const k = `${prefix}${envKey(destination.credential_ref)}`;\n  return String(process.env[k] || '').trim();\n}\n\nconst token = tokenFor('MP26_REDDIT_TOKEN_');\nif (!token) return [{ json: { ok: false, status: 'failed', reason: 'missing_credential', destination, draft_id: draft.id || null } }];\n\nconst text = (draft.variants && draft.variants.reddit) ? String(draft.variants.reddit) : '';\nif (!text.trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_variant', destination, draft_id: draft.id || null } }];\n\nconst sr = destination.channel_id || destination.account_id || '';\nif (!String(sr || '').trim()) return [{ json: { ok: false, status: 'skipped', reason: 'missing_subreddit', destination, draft_id: draft.id || null } }];\n\nconst title = String(text.split('\\n').find(l => String(l||'').trim()) || 'Análisis cívico').slice(0, 280);\n\ntry {\n  const body = new URLSearchParams({\n    sr: String(sr),\n    kind: 'self',\n    title,\n    text,\n  });\n\n  const resp = await this.helpers.httpRequest({\n    method: 'POST',\n    url: 'https://oauth.reddit.com/api/submit',\n    headers: {\n      Authorization: `Bearer ${token}`,\n      'content-type': 'application/x-www-form-urlencoded',\n      'user-agent': String(process.env.MP26_REDDIT_USER_AGENT || 'mp26-n8n/1.0'),\n    },\n    body: body.toString(),\n    json: true,\n    returnFullResponse: true,\n    timeout: 60000,\n  });\n\n  const ok = resp && resp.statusCode && String(resp.statusCode).startsWith('2');\n  if (!ok) return [{ json: { ok: false, status: 'failed', reason: `http_${resp ? resp.statusCode : 'unknown'}`, destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n  return [{ json: { ok: true, status: 'published', destination, draft_id: draft.id || null, response: resp ? resp.body : null } }];\n} catch {\n  return [{ json: { ok: false, status: 'failed', reason: 'exception', destination, draft_id: draft.id || null } }];\n}"
+      },
+      "id": "pub-reddit",
+      "name": "PUBLISH reddit",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 300 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const d = $json.destination || {};\nreturn [{ json: { ok: false, status: 'skipped', reason: 'unsupported_network', destination: d, draft_id: $json.draft?.id || null } }];"
+      },
+      "id": "pub-unknown",
+      "name": "SKIP unknown network",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1220, 360 ]
+    },
+    {
+      "parameters": {
+        "mode": "passThrough"
+      },
+      "id": "merge-publish",
+      "name": "Merge publish results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1460,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const published = [];\nconst failed = [];\nconst skipped = [];\n\nfor (const it of items) {\n  const j = it.json || {};\n  const d = j.destination || {};\n  const net = (d && (d.network || d.name || d.network_name)) ? String(d.network || d.name || d.network_name) : 'unknown';\n\n  const status = (typeof j.status === 'string' && j.status) ? j.status : (j.__skipped ? 'skipped' : (j.ok === true ? 'published' : 'failed'));\n  const ok = j.ok === true || status === 'published';\n\n  const entry = {\n    network: net,\n    destination_id: d.destination_id || d.id || null,\n    ok,\n    status,\n    reason: j.reason || null\n  };\n\n  if (entry.status === 'skipped') skipped.push(entry);\n  else if (entry.ok) published.push(entry);\n  else failed.push(entry);\n}\n\nreturn [{ json: { published, failed, skipped } }];"
+      },
+      "id": "collect-publish",
+      "name": "Collect published/failed/skipped",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        120
+      ]
     }
   ],
   "connections": {
@@ -144,13 +294,49 @@
       "main": [
         [
           {
-            "node": "GET candidates",
+            "node": "IF publish payload?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
+    "IF publish payload?": {
+      "main": [
+        [
+          { "node": "Normalize destinations (canonical)", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "GET candidates", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Normalize destinations (canonical)": {
+      "main": [
+        [
+          { "node": "Switch by destination.network", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Switch by destination.network": {
+      "main": [
+        [ { "node": "PUBLISH facebook", "type": "main", "index": 0 } ],
+        [ { "node": "PUBLISH instagram", "type": "main", "index": 0 } ],
+        [ { "node": "PUBLISH threads", "type": "main", "index": 0 } ],
+        [ { "node": "PUBLISH x", "type": "main", "index": 0 } ],
+        [ { "node": "PUBLISH telegram", "type": "main", "index": 0 } ],
+        [ { "node": "PUBLISH reddit", "type": "main", "index": 0 } ],
+        [ { "node": "SKIP unknown network", "type": "main", "index": 0 } ]
+      ]
+    },
+    "PUBLISH facebook": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "PUBLISH instagram": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "PUBLISH threads": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "PUBLISH x": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "PUBLISH telegram": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "PUBLISH reddit": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "SKIP unknown network": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
+    "Merge publish results": { "main": [ [ { "node": "Collect published/failed/skipped", "type": "main", "index": 0 } ] ] },
     "Cron (every 6h)": {
       "main": [
         [

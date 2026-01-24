@@ -7,6 +7,10 @@ type Destination = {
   id: string;
   politician_id: string;
   network_name: string;
+  network_key?: string | null;
+  scope?: "page" | "profile" | "channel" | string | null;
+  target_id?: string | null;
+  credential_ref?: string | null;
   network_type: string;
   profile_or_page_url: string;
   owner_name: string | null;
@@ -25,6 +29,27 @@ type RssSource = { id: string; name: string; region_key: "meta" | "colombia"; ba
 type LoadState = "loading" | "ready" | "error";
 
 const NETWORK_TYPES = ["official", "ally", "follower", "community", "media"] as const;
+const NETWORK_KEYS = ["facebook", "instagram", "threads", "x", "telegram", "reddit"] as const;
+type NetworkKey = (typeof NETWORK_KEYS)[number];
+const SCOPES = ["profile", "page", "channel"] as const;
+type Scope = (typeof SCOPES)[number];
+
+function guessNetworkKey(name: string, url: string): NetworkKey | "" {
+  const hay = `${name} ${url}`.toLowerCase();
+  if (hay.includes("facebook") || hay.includes("fb.com") || hay.includes("facebook.com")) return "facebook";
+  if (hay.includes("instagram") || hay.includes("instagr.am") || hay.includes("instagram.com")) return "instagram";
+  if (hay.includes("threads") || hay.includes("threads.net")) return "threads";
+  if (hay.includes("twitter") || hay.includes("x.com") || hay.includes("t.co")) return "x";
+  if (hay.includes("telegram") || hay.includes("t.me")) return "telegram";
+  if (hay.includes("reddit") || hay.includes("reddit.com")) return "reddit";
+  return "";
+}
+
+function defaultScopeFor(nk: string): Scope {
+  if (nk === "telegram") return "channel";
+  if (nk === "facebook") return "page";
+  return "profile";
+}
 
 export function NetworksPanel() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
@@ -36,11 +61,16 @@ export function NetworksPanel() {
 
   const [newFor, setNewFor] = useState<string>("");
   const [newName, setNewName] = useState("");
+  const [newKey, setNewKey] = useState<NetworkKey | "">("");
+  const [newScope, setNewScope] = useState<Scope>("profile");
+  const [newTargetId, setNewTargetId] = useState("");
+  const [newCredRef, setNewCredRef] = useState("");
   const [newType, setNewType] = useState<(typeof NETWORK_TYPES)[number]>("official");
   const [newUrl, setNewUrl] = useState("");
   const [newOwner, setNewOwner] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
+  const [routing, setRouting] = useState<Record<string, { network_key: NetworkKey | ""; scope: Scope; target_id: string; credential_ref: string }>>({});
 
   const byCandidate = useMemo(() => {
     const map: Record<string, Destination[]> = {};
@@ -84,9 +114,15 @@ export function NetworksPanel() {
 
   async function addDestination() {
     setMsg(null);
+    const guessedKey = newKey || guessNetworkKey(newName, newUrl);
+    const scope = newScope || defaultScopeFor(guessedKey || "");
     const payload = {
       politician_id: newFor,
       network_name: newName.trim(),
+      network_key: guessedKey || null,
+      scope,
+      target_id: newTargetId.trim() || null,
+      credential_ref: newCredRef.trim() || null,
       network_type: newType,
       profile_or_page_url: newUrl.trim(),
       owner_name: newOwner.trim() ? newOwner.trim() : null,
@@ -105,6 +141,10 @@ export function NetworksPanel() {
       return;
     }
     setNewName("");
+    setNewKey("");
+    setNewScope("profile");
+    setNewTargetId("");
+    setNewCredRef("");
     setNewUrl("");
     setNewOwner("");
     setNewPhone("");
@@ -121,6 +161,20 @@ export function NetworksPanel() {
     });
     if (!r.ok) {
       setMsg("No fue posible actualizar el estado.");
+      return;
+    }
+    await refresh();
+  }
+
+  async function saveRouting(d: Destination, patch: Partial<Pick<Destination, "network_key" | "scope" | "target_id" | "credential_ref">>) {
+    setMsg(null);
+    const r = await fetch("/api/admin/networks/destinations", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: d.id, ...patch }),
+    });
+    if (!r.ok) {
+      setMsg("No fue posible guardar el ruteo.");
       return;
     }
     await refresh();
@@ -306,6 +360,41 @@ export function NetworksPanel() {
             <label className="mt-2 text-xs font-semibold text-muted">Nombre de red (ej. Facebook Página)</label>
             <input className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={newName} onChange={(e) => setNewName(e.target.value)} />
 
+            <label className="mt-2 text-xs font-semibold text-muted">Network key (ruteo automático)</label>
+            <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={newKey} onChange={(e) => setNewKey((e.target.value as any) || "")}>
+              <option value="">(auto-detectar)</option>
+              {NETWORK_KEYS.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+
+            <label className="mt-2 text-xs font-semibold text-muted">Scope</label>
+            <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={newScope} onChange={(e) => setNewScope(e.target.value as any)}>
+              {SCOPES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+
+            <label className="mt-2 text-xs font-semibold text-muted">Target ID (page_id / handle / channel_id)</label>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={newTargetId}
+              onChange={(e) => setNewTargetId(e.target.value)}
+              placeholder="Opcional (recomendado para publicación en n8n)"
+            />
+
+            <label className="mt-2 text-xs font-semibold text-muted">Credential ref (n8n)</label>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={newCredRef}
+              onChange={(e) => setNewCredRef(e.target.value)}
+              placeholder="Ej: meta_default / x_default / telegram_default"
+            />
+
             <label className="mt-2 text-xs font-semibold text-muted">Tipo</label>
             <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={newType} onChange={(e) => setNewType(e.target.value as any)}>
               {NETWORK_TYPES.map((t) => (
@@ -362,13 +451,31 @@ export function NetworksPanel() {
 
               {rows.length ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {rows.map((d) => (
-                    <div key={d.id} className="rounded-2xl border border-border bg-background/60 p-4">
+                  {rows.map((d) => {
+                    const guessed = guessNetworkKey(d.network_name, d.profile_or_page_url);
+                    const effectiveKey = (routing[d.id]?.network_key ?? (d.network_key as any) ?? guessed ?? "") as NetworkKey | "";
+                    const effectiveScope = (routing[d.id]?.scope ?? ((d.scope as any) || defaultScopeFor(effectiveKey || guessed || ""))) as Scope;
+                    const effectiveTargetId = routing[d.id]?.target_id ?? (d.target_id ?? "");
+                    const effectiveCredRef = routing[d.id]?.credential_ref ?? (d.credential_ref ?? "");
+                    const current = routing[d.id] ?? { network_key: effectiveKey, scope: effectiveScope, target_id: effectiveTargetId, credential_ref: effectiveCredRef };
+
+                    return (
+                      <div key={d.id} className="rounded-2xl border border-border bg-background/60 p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold">{d.network_name}</p>
                           <p className="mt-1 text-xs text-muted">
                             {d.network_type} · {badge(d.authorization_status)} · {d.active ? <span className="text-emerald-300">active</span> : <span className="text-rose-300">inactive</span>}
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            ruteo: <span className="font-medium">{effectiveKey || "(auto)"}</span> · scope:{" "}
+                            <span className="font-medium">{effectiveScope}</span>
+                            {effectiveTargetId ? (
+                              <>
+                                {" "}
+                                · target: <span className="font-medium">{effectiveTargetId}</span>
+                              </>
+                            ) : null}
                           </p>
                           <p className="mt-2 text-xs text-muted">
                             <a className="underline" href={d.profile_or_page_url} target="_blank" rel="noreferrer">
@@ -381,6 +488,80 @@ export function NetworksPanel() {
                           <p className="mt-1 text-xs text-muted">
                             Último invite: {d.last_invite_sent_at ? new Date(d.last_invite_sent_at).toLocaleString("es-CO") : "—"}
                           </p>
+
+                          <div className="mt-3 grid gap-2 rounded-xl border border-border bg-background p-3">
+                            <p className="text-xs font-semibold text-muted">Ruteo n8n (sin secretos)</p>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-[11px] font-semibold text-muted">Network</label>
+                                <select
+                                  className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs"
+                                  value={current.network_key}
+                                  onChange={(e) => setRouting((p) => ({ ...p, [d.id]: { ...current, network_key: (e.target.value as any) || "" } }))}
+                                >
+                                  <option value="">(auto)</option>
+                                  {NETWORK_KEYS.map((k) => (
+                                    <option key={k} value={k}>
+                                      {k}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-[11px] font-semibold text-muted">Scope</label>
+                                <select
+                                  className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs"
+                                  value={current.scope}
+                                  onChange={(e) => setRouting((p) => ({ ...p, [d.id]: { ...current, scope: e.target.value as any } }))}
+                                >
+                                  {SCOPES.map((s) => (
+                                    <option key={s} value={s}>
+                                      {s}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div className="grid gap-1">
+                                <label className="text-[11px] font-semibold text-muted">Target ID</label>
+                                <input
+                                  className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs"
+                                  value={current.target_id}
+                                  onChange={(e) => setRouting((p) => ({ ...p, [d.id]: { ...current, target_id: e.target.value } }))}
+                                  placeholder="page_id / handle / channel_id"
+                                />
+                              </div>
+                              <div className="grid gap-1">
+                                <label className="text-[11px] font-semibold text-muted">Credential ref</label>
+                                <input
+                                  className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs"
+                                  value={current.credential_ref}
+                                  onChange={(e) => setRouting((p) => ({ ...p, [d.id]: { ...current, credential_ref: e.target.value } }))}
+                                  placeholder="meta_default / x_default / telegram_default"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="glass-button"
+                                type="button"
+                                onClick={() =>
+                                  saveRouting(d, {
+                                    network_key: current.network_key || null,
+                                    scope: current.scope,
+                                    target_id: current.target_id.trim() || null,
+                                    credential_ref: current.credential_ref.trim() || null,
+                                  })
+                                }
+                              >
+                                Guardar ruteo
+                              </button>
+                              <button className="glass-button" type="button" onClick={() => setRouting((p) => ({ ...p, [d.id]: { ...current, network_key: guessed || "", scope: defaultScopeFor(guessed || ""), target_id: current.target_id, credential_ref: current.credential_ref } }))}>
+                                Auto-detectar
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -407,7 +588,8 @@ export function NetworksPanel() {
                         </p>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="mt-4 text-sm text-muted">Sin destinos configurados.</p>

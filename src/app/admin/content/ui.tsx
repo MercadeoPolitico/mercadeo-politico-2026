@@ -3,6 +3,24 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ContentType, GenerateResponse } from "@/lib/automation/types";
 
+type SocialVariants = {
+  facebook: string;
+  instagram: string;
+  threads: string;
+  x: string;
+  telegram: string;
+  reddit: string;
+};
+
+const EMPTY_VARIANTS: SocialVariants = {
+  facebook: "",
+  instagram: "",
+  threads: "",
+  x: "",
+  telegram: "",
+  reddit: "",
+};
+
 type Draft = {
   id: string;
   candidate_id: string;
@@ -10,11 +28,7 @@ type Draft = {
   topic: string;
   tone: string | null;
   generated_text: string;
-  variants?: {
-    facebook: string;
-    instagram: string;
-    x: string;
-  };
+  variants?: SocialVariants;
   metadata?: Record<string, unknown> | null;
   status: string;
   reviewer_notes: string | null;
@@ -60,7 +74,7 @@ export function AdminContentPanel() {
   const [imageKeywords, setImageKeywords] = useState<string>("");
   const [genState, setGenState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [genResult, setGenResult] = useState<GenerateResponse | null>(null);
-  const [variants, setVariants] = useState<{ facebook: string; instagram: string; x: string } | null>(null);
+  const [variants, setVariants] = useState<SocialVariants | null>(null);
   const [genErrorMsg, setGenErrorMsg] = useState<string>("");
 
   const [imageState, setImageState] = useState<"idle" | "loading" | "done" | "error">("idle");
@@ -177,7 +191,7 @@ export function AdminContentPanel() {
 
     const data = (await res.json()) as GenerateResponse;
     setGenResult(data);
-    setVariants(data.variants ?? null);
+    setVariants(((data.variants as any) ?? null) as SocialVariants | null);
     if (Array.isArray(data.image_keywords) && data.image_keywords.length) {
       setImageKeywords(data.image_keywords.join(", "));
     }
@@ -419,33 +433,6 @@ export function AdminContentPanel() {
     await refresh();
   }
 
-  async function sendToN8n(draft: Draft) {
-    // Only allow for approved drafts (human-gated)
-    if (draft.status !== "approved") return;
-
-    const res = await fetch("/api/admin/automation/submit", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        candidate_id: draft.candidate_id,
-        content_type: draft.content_type,
-        generated_text: draft.generated_text,
-        token_estimate: 0,
-        created_at: draft.created_at,
-        source: "web",
-        metadata: {
-          variants: draft.variants ?? undefined,
-          rotation_window_days: draft.rotation_window_days,
-          expires_at: draft.expires_at,
-          image_keywords: draft.image_keywords,
-        },
-      }),
-    });
-
-    if (!res.ok) return;
-    await updateDraft({ id: draft.id, status: "sent_to_n8n" });
-  }
-
   async function publishToCitizenCenter(draft: Draft) {
     if (draft.content_type !== "blog") return;
     if (draft.status !== "approved" && draft.status !== "edited") return;
@@ -537,7 +524,7 @@ export function AdminContentPanel() {
         continue;
       }
       // eslint-disable-next-line no-await-in-loop
-      const res = await fetch("/api/admin/automation/publish-to-n8n", {
+      const res = await fetch("/api/automation/publish-to-n8n", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ draft_id: d.id, allow_no_image: bulkAllowNoImage }),
@@ -562,7 +549,7 @@ export function AdminContentPanel() {
     );
     if (!ok) return;
 
-    const res = await fetch("/api/admin/automation/publish-to-n8n", {
+    const res = await fetch("/api/automation/publish-to-n8n", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ draft_id: draft.id, allow_no_image: allowNoImage(draft) }),
@@ -673,7 +660,7 @@ export function AdminContentPanel() {
               <pre className="whitespace-pre-wrap text-sm">{genResult.generated_text}</pre>
             </div>
             {variants ? (
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                 <div className="rounded-xl border border-border bg-background p-4">
                   <p className="text-xs font-semibold text-muted">Facebook</p>
                   <textarea
@@ -691,11 +678,35 @@ export function AdminContentPanel() {
                   />
                 </div>
                 <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Threads</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={variants.threads}
+                    onChange={(e) => setVariants({ ...variants, threads: e.target.value })}
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
                   <p className="text-xs font-semibold text-muted">X</p>
                   <textarea
                     className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
                     value={variants.x}
                     onChange={(e) => setVariants({ ...variants, x: e.target.value })}
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Telegram</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={variants.telegram}
+                    onChange={(e) => setVariants({ ...variants, telegram: e.target.value })}
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Reddit</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={variants.reddit}
+                    onChange={(e) => setVariants({ ...variants, reddit: e.target.value })}
                   />
                 </div>
               </div>
@@ -915,9 +926,6 @@ export function AdminContentPanel() {
                 >
                   Publicar en Centro informativo
                 </button>
-                <button className="glass-button" type="button" onClick={() => sendToN8n(selected)} disabled={selected.status !== "approved"}>
-                  Enviar a n8n (WAIT)
-                </button>
                 <button
                   className="glass-button"
                   type="button"
@@ -1004,67 +1012,106 @@ export function AdminContentPanel() {
                 onChange={(e) => setSelected({ ...selected, generated_text: e.target.value, status: "edited" })}
               />
 
-              {selected.variants ? (
-                <div className="grid gap-3 md:grid-cols-3">
-                  <div className="rounded-xl border border-border bg-background p-4">
-                    <p className="text-xs font-semibold text-muted">Facebook</p>
-                    <textarea
-                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                      value={selected.variants.facebook}
-                      onChange={(e) =>
-                        setSelected({
-                          ...selected,
-                          status: "edited",
-                          variants: { ...selected.variants!, facebook: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="rounded-xl border border-border bg-background p-4">
-                    <p className="text-xs font-semibold text-muted">Instagram</p>
-                    <textarea
-                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                      value={selected.variants.instagram}
-                      onChange={(e) =>
-                        setSelected({
-                          ...selected,
-                          status: "edited",
-                          variants: { ...selected.variants!, instagram: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="rounded-xl border border-border bg-background p-4">
-                    <p className="text-xs font-semibold text-muted">X</p>
-                    <textarea
-                      className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                      value={selected.variants.x}
-                      onChange={(e) =>
-                        setSelected({
-                          ...selected,
-                          status: "edited",
-                          variants: { ...selected.variants!, x: e.target.value },
-                        })
-                      }
-                    />
-                  </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Facebook</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={selected.variants?.facebook ?? ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        status: "edited",
+                        variants: { ...(selected.variants ?? EMPTY_VARIANTS), facebook: e.target.value },
+                      })
+                    }
+                  />
                 </div>
-              ) : null}
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Instagram</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={selected.variants?.instagram ?? ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        status: "edited",
+                        variants: { ...(selected.variants ?? EMPTY_VARIANTS), instagram: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Threads</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={selected.variants?.threads ?? ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        status: "edited",
+                        variants: { ...(selected.variants ?? EMPTY_VARIANTS), threads: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">X</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={selected.variants?.x ?? ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        status: "edited",
+                        variants: { ...(selected.variants ?? EMPTY_VARIANTS), x: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Telegram</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={selected.variants?.telegram ?? ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        status: "edited",
+                        variants: { ...(selected.variants ?? EMPTY_VARIANTS), telegram: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+                <div className="rounded-xl border border-border bg-background p-4">
+                  <p className="text-xs font-semibold text-muted">Reddit</p>
+                  <textarea
+                    className="mt-2 min-h-[120px] w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                    value={selected.variants?.reddit ?? ""}
+                    onChange={(e) =>
+                      setSelected({
+                        ...selected,
+                        status: "edited",
+                        variants: { ...(selected.variants ?? EMPTY_VARIANTS), reddit: e.target.value },
+                      })
+                    }
+                  />
+                </div>
+              </div>
 
               <button className="glass-button" type="button" onClick={() => updateDraft({ id: selected.id, generated_text: selected.generated_text, status: "edited" })}>
                 Guardar cambios
               </button>
-              {selected.variants ? (
-                <button
-                  className="glass-button"
-                  type="button"
-                  onClick={() => updateDraft({ id: selected.id, variants: selected.variants, status: "edited" })}
-                >
-                  Guardar variantes
-                </button>
-              ) : null}
+              <button
+                className="glass-button"
+                type="button"
+                onClick={() => updateDraft({ id: selected.id, variants: (selected.variants ?? EMPTY_VARIANTS) as any, status: "edited" })}
+              >
+                Guardar variantes
+              </button>
               <p className="text-xs text-muted">
-                “Enviar a n8n” solo se habilita cuando el borrador está en estado <span className="text-foreground">approved</span>.
+                “Enviar a redes (auto)” solo se habilita cuando el borrador está en estado <span className="text-foreground">approved</span> o{" "}
+                <span className="text-foreground">edited</span>.
               </p>
             </div>
           </div>

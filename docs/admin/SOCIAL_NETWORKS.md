@@ -5,6 +5,81 @@ Este proyecto separa **control editorial** (Admin Panel) de **conectividad** (n8
 - **Admin Panel**: decides *qué* se publica, para *qué candidato*, y en *qué redes* está activo (por candidato).
 - **n8n (Railway)**: mantiene las **credenciales OAuth/tokens** y ejecuta la publicación real (Facebook/X/Reddit/etc).
 
+### Bloque canónico: ruteo automático en n8n usando `metadata.destinations`
+
+**Objetivo**: el Admin NO elige plataformas al publicar. El backend envía un payload con:
+
+- `draft.variants` (texto listo por red)
+- `metadata.destinations[]` (solo redes **approved** + **active**)
+
+**Contrato (canónico)**:
+
+```json
+{
+  "generated_text": "…",
+  "variants": {
+    "facebook": "…",
+    "instagram": "…",
+    "threads": "…",
+    "x": "…",
+    "telegram": "…",
+    "reddit": "…"
+  },
+  "metadata": {
+    "draft_id": "uuid",
+    "destinations": [
+      {
+        "network": "facebook|instagram|threads|x|telegram|reddit",
+        "scope": "page|profile|channel",
+        "credential_ref": "meta_default|x_default|telegram_default|reddit_default|...",
+        "page_id": "…",
+        "account_id": "…",
+        "channel_id": "…",
+        "candidate_id": "…",
+        "region": "meta|colombia"
+      }
+    ],
+    "media": {
+      "image_url": "https://…",
+      "credit": "…"
+    }
+  }
+}
+```
+
+**Cómo debe rutear n8n (simple y extensible)**:
+
+- Iterar `metadata.destinations[]`
+- Switch por `destination.network`
+- En cada case:
+  - Publicar `draft.variants[network]`
+  - Adjuntar media si existe `metadata.media.image_url`
+- Si una red falla:
+  - Loggear error
+  - Continuar con las demás
+- Si llega un `network` desconocido:
+  - Marcar como `skipped` y continuar
+- Responder al final (webhook):
+  - `{ published: [], failed: [], skipped: [] }`
+
+**Workflow en el repo (importable)**:
+
+- Archivo: `docs/automation/n8n-master-editorial-orchestrator.json`
+- Este workflow ya trae el ruteo completo:
+  - Nodo `Normalize destinations (canonical)` (acepta formato canónico y un formato legacy con `name/url`)
+  - Nodo `Switch by destination.network`
+  - Nodos `PUBLISH <network>` con publicación real vía HTTP (Meta/X/Telegram/Reddit) y manejo de errores por red.
+  - `credential_ref` se resuelve por mapping determinístico a variables de entorno en n8n (`MP26_*`).
+
+### Configuración mínima en Admin → n8n / Redes (para que el ruteo sea determinístico)
+
+En cada destino social, completa (sin secretos):
+
+- **network_key**: `facebook | instagram | threads | x | telegram | reddit`
+- **scope**: `page | profile | channel`
+- **target_id**: `page_id/account_id/channel_id` (recomendado)
+- **credential_ref**: referencia de la credencial en n8n (ej: `meta_default`, `x_default`, `telegram_default`, `reddit_default`)
+
 ### 1) Activar/Desactivar redes por candidato (en el Admin Panel)
 
 Entra a:

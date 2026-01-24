@@ -20,7 +20,10 @@ export type GenerateResponse = {
   variants?: {
     facebook: string;
     instagram: string;
+    threads: string;
     x: string;
+    telegram: string;
+    reddit: string;
   };
   /**
    * Optional image keywords suggestion (text only).
@@ -31,5 +34,16 @@ export type GenerateResponse = {
 export type SubmitToN8nRequest = GenerateResponse & {
   source: "web";
   metadata?: Record<string, unknown>;
+  /**
+   * Preferred canonical payload for n8n:
+   * - n8n should publish using draft.variants[network]
+   * - keep root-level fields for backward compatibility
+   */
+  draft?: {
+    id?: string | null;
+    candidate_id: string;
+    generated_text: string;
+    variants: GenerateResponse["variants"];
+  };
 };
 

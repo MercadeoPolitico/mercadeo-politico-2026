@@ -11,6 +11,7 @@ import { getSiteUrlString } from "@/lib/site";
 import { pickWikimediaImage } from "@/lib/media/wikimedia";
 import { fetchOpenGraphMedia } from "@/lib/media/opengraph";
 import { pickTopRssItem, type RssSource, type RssItem } from "@/lib/news/rss";
+import { ensureSocialVariants } from "@/lib/automation/socialVariants";
 
 export const runtime = "nodejs";
 
@@ -571,7 +572,13 @@ export async function POST(req: Request) {
   // Editorial tuning (backend-only; future-configurable via metadata)
   const inclinationRaw = typeof b.editorial_inclination === "string" ? b.editorial_inclination.trim().toLowerCase() : "";
   const editorial_inclination: "informativo" | "persuasivo_suave" | "correctivo" =
-    inclinationRaw === "persuasivo_suave" || inclinationRaw === "persuasivo" ? "persuasivo_suave" : inclinationRaw === "correctivo" ? "correctivo" : "informativo";
+    inclinationRaw === "informativo"
+      ? "informativo"
+      : inclinationRaw === "persuasivo_suave" || inclinationRaw === "persuasivo"
+        ? "persuasivo_suave"
+        : inclinationRaw === "correctivo"
+          ? "correctivo"
+          : "persuasivo_suave";
   const styleRaw = typeof b.editorial_style === "string" ? b.editorial_style.trim().toLowerCase() : "";
   const editorial_style: "noticiero_portada" | "sobrio" = styleRaw === "sobrio" ? "sobrio" : "noticiero_portada";
 
@@ -721,7 +728,7 @@ export async function POST(req: Request) {
     `- Estilo editorial: ${editorial_style === "noticiero_portada" ? "noticiero tipo periódico/portada (titular fuerte pero sobrio, lead claro, orden visual)" : "sobrio"}.`,
     `- Inclinación: ${editorial_inclination}.`,
     "  - informativo: neutral, explica hechos y contexto. Persuasión mínima (cívica).",
-    "  - persuasivo_suave: resalta 1–2 ejes del programa como solución/fortaleza, sin ataques ni propaganda explícita.",
+    "  - persuasivo_suave: resalta 1–2 ejes del programa como solución/fortaleza (capacidad y plan), buscando intención de voto de forma ética: sin ataques, sin propaganda explícita, sin llamados directos tipo 'vote por X'.",
     "  - correctivo: cuando la noticia es negativa, enfoque de control institucional/soluciones; evita culpabilizar personas o lenguaje extremo.",
     "- Español (Colombia).",
     "- Si la noticia/titular está en inglés, traduce y redacta TODO el resultado final en español (Colombia).",
@@ -1220,19 +1227,39 @@ export async function POST(req: Request) {
   })();
 
   // Persist: generated_text is the BLOG variant (Centro Informativo Ciudadano).
-  // Variants: keep required keys for existing admin UI (facebook/instagram/x), plus reddit/blog for automation.
-  const variantsJson = {
+  // Variants: canonical per-network variants must exist BEFORE n8n.
+  // - Keep blog for internal use (Centro Informativo).
+  // - Ensure: facebook/instagram/threads/x/telegram/reddit always present.
+  const baseVariants = {
     blog: blogWithCredits,
     facebook: appendPublicFooter({
       text: normalizeLineBreaks(winner.data.platform_variants.facebook),
       based_on_source_name: rssChosen ? rssChosen.source_name : null,
     }),
-    instagram: "",
-    x: appendPublicFooterShort({ text: normalizeLineBreaks(winner.data.platform_variants.x), based_on_source_name: rssChosen ? rssChosen.source_name : null }),
+    x: appendPublicFooterShort({
+      text: normalizeLineBreaks(winner.data.platform_variants.x),
+      based_on_source_name: rssChosen ? rssChosen.source_name : null,
+    }),
     reddit: appendPublicFooter({
       text: normalizeLineBreaks(winner.data.platform_variants.reddit),
       based_on_source_name: rssChosen ? rssChosen.source_name : null,
     }),
+  };
+  const ensured = ensureSocialVariants({
+    baseText: blogWithCredits,
+    blogText: blogWithCredits,
+    variants: baseVariants as any,
+    seo_keywords: winner.data.seo_keywords,
+    candidate: { name: pol.name, ballot_number: pol.ballot_number },
+  });
+  const variantsJson = {
+    blog: blogWithCredits,
+    facebook: ensured.facebook,
+    instagram: ensured.instagram,
+    threads: ensured.threads,
+    x: ensured.x,
+    telegram: ensured.telegram,
+    reddit: ensured.reddit,
   };
 
   const image_keywords =
@@ -1350,7 +1377,10 @@ export async function POST(req: Request) {
           variants: {
             facebook: variantsJson.facebook,
             instagram: variantsJson.instagram,
+            threads: variantsJson.threads,
             x: variantsJson.x,
+            telegram: variantsJson.telegram,
+            reddit: variantsJson.reddit,
           },
           metadata: {
             origin: "auto_publish_editorial_orchestrate",
@@ -1366,6 +1396,19 @@ export async function POST(req: Request) {
               office: pol.office,
               region: pol.region,
               ballot_number: pol.ballot_number ?? null,
+            },
+          },
+          draft: {
+            id: inserted.id,
+            candidate_id: pol.id,
+            generated_text: teaser,
+            variants: {
+              facebook: variantsJson.facebook,
+              instagram: variantsJson.instagram,
+              threads: variantsJson.threads,
+              x: variantsJson.x,
+              telegram: variantsJson.telegram,
+              reddit: variantsJson.reddit,
             },
           },
         });
