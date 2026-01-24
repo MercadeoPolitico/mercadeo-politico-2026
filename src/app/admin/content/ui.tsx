@@ -43,6 +43,10 @@ export function AdminContentPanel() {
   const [genState, setGenState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [genResult, setGenResult] = useState<GenerateResponse | null>(null);
   const [variants, setVariants] = useState<{ facebook: string; instagram: string; x: string } | null>(null);
+  const [genErrorMsg, setGenErrorMsg] = useState<string>("");
+
+  const [imageState, setImageState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [imageErrorMsg, setImageErrorMsg] = useState<string>("");
 
   const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
 
@@ -107,6 +111,7 @@ export function AdminContentPanel() {
     if (!canGenerate) return;
     setGenState("loading");
     setGenResult(null);
+    setGenErrorMsg("");
 
     const payload = {
       candidate_id: candidateId.trim(),
@@ -122,6 +127,14 @@ export function AdminContentPanel() {
     });
 
     if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as any;
+      const err = typeof j?.error === "string" ? j.error : "upstream_error";
+      const metaEng = j?.meta?.engines;
+      const act = metaEng?.Actuation;
+      const vol = metaEng?.Volume;
+      const safeDiag =
+        act || vol ? ` Diagnóstico (safe): Actuation=${String(act ?? "n/a")} · Volume=${String(vol ?? "n/a")}` : "";
+      setGenErrorMsg(`Falló generación: ${err}.${safeDiag}`);
       setGenState("error");
       return;
     }
@@ -133,6 +146,46 @@ export function AdminContentPanel() {
       setImageKeywords(data.image_keywords.join(", "));
     }
     setGenState("done");
+  }
+
+  function isImageReady(d: Draft): boolean {
+    const meta = (d.metadata ?? null) as any;
+    if (meta && meta.image_ready === true) return true;
+    const url = meta && (typeof meta.image_url === "string" ? meta.image_url : meta?.image_metadata?.url);
+    return typeof url === "string" && url.trim().length > 0;
+  }
+
+  function imageUrlOf(d: Draft): string | null {
+    const meta = (d.metadata ?? null) as any;
+    const url =
+      (meta && typeof meta.image_url === "string" && meta.image_url) ||
+      (meta && typeof meta?.image_metadata?.url === "string" && meta.image_metadata.url) ||
+      null;
+    return url ? String(url).trim() : null;
+  }
+
+  async function generateImageForSelected() {
+    if (!selected) return;
+    setImageState("loading");
+    setImageErrorMsg("");
+
+    const res = await fetch("/api/admin/drafts/generate-image", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draft_id: selected.id, image_keywords: selected.image_keywords ?? undefined }),
+    });
+
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j?.ok) {
+      const reason = typeof j?.reason === "string" ? j.reason : typeof j?.error === "string" ? j.error : "upstream_error";
+      setImageErrorMsg(`Image generation failed: ${reason}`);
+      setImageState("error");
+      await refresh();
+      return;
+    }
+
+    setImageState("done");
+    await refresh();
   }
 
   async function saveDraft() {
@@ -393,9 +446,7 @@ export function AdminContentPanel() {
           </div>
         </div>
 
-        {genState === "error" ? (
-          <p className="mt-3 text-sm text-amber-300">No se pudo generar (verifica permisos/configuración).</p>
-        ) : null}
+        {genState === "error" ? <p className="mt-3 text-sm text-amber-300">{genErrorMsg || "Falló generación."}</p> : null}
 
         {genResult ? (
           <div className="mt-4 space-y-3">
@@ -472,6 +523,10 @@ export function AdminContentPanel() {
               <p className="mt-2 text-xs text-muted">
                 Estado: <span className="text-foreground">{d.status}</span> ·{" "}
                 {d.created_at ? new Date(d.created_at).toLocaleString("es-CO") : ""}
+                {" · "}
+                <span className={isImageReady(d) ? "text-emerald-300" : "text-amber-300"}>
+                  {isImageReady(d) ? "Imagen lista" : "Sin imagen"}
+                </span>
               </p>
             </button>
           ))}
@@ -496,6 +551,9 @@ export function AdminContentPanel() {
                 </button>
                 <button className="glass-button" type="button" onClick={() => deleteDraft(selected)}>
                   Eliminar borrador
+                </button>
+                <button className="glass-button" type="button" onClick={generateImageForSelected} disabled={imageState === "loading"}>
+                  {imageState === "loading" ? "Generando imagen…" : "Generar imagen con AIs"}
                 </button>
                 <button
                   className="glass-button"
@@ -534,6 +592,24 @@ export function AdminContentPanel() {
             </div>
 
             <div className="mt-4 grid gap-3">
+              <div className="rounded-xl border border-border bg-background p-4">
+                <p className="text-sm font-semibold">Imagen</p>
+                <p className="mt-1 text-xs text-muted">
+                  Estado:{" "}
+                  <span className={isImageReady(selected) ? "text-emerald-300" : "text-amber-300"}>
+                    {isImageReady(selected) ? "lista" : "pendiente"}
+                  </span>
+                </p>
+                {imageUrlOf(selected) ? (
+                  <p className="mt-2 text-xs text-muted">
+                    <a className="underline" href={imageUrlOf(selected)!} target="_blank" rel="noreferrer">
+                      Abrir imagen
+                    </a>
+                  </p>
+                ) : null}
+                {imageState === "error" ? <p className="mt-2 text-xs text-amber-300">{imageErrorMsg}</p> : null}
+                <p className="mt-2 text-xs text-muted">No bloquea aprobación/publicación si no hay imagen.</p>
+              </div>
               {(() => {
                 const ref = getPublishedRef(selected);
                 if (!ref.slug && !ref.post_id) return null;
