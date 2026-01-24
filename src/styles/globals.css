@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  /* Default: dark, serene, glass-forward */
-  --background: #0b1220; /* slate-950-ish */
+  /* Default: glass-forward, patriotic, less "heavy" */
+  --background: #081a33; /* deep navy (lighter than near-black) */
   --foreground: #eef2ff;
-  --surface: rgba(255, 255, 255, 0.06);
-  --border: rgba(255, 255, 255, 0.16);
-  --muted: rgba(226, 232, 240, 0.78);
+  --surface: rgba(255, 255, 255, 0.10);
+  --border: rgba(255, 255, 255, 0.26);
+  --muted: rgba(226, 232, 240, 0.82);
 }
 
 @theme inline {
@@ -21,11 +21,11 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0b1220;
+    --background: #081a33;
     --foreground: #eef2ff;
-    --surface: rgba(255, 255, 255, 0.06);
-    --border: rgba(255, 255, 255, 0.16);
-    --muted: rgba(226, 232, 240, 0.78);
+    --surface: rgba(255, 255, 255, 0.10);
+    --border: rgba(255, 255, 255, 0.26);
+    --muted: rgba(226, 232, 240, 0.82);
   }
 }
 
@@ -58,26 +58,51 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(55% 45% at 18% 18%, rgba(250, 204, 21, 0.18), transparent 60%),
-    radial-gradient(50% 45% at 82% 20%, rgba(59, 130, 246, 0.16), transparent 62%),
-    radial-gradient(55% 50% at 55% 86%, rgba(239, 68, 68, 0.12), transparent 62%),
-    radial-gradient(60% 55% at 45% 55%, rgba(2, 6, 23, 0.35), transparent 60%);
-  filter: blur(24px);
-  opacity: 0.9;
+    radial-gradient(55% 45% at 16% 18%, rgba(250, 204, 21, 0.26), transparent 62%),
+    radial-gradient(52% 45% at 84% 18%, rgba(56, 189, 248, 0.24), transparent 64%),
+    radial-gradient(58% 50% at 54% 86%, rgba(239, 68, 68, 0.20), transparent 64%),
+    radial-gradient(52% 48% at 76% 76%, rgba(34, 211, 238, 0.14), transparent 62%),
+    radial-gradient(60% 55% at 22% 78%, rgba(34, 197, 94, 0.12), transparent 62%);
+  filter: blur(34px);
+  opacity: 1;
 }
 
 @layer components {
   .glass-card {
-    @apply rounded-3xl border border-white/20 bg-white/10 backdrop-blur-md;
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    border-radius: 1.5rem;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      0 18px 55px rgba(0, 0, 0, 0.25);
+  }
+
+  .glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 42%),
+      radial-gradient(55% 45% at 18% 12%, rgba(250, 204, 21, 0.12), transparent 55%),
+      radial-gradient(55% 45% at 82% 14%, rgba(56, 189, 248, 0.10), transparent 58%);
+    opacity: 0.95;
   }
 
   .glass-button {
     @apply inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition;
-    @apply border-white/20 bg-white/10 text-foreground backdrop-blur-md;
+    @apply border-white/25 bg-white/12 text-foreground;
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
   .glass-button:hover {
-    @apply bg-white/15;
+    @apply bg-white/16;
     transform: translateY(-1px);
   }
   .glass-button:active {
@@ -85,24 +110,22 @@ body::before {
   }
 }
 
-/* Marketbrain / Marleny owl: subtle glow + pulse */
-@keyframes mbOwlPulse {
+/* (Landing) optional subtle pulse utility (generic, not brand-specific) */
+@keyframes softPulse {
   0%,
   100% {
     transform: translateY(0) scale(1);
-    filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.35)) drop-shadow(0 0 24px rgba(59, 130, 246, 0.18));
-    opacity: 0.95;
+    opacity: 0.92;
   }
   50% {
-    transform: translateY(-1px) scale(1.045);
-    filter: drop-shadow(0 0 14px rgba(34, 211, 238, 0.55)) drop-shadow(0 0 34px rgba(59, 130, 246, 0.28));
+    transform: translateY(-1px) scale(1.03);
     opacity: 1;
   }
 }
 
-.mb-owl-pulse {
-  animation: mbOwlPulse 2.6s ease-in-out infinite;
-  will-change: transform, filter, opacity;
+.soft-pulse {
+  animation: softPulse 2.8s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 
 /* Synthetic Intelligence meters (admin) */

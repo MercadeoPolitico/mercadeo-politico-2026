@@ -56,6 +56,12 @@ export function MarlenyChatClient() {
       if (!cancelled) {
         setOptions(next);
         setOptionsState("ready");
+        // Auto-poblar el primer candidato (si aplica)
+        setCandidateId((prev) => {
+          const p = prev.trim();
+          if (p && next.some((o) => o.id === p || o.slug === p)) return prev;
+          return next[0]?.id ?? prev;
+        });
       }
     }
     void load();
@@ -110,26 +116,38 @@ export function MarlenyChatClient() {
         <h3 className="text-base font-semibold">Configuración</h3>
         <div className="mt-4 grid gap-2">
           <label className="text-sm font-medium">Candidate ID</label>
-          <input
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-            value={candidateId}
-            onChange={(e) => setCandidateId(e.target.value)}
-            placeholder="Selecciona o escribe…"
-            list="mp26-politicians"
-          />
-          <datalist id="mp26-politicians">
-            {options.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.office} · {p.region}
-              </option>
-            ))}
-          </datalist>
+          {options.length ? (
+            <select
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={candidateId}
+              onChange={(e) => setCandidateId(e.target.value)}
+            >
+              {options.map((p) => {
+                const extra = p.slug && p.slug !== p.id ? ` · slug: ${p.slug}` : "";
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} · {p.office} · {p.region}
+                    {extra}
+                  </option>
+                );
+              })}
+            </select>
+          ) : (
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={candidateId}
+              onChange={(e) => setCandidateId(e.target.value)}
+              placeholder="Escribe el Candidate ID (ej.: jose-angel-martinez)…"
+            />
+          )}
           <p className="text-xs text-muted">
             {optionsState === "loading"
               ? "Cargando candidatos…"
               : optionsState === "error"
                 ? "No se pudo cargar la lista. Puedes escribir el ID manualmente."
-                : "Empieza a escribir y selecciona de la lista (autocompletado). No se guarda historial."}
+                : options.length
+                  ? "Lista cargada (incluye geolocalización)."
+                  : "Escribe el ID manualmente."}
           </p>
         </div>
       </div>

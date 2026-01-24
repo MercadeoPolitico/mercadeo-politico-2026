@@ -5,6 +5,7 @@ import { validateGenerateRequest } from "@/lib/automation/validate";
 import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
 import type { GenerateResponse } from "@/lib/automation/types";
 import { isAdminSession } from "@/lib/auth/adminSession";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -12,11 +13,60 @@ export const runtime = "nodejs";
  * Controlled AI generation endpoint (Paso H.1)
  *
  * - Server-side only
- * - Exactly ONE AI call per request
+ * - One successful AI response per request (failover supported)
  * - No retries, no streaming
  * - Never stores, never publishes, never forwards automatically
  * - Disabled-by-default unless AUTOMATION_API_TOKEN is set and matches header
  */
+
+function normalizeBaseUrl(raw: string): string {
+  const base = (raw || "https://api.openai.com").trim().replace(/\/+$/, "");
+  return base.endsWith("/v1") ? base.slice(0, -3) : base;
+}
+
+function hasOpenAiConfig(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim().length);
+}
+
+async function callOpenAiOnce(args: {
+  model: string;
+  prompt: string;
+  maxOutputChars: number;
+}): Promise<{ ok: true; text: string } | { ok: false; error: "not_configured" | "upstream_error" | "bad_response" }> {
+  const apiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  if (!apiKey) return { ok: false, error: "not_configured" };
+
+  const base = normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com");
+  const resp = await fetch(`${base}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: args.model,
+      temperature: 0.2,
+      messages: [
+        {
+          role: "system",
+          content:
+            "Synthetic Intelligence. Generación bajo control: una solicitud = una respuesta. " +
+            "Sé sobrio, institucional, verificable y ético. Prohibido: desinformación, urgencia falsa, miedo, ataques personales.",
+        },
+        { role: "user", content: args.prompt },
+      ],
+    }),
+    cache: "no-store",
+  });
+
+  if (!resp.ok) return { ok: false, error: "upstream_error" };
+  const json = (await resp.json().catch(() => null)) as any;
+  const content = json?.choices?.[0]?.message?.content;
+  const text = typeof content === "string" ? content.trim() : "";
+  if (!text) return { ok: false, error: "bad_response" };
+  return { ok: true, text: text.slice(0, args.maxOutputChars) };
+}
+
 export async function POST(req: Request) {
   const apiToken = process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
@@ -41,19 +91,101 @@ export async function POST(req: Request) {
   // Hard cap at output level too (cost + determinism)
   const maxOut = maxOutputCharsFor(content_type);
 
-  const result = await callMarlenyAI({
+  const msi = await callMarlenyAI({
     candidateId: candidate_id,
     contentType: content_type,
     topic,
     tone,
   });
 
-  if (!result.ok) {
-    const status = result.error === "disabled" || result.error === "not_configured" ? 503 : 502;
-    return NextResponse.json({ error: result.error }, { status });
+  let textResult: string | null = null;
+  let lastError: string | null = null;
+
+  if (msi.ok) {
+    textResult = msi.text;
+  } else {
+    lastError = msi.error;
+    // Failover to OpenAI when configured.
+    if (hasOpenAiConfig()) {
+      let candidateContext = "";
+      try {
+        // Best-effort: if admin session exists, enrich with candidate bio/proposals.
+        const adminOk = await isAdminSession();
+        if (adminOk) {
+          const supabase = await createSupabaseServerClient();
+          if (supabase) {
+            const { data: pol } = await supabase
+              .from("politicians")
+              .select("id,slug,name,office,region,party,ballot_number,biography,proposals")
+              .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
+              .maybeSingle();
+            if (pol) {
+              candidateContext = [
+                `Candidato: ${pol.name} (${pol.office})`,
+                `Región: ${pol.region}`,
+                pol.party ? `Partido: ${pol.party}` : "",
+                pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
+                "",
+                "Biografía (extracto):",
+                String(pol.biography || "").slice(0, 1200),
+                "",
+                "Propuestas (extracto):",
+                String(pol.proposals || "").slice(0, 1600),
+              ]
+                .filter(Boolean)
+                .join("\n");
+            }
+          }
+        }
+      } catch {
+        // ignore (keep minimal)
+      }
+
+      const format =
+        content_type === "proposal"
+          ? "Formato: 4–6 bloques cortos con título y 2–3 líneas por bloque."
+          : content_type === "blog"
+            ? "Formato: (1) título sugerido, (2) resumen en 5–7 líneas, (3) esquema con 6–10 bullets."
+            : [
+                "IMPORTANTE: Responde SOLO en JSON válido (sin markdown).",
+                "JSON schema:",
+                "{",
+                '  "base": string,',
+                '  "variants": { "facebook": string, "instagram": string, "x": string },',
+                '  "image_keywords": string[]',
+                "}",
+              ].join("\n");
+
+      const prompt = [
+        "Generación bajo control (admin).",
+        candidateContext ? "" : `CandidateID: ${candidate_id}`,
+        candidateContext,
+        "",
+        `Tipo: ${content_type}`,
+        `Tema: ${topic}`,
+        tone ? `Tono: ${tone}` : "Tono: sobrio y humano",
+        format,
+        "Reglas: verificable, sin inventar datos, sin ataques personales, sin urgencia falsa.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      const model = (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
+      const oa = await callOpenAiOnce({ model, prompt, maxOutputChars: maxOut });
+      if (oa.ok) {
+        textResult = oa.text;
+      } else {
+        lastError = oa.error;
+      }
+    }
   }
 
-  const text = result.text.slice(0, maxOut);
+  if (!textResult) {
+    const status = lastError === "disabled" || lastError === "not_configured" ? 503 : 502;
+    return NextResponse.json({ error: lastError || "upstream_error" }, { status });
+  }
+
+  const text = textResult.slice(0, maxOut);
   const createdAt = new Date().toISOString();
 
   // Phase 2.2: for social content, Marleny returns JSON with base + variants + image_keywords.

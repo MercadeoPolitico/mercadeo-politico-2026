@@ -7,10 +7,17 @@ import { getSiteUrlString } from "@/lib/site";
 
 export const runtime = "nodejs";
 
+function normalizeToken(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1).trim();
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
+}
+
 function requireCronAuth(req: Request): boolean {
-  const secret = process.env.CRON_SECRET;
+  const secret = normalizeToken(process.env.CRON_SECRET);
   if (!secret) return false;
-  const auth = req.headers.get("authorization") ?? "";
+  const auth = normalizeToken(req.headers.get("authorization") ?? "");
   return auth === `Bearer ${secret}`;
 }
 
@@ -108,7 +115,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ candidateId: s
   const slug = slugify(`${pol.slug}-${article?.seendate ?? created_at}-${article?.title ?? ""}`);
 
   // Store draft for admin review.
-  await admin.from("ai_drafts").insert({
+  const { error: draftErr } = await admin.from("ai_drafts").insert({
     candidate_id: pol.id,
     content_type: "blog",
     topic: article?.title ?? `Actualidad: ${regionQuery}`,
@@ -126,13 +133,14 @@ export async function GET(_req: Request, ctx: { params: Promise<{ candidateId: s
     created_at,
     updated_at: created_at,
   });
+  if (draftErr) return NextResponse.json({ ok: false, error: "insert_failed" }, { status: 500 });
 
   // If auto publish is enabled, publish to citizen center and (optionally) forward a social teaser to n8n.
   if (pol.auto_publish_enabled === true) {
     const titleLine = ai.text.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;
     const excerpt = ai.text.split("\n").slice(0, 6).join("\n").slice(0, 420);
 
-    await admin.from("citizen_news_posts").insert({
+    const { error: postErr } = await admin.from("citizen_news_posts").insert({
       candidate_id: pol.id,
       slug,
       title: titleLine.slice(0, 160),
@@ -144,6 +152,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ candidateId: s
       published_at: created_at,
       created_at,
     });
+    if (postErr) return NextResponse.json({ ok: false, error: "publish_failed" }, { status: 500 });
 
     // Teaser for social networks → n8n (if enabled there).
     const publicLink = `${getSiteUrlString()}/centro-informativo#${slug}`;

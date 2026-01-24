@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ContentType, GenerateResponse } from "@/lib/automation/types";
 
 type GenState =
@@ -9,17 +9,66 @@ type GenState =
   | { status: "done"; data: GenerateResponse }
   | { status: "error"; message: string };
 
+type PoliticianOption = {
+  id: string;
+  slug: string;
+  name: string;
+  office: string;
+  region: string;
+  party: string | null;
+};
+
 export function AdminAiPanel() {
   const [contentType, setContentType] = useState<ContentType>("proposal");
   const [topic, setTopic] = useState("");
   const [tone, setTone] = useState("");
   const [candidateId, setCandidateId] = useState("jose-angel-martinez");
+  const [options, setOptions] = useState<PoliticianOption[]>([]);
+  const [optionsState, setOptionsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [state, setState] = useState<GenState>({ status: "idle" });
   const [saveState, setSaveState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [variants, setVariants] = useState<{ facebook: string; instagram: string; x: string } | null>(null);
   const [imageKeywords, setImageKeywords] = useState<string>("");
 
   const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setOptionsState("loading");
+      const res = await fetch("/api/admin/politicians/list", { method: "GET" }).catch(() => null);
+      if (!res || !res.ok) {
+        if (!cancelled) setOptionsState("error");
+        return;
+      }
+      const json = (await res.json().catch(() => null)) as any;
+      const rows = Array.isArray(json?.politicians) ? (json.politicians as any[]) : [];
+      const next = rows
+        .filter((r) => r && typeof r === "object" && typeof r.id === "string")
+        .map((r) => ({
+          id: String(r.id),
+          slug: typeof r.slug === "string" ? r.slug : "",
+          name: typeof r.name === "string" ? r.name : "",
+          office: typeof r.office === "string" ? r.office : "",
+          region: typeof r.region === "string" ? r.region : "",
+          party: typeof r.party === "string" ? r.party : null,
+        })) as PoliticianOption[];
+
+      if (!cancelled) {
+        setOptions(next);
+        setOptionsState("ready");
+        setCandidateId((prev) => {
+          const p = prev.trim();
+          if (p && next.some((o) => o.id === p || o.slug === p)) return prev;
+          return next[0]?.id ?? prev;
+        });
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function generate() {
     if (!canGenerate) return;
@@ -39,7 +88,10 @@ export function AdminAiPanel() {
     });
 
     if (!res.ok) {
-      setState({ status: "error", message: "No fue posible generar el contenido (verifica permisos/configuración)." });
+      const j = (await res.json().catch(() => null)) as any;
+      const err = typeof j?.error === "string" ? j.error : "";
+      const msg = err ? `No fue posible generar el contenido. Motivo: ${err}` : "No fue posible generar el contenido (verifica permisos/configuración).";
+      setState({ status: "error", message: msg });
       return;
     }
 
@@ -96,13 +148,41 @@ export function AdminAiPanel() {
             <label className="text-sm font-medium" htmlFor="candidate">
               Candidate ID
             </label>
-            <input
-              id="candidate"
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-              value={candidateId}
-              onChange={(e) => setCandidateId(e.target.value)}
-            />
-            <p className="text-xs text-muted">Ej.: jose-angel-martinez, eduardo-buitrago</p>
+            {options.length ? (
+              <select
+                id="candidate"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={candidateId}
+                onChange={(e) => setCandidateId(e.target.value)}
+              >
+                {options.map((p) => {
+                  const extra = p.slug && p.slug !== p.id ? ` · slug: ${p.slug}` : "";
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {p.name} · {p.office} · {p.region}
+                      {extra}
+                    </option>
+                  );
+                })}
+              </select>
+            ) : (
+              <input
+                id="candidate"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={candidateId}
+                onChange={(e) => setCandidateId(e.target.value)}
+                placeholder="Ej.: jose-angel-martinez"
+              />
+            )}
+            <p className="text-xs text-muted">
+              {optionsState === "loading"
+                ? "Cargando candidatos…"
+                : optionsState === "error"
+                  ? "No se pudo cargar la lista. Puedes escribir el ID manualmente."
+                  : options.length
+                    ? "Lista cargada (incluye geolocalización)."
+                    : "Ej.: jose-angel-martinez, eduardo-buitrago"}
+            </p>
           </div>
 
           <div className="grid gap-1">

@@ -11,6 +11,18 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+function newsQueryFor(office: string, region: string): string {
+  const off = String(office || "").toLowerCase();
+  const reg = String(region || "").trim();
+
+  // Senado: alcance nacional Colombia.
+  if (off.includes("senado")) return "Colombia seguridad";
+
+  // Cámara: prioriza departamento/territorio; si no hay región, cae a Colombia.
+  if (!reg) return "Colombia seguridad";
+  return `${reg} Colombia seguridad`;
+}
+
 export async function POST(req: Request) {
   await requireAdmin();
 
@@ -33,12 +45,7 @@ export async function POST(req: Request) {
   if (!pol) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (pol.auto_blog_enabled === false) return NextResponse.json({ error: "auto_blog_disabled" }, { status: 409 });
 
-  const regionQuery =
-    pol.region && pol.region.toLowerCase().includes("meta")
-      ? "Meta Colombia Villavicencio"
-      : pol.region && pol.region.toLowerCase().includes("nacional")
-        ? "Colombia"
-        : `${pol.region} Colombia`;
+  const regionQuery = newsQueryFor(pol.office, pol.region);
 
   const article = await fetchTopGdeltArticle(regionQuery);
 
@@ -97,7 +104,7 @@ export async function POST(req: Request) {
     updated_at: created_at,
   });
 
-  if (insErr) return NextResponse.json({ error: "insert_failed" }, { status: 400 });
+  if (insErr) return NextResponse.json({ error: "insert_failed" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 

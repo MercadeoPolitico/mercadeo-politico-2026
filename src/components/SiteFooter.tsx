@@ -30,13 +30,10 @@ export function SiteFooter() {
             aria-label="Marketbrain Technology (abrir en una nueva pestaña)"
           >
             <span className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center">
-              <span className="absolute inset-0 rounded-full bg-cyan-400/25 blur-xl" />
-              <img
-                src="/icon.png"
-                alt="Marleny Owl"
-                width={36}
-                height={36}
-                className="relative h-9 w-9 rounded-full mb-owl-pulse"
+              <span className="absolute inset-0 rounded-full bg-sky-300/25 blur-xl" />
+              <span
+                aria-hidden
+                className="relative h-9 w-9 rounded-full border border-white/20 bg-[linear-gradient(to_bottom,#facc15_0%,#facc15_52%,#2563eb_52%,#2563eb_76%,#ef4444_76%,#ef4444_100%)] soft-pulse"
               />
             </span>
             <span className="leading-snug">

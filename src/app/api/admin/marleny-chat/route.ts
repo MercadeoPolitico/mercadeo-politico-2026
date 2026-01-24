@@ -286,7 +286,7 @@ export async function POST(req: Request) {
     const article = picked.article as any;
     const reply = article?.title && article?.url
       ? [
-          `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
+          `No pude usar Synthetic Intelligence en este momento (motores con fallas o temporalmente inactivos).`,
           `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : `FALTA (${msiHasEndpoint ? "" : "endpoint "}${msiHasKey ? "" : "key"})`.trim()} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
           "",
           `Noticia sugerida para ${pol.name} (${pol.office}, ${pol.region}):`,
@@ -296,7 +296,7 @@ export async function POST(req: Request) {
           `Si quieres, dime: “redacta un borrador alineado a su propuesta” y lo intento de nuevo.`,
         ].join("\n")
       : [
-          `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
+          `No pude usar Synthetic Intelligence en este momento (motores con fallas o temporalmente inactivos).`,
           `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : `FALTA (${msiHasEndpoint ? "" : "endpoint "}${msiHasKey ? "" : "key"})`.trim()} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
           "",
           `Además, no encontré una noticia destacada en este momento para las consultas: ${picked.query}`,

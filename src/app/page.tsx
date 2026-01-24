@@ -8,13 +8,14 @@ export default function Home() {
   const candidates = getCandidates();
   return (
     <div className="relative space-y-14 overflow-hidden">
-      {/* Patriotic ambient backdrop (subtle, no propaganda) */}
+      {/* Patriotic ambient backdrop (glass-forward, brighter, Colombian accents) */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 -top-24 h-[520px] w-[520px] rounded-full bg-amber-400/15 blur-3xl" />
-        <div className="absolute left-1/2 top-[-140px] h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-sky-400/14 blur-3xl" />
-        <div className="absolute -right-24 top-28 h-[520px] w-[520px] rounded-full bg-red-500/12 blur-3xl" />
-        <div className="absolute -bottom-40 left-24 h-[620px] w-[620px] rounded-full bg-emerald-400/10 blur-3xl" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,200,60,.12),transparent_55%),radial-gradient(circle_at_70%_12%,rgba(56,189,248,.12),transparent_55%),radial-gradient(circle_at_85%_55%,rgba(239,68,68,.10),transparent_60%)]" />
+        <div className="absolute -left-24 -top-24 h-[560px] w-[560px] rounded-full bg-amber-300/25 blur-[90px]" />
+        <div className="absolute left-1/2 top-[-180px] h-[640px] w-[640px] -translate-x-1/2 rounded-full bg-sky-300/24 blur-[90px]" />
+        <div className="absolute -right-24 top-24 h-[560px] w-[560px] rounded-full bg-red-400/22 blur-[95px]" />
+        <div className="absolute -bottom-44 left-24 h-[700px] w-[700px] rounded-full bg-emerald-300/14 blur-[110px]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,220,120,.16),transparent_56%),radial-gradient(circle_at_70%_12%,rgba(125,211,252,.16),transparent_56%),radial-gradient(circle_at_86%_55%,rgba(248,113,113,.14),transparent_62%),radial-gradient(circle_at_40%_78%,rgba(52,211,153,.10),transparent_62%)]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/0 to-white/5" />
       </div>
 
       <Section>
@@ -70,18 +71,18 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="glass-card relative overflow-hidden p-8">
-            <div className="absolute inset-0 bg-gradient-to-br from-amber-400/14 via-sky-400/12 to-red-500/12" />
-            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-300/40 via-sky-200/30 to-red-300/40" />
-            <div className="relative flex items-center gap-6">
-              <div className="relative">
-                <span className="absolute -inset-6 rounded-full bg-sky-300/20 blur-2xl" />
-                <span className="absolute -inset-10 rounded-full bg-amber-300/10 blur-3xl" />
-                <img
-                  src="/icon.png"
-                  alt="Marleny Owl Guardian"
-                  className="relative h-28 w-28 rounded-full border border-white/20 object-cover mb-owl-pulse"
-                />
+          <div className="glass-card relative p-8">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(250,204,21,.14),transparent_55%),radial-gradient(circle_at_82%_14%,rgba(56,189,248,.14),transparent_58%),radial-gradient(circle_at_78%_78%,rgba(239,68,68,.12),transparent_62%)]" />
+            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-200/60 via-sky-100/50 to-red-200/60" />
+            <div className="relative flex items-start gap-5">
+              <div className="mt-1 shrink-0">
+                <span className="relative inline-flex h-12 w-12 items-center justify-center">
+                  <span className="absolute -inset-6 rounded-full bg-sky-300/25 blur-2xl" />
+                  <span
+                    aria-hidden
+                    className="relative h-12 w-12 rounded-2xl border border-white/25 bg-[linear-gradient(to_bottom,#facc15_0%,#facc15_52%,#2563eb_52%,#2563eb_76%,#ef4444_76%,#ef4444_100%)] soft-pulse shadow-[0_0_0_1px_rgba(255,255,255,.08)_inset,0_18px_50px_rgba(0,0,0,.22)]"
+                  />
+                </span>
               </div>
               <div className="space-y-2">
                 <p className="text-sm font-semibold">Guía de lectura</p>
@@ -90,23 +91,23 @@ export default function Home() {
                   contexto y fuentes cuando existan.
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-muted">Transparencia</span>
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-muted">Orden</span>
-                  <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-muted">Territorio</span>
+                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-muted">Transparencia</span>
+                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-muted">Orden</span>
+                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-muted">Territorio</span>
                 </div>
               </div>
             </div>
 
             <div className="relative mt-6 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-4">
+              <div className="rounded-3xl border border-white/20 bg-white/10 p-4">
                 <p className="text-sm font-semibold">Prevención</p>
                 <p className="mt-1 text-xs text-muted">Acción temprana para reducir riesgos antes de que escalen.</p>
               </div>
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-4">
+              <div className="rounded-3xl border border-white/20 bg-white/10 p-4">
                 <p className="text-sm font-semibold">Presencia</p>
                 <p className="mt-1 text-xs text-muted">Cercanía institucional y control territorial con legalidad.</p>
               </div>
-              <div className="rounded-3xl border border-white/15 bg-white/5 p-4">
+              <div className="rounded-3xl border border-white/20 bg-white/10 p-4">
                 <p className="text-sm font-semibold">Confianza</p>
                 <p className="mt-1 text-xs text-muted">Mensajes sobrios, verificables y sin manipulación.</p>
               </div>
@@ -231,7 +232,10 @@ export default function Home() {
           <div className="glass-card p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <img src="/icon.png" alt="MarketBrain Owl" className="h-10 w-10 rounded-full border border-white/15 object-cover" />
+                <span
+                  aria-hidden
+                  className="h-10 w-10 rounded-full border border-white/20 bg-[linear-gradient(to_bottom,#facc15_0%,#facc15_52%,#2563eb_52%,#2563eb_76%,#ef4444_76%,#ef4444_100%)] shadow-[0_0_0_1px_rgba(255,255,255,.08)_inset]"
+                />
                 <div className="text-sm">
                   <p className="font-semibold text-foreground">
                     Powered by MarketBrain Technology™ · Marleny AI Holdings LLC (US Wyoming Registered Company)
