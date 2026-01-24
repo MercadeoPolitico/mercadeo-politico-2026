@@ -8,7 +8,8 @@ function allow(req: Request): boolean {
   const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
   if (!apiToken) return false;
-  return headerToken === apiToken;
+  // Defensive: tolerate accidental whitespace/newline in stored env or header.
+  return headerToken.trim() === String(apiToken).trim();
 }
 
 export async function GET(req: Request) {
