@@ -194,7 +194,7 @@ function tryExtractJsonObject(text: string): unknown | null {
 function extractEngineOutput(parsed: unknown): EngineOutput | null {
   if (!parsed || typeof parsed !== "object") return null;
   const p = parsed as Record<string, unknown>;
-  const sentiment = p.sentiment;
+  const sentiment = isSentiment(p.sentiment) ? (p.sentiment as Sentiment) : ("neutral" as Sentiment);
   const seo_keywords = cleanKeywords(p.seo_keywords);
   const master_editorial = typeof p.master_editorial === "string" ? p.master_editorial.trim() : "";
   const pv = p.platform_variants;
@@ -215,7 +215,6 @@ function extractEngineOutput(parsed: unknown): EngineOutput | null {
 
   const image_keywords = cleanKeywords(p.image_keywords);
 
-  if (!isSentiment(sentiment)) return null;
   if (!platform_variants.blog) return null;
   // We strongly prefer SEO keywords, but don't hard-fail engines that return short arrays.
   // We'll backfill minimal keywords downstream if needed.
@@ -264,10 +263,32 @@ function synthesizeVariants(args: {
   };
 }
 
+function ensureCandidateMention(blog: string, candidate: { name: string; ballot_number: string | number | null }): string {
+  const base = String(blog || "").trim();
+  if (!base) return base;
+  const lower = base.toLowerCase();
+  const name = String(candidate.name || "").trim();
+  const bn = candidate.ballot_number ? String(candidate.ballot_number) : "";
+  const hasName = name.length >= 4 ? lower.includes(name.toLowerCase()) : true;
+  const hasBallot = bn ? lower.includes(bn) || lower.includes(`tarjetón ${bn}`.toLowerCase()) : true;
+  if (hasName && hasBallot) return base;
+
+  const title = base.split("\n").find((l) => l.trim())?.trim() ?? "Centro informativo ciudadano";
+  const rest = base.split("\n").slice(1).join("\n").trim();
+  const injected = [
+    title,
+    "",
+    `Enfoque cívico: análisis para ${name}${bn ? ` (Tarjetón ${bn})` : ""}.`,
+    "",
+    rest,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return injected;
+}
+
 function baselineValidText(out: EngineOutput, candidateName: string): boolean {
   const t = `${out.master_editorial}\n${out.platform_variants.blog}`.toLowerCase();
-  const name = candidateName.trim().toLowerCase();
-  if (name.length >= 6 && !t.includes(name)) return false;
   // quick safety: reject obvious violent incitement / extremist calls
   const banned = [/maten\s+a\s+/i, /extermin/i, /limpieza\s+social/i, /golpe\s+de\s+estado/i, /incendiar/i];
   if (banned.some((r) => r.test(t))) return false;
@@ -794,7 +815,7 @@ export async function POST(req: Request) {
       const seo = extractSeoFromText(blogRaw);
       const blog = stripSeoLine(blogRaw);
       const filled = synthesizeVariants({
-        blog,
+        blog: ensureCandidateMention(blog, { name: pol.name, ballot_number: pol.ballot_number }),
         candidate: { name: pol.name, ballot_number: pol.ballot_number },
         seo_keywords: seo,
       });
@@ -806,9 +827,18 @@ export async function POST(req: Request) {
       };
     }
 
+    // Ensure the blog always mentions candidate+ballot somewhere.
+    (data as any).platform_variants = {
+      ...data.platform_variants,
+      blog: ensureCandidateMention(data.platform_variants.blog, { name: pol.name, ballot_number: pol.ballot_number }),
+    };
     if (!baselineValidText(data, pol.name)) return { ok: false, engine: "MSI", ms, error: "bad_response" };
     // Backfill missing fields/variants defensively.
-    const filled = synthesizeVariants({ blog: data.platform_variants.blog, candidate: { name: pol.name, ballot_number: pol.ballot_number }, seo_keywords: data.seo_keywords });
+    const filled = synthesizeVariants({
+      blog: data.platform_variants.blog,
+      candidate: { name: pol.name, ballot_number: pol.ballot_number },
+      seo_keywords: data.seo_keywords,
+    });
     (data as any).seo_keywords = filled.seo_keywords;
     (data as any).master_editorial = data.master_editorial?.trim() ? data.master_editorial : filled.master_editorial;
     (data as any).platform_variants = {
@@ -845,6 +875,10 @@ export async function POST(req: Request) {
       };
     const data = extractEngineOutput(r.data);
     if (!data) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
+    (data as any).platform_variants = {
+      ...data.platform_variants,
+      blog: ensureCandidateMention(data.platform_variants.blog, { name: pol.name, ballot_number: pol.ballot_number }),
+    };
     if (!baselineValidText(data, pol.name)) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
     const filled = synthesizeVariants({ blog: data.platform_variants.blog, candidate: { name: pol.name, ballot_number: pol.ballot_number }, seo_keywords: data.seo_keywords });
     (data as any).seo_keywords = filled.seo_keywords;
