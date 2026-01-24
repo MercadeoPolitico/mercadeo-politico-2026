@@ -6,7 +6,14 @@ export type OpenAiResult<T> =
       ok: false;
       error: "disabled" | "not_configured" | "bad_response" | "upstream_error";
       meta?: {
-        attempts: Array<{ provider: string; host: string | null; ok: boolean; status: number | null; failure: string | null }>;
+        attempts: Array<{
+          provider: string;
+          model: string;
+          host: string | null;
+          ok: boolean;
+          status: number | null;
+          failure: string | null;
+        }>;
       };
     };
 
@@ -14,7 +21,7 @@ type Provider = {
   name: "openai" | "openrouter" | "groq" | "cerebras";
   baseUrl: string;
   apiKey: string;
-  model: string;
+  models: string[];
 };
 
 function normalizeBaseUrl(raw: string): string {
@@ -46,7 +53,7 @@ function providers(): Provider[] {
       name: "openai",
       baseUrl: normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com"),
       apiKey: openAiKey,
-      model: (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim(),
+      models: [(process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim()].filter(Boolean),
     });
   }
 
@@ -57,7 +64,7 @@ function providers(): Provider[] {
       name: "openrouter",
       baseUrl: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api"),
       apiKey: openRouterKey,
-      model: openRouterModel,
+      models: [openRouterModel],
     });
   }
 
@@ -68,7 +75,8 @@ function providers(): Provider[] {
       name: "groq",
       baseUrl: normalizeBaseUrl(process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai"),
       apiKey: groqKey,
-      model: groqModel,
+      // Fallbacks help when GROQ_MODEL is misconfigured.
+      models: Array.from(new Set([groqModel, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"].filter(Boolean))),
     });
   }
 
@@ -79,7 +87,8 @@ function providers(): Provider[] {
       name: "cerebras",
       baseUrl: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL?.trim() || "https://api.cerebras.ai"),
       apiKey: cerebrasKey,
-      model: cerebrasModel,
+      // Fallbacks help when CEREBRAS_MODEL is misconfigured.
+      models: Array.from(new Set([cerebrasModel, "gpt-oss-120b", "llama3.1-8b"].filter(Boolean))),
     });
   }
 
@@ -164,38 +173,40 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
   const ps = providers();
   if (!ps.length) return { ok: false, error: "not_configured" };
 
-  const attempts: Array<{ provider: string; host: string | null; ok: boolean; status: number | null; failure: string | null }> = [];
+  const attempts: Array<{ provider: string; model: string; host: string | null; ok: boolean; status: number | null; failure: string | null }> =
+    [];
 
   for (const p of ps) {
-    const payload: Record<string, unknown> = {
-      model: p.model,
-      temperature: 0.2,
-      messages: [
-        { role: "system", content: args.system },
-        { role: "user", content: args.user },
-      ],
-    };
-    // Ask for JSON output when supported (OpenAI). Some OpenAI-compatible providers reject this field.
-    if (p.name === "openai") payload.response_format = { type: "json_object" };
+    for (const model of p.models) {
+      const payload: Record<string, unknown> = {
+        model,
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: args.system },
+          { role: "user", content: args.user },
+        ],
+      };
+      // Ask for JSON output when supported (OpenAI). Some OpenAI-compatible providers reject this field.
+      if (p.name === "openai") payload.response_format = { type: "json_object" };
 
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const r = await postJson(p, "/v1/chat/completions", payload);
-      if (!r.ok) {
-        attempts.push({ provider: p.name, host: hostOf(p.baseUrl), ok: false, status: r.status, failure: r.failure });
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await postJson(p, "/v1/chat/completions", payload);
+        if (!r.ok) {
+          attempts.push({ provider: p.name, model, host: hostOf(p.baseUrl), ok: false, status: r.status, failure: r.failure });
+          continue;
+        }
+        attempts.push({ provider: p.name, model, host: hostOf(p.baseUrl), ok: true, status: r.status, failure: null });
+
+        const text = pickTextCompletion(r.data);
+        if (!text) continue;
+        const parsed = tryParseJsonObject<T>(text);
+        if (parsed) return { ok: true, data: parsed };
+        // provider returned non-JSON; try next model/provider
+        continue;
+      } catch {
         continue;
       }
-      attempts.push({ provider: p.name, host: hostOf(p.baseUrl), ok: true, status: r.status, failure: null });
-
-      const text = pickTextCompletion(r.data);
-      if (!text) continue;
-      const parsed = tryParseJsonObject<T>(text);
-      if (parsed) return { ok: true, data: parsed };
-      // provider returned non-JSON; try next
-      continue;
-    } catch {
-      // try next provider
-      continue;
     }
   }
 

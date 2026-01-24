@@ -78,7 +78,12 @@ async function callVolumeOnce(args: {
   | { ok: true; text: string; attempts: Array<{ provider: string; host: string | null; status: number | null; ok: boolean; failure: string | null }> }
   | { ok: false; error: "not_configured" | "upstream_error" | "bad_response"; attempts: Array<{ provider: string; host: string | null; status: number | null; ok: boolean; failure: string | null }> }
 > {
-  const ps: Array<{ provider: "openai" | "openrouter" | "groq" | "cerebras"; base: string; apiKey: string; model: string }> = [];
+  const ps: Array<{
+    provider: "openai" | "openrouter" | "groq" | "cerebras";
+    base: string;
+    apiKey: string;
+    models: string[];
+  }> = [];
   const attempts: Array<{ provider: string; host: string | null; status: number | null; ok: boolean; failure: string | null }> = [];
 
   const openAiKey = normalizeSecret(process.env.OPENAI_API_KEY);
@@ -87,7 +92,7 @@ async function callVolumeOnce(args: {
       provider: "openai",
       base: normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com"),
       apiKey: openAiKey,
-      model: args.model,
+      models: [args.model],
     });
   }
 
@@ -98,7 +103,7 @@ async function callVolumeOnce(args: {
       provider: "openrouter",
       base: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api"),
       apiKey: openRouterKey,
-      model: openRouterModel,
+      models: [openRouterModel],
     });
   }
 
@@ -109,7 +114,7 @@ async function callVolumeOnce(args: {
       provider: "groq",
       base: normalizeBaseUrl(process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai"),
       apiKey: groqKey,
-      model: groqModel,
+      models: Array.from(new Set([groqModel, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"].filter(Boolean))),
     });
   }
 
@@ -120,13 +125,14 @@ async function callVolumeOnce(args: {
       provider: "cerebras",
       base: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL?.trim() || "https://api.cerebras.ai"),
       apiKey: cerebrasKey,
-      model: cerebrasModel,
+      models: Array.from(new Set([cerebrasModel, "gpt-oss-120b", "llama3.1-8b"].filter(Boolean))),
     });
   }
 
   if (!ps.length) return { ok: false, error: "not_configured", attempts };
 
   for (const p of ps) {
+    for (const model of p.models) {
     // eslint-disable-next-line no-await-in-loop
     let resp: Response | null = null;
     try {
@@ -138,7 +144,7 @@ async function callVolumeOnce(args: {
           authorization: `Bearer ${p.apiKey}`,
         },
         body: JSON.stringify({
-          model: p.model,
+          model,
           temperature: 0.2,
           messages: [
             {
@@ -168,6 +174,7 @@ async function callVolumeOnce(args: {
     const text = typeof content === "string" ? content.trim() : "";
     if (!text) continue;
     return { ok: true, text: text.slice(0, args.maxOutputChars), attempts };
+    }
   }
 
   return { ok: false, error: "upstream_error", attempts };

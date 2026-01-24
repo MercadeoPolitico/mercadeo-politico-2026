@@ -111,13 +111,13 @@ async function callMsiChat(args: { candidateId: string; prompt: string }): Promi
 async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
   const started = nowMs();
 
-  const ps: Array<{ base: string; apiKey: string; model: string }> = [];
+  const ps: Array<{ base: string; apiKey: string; models: string[] }> = [];
   const openAiKey = (process.env.OPENAI_API_KEY ?? "").trim();
   if (openAiKey) {
     ps.push({
       base: normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com"),
       apiKey: openAiKey,
-      model: (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim(),
+      models: [(process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim()],
     });
   }
 
@@ -127,7 +127,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
     ps.push({
       base: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api"),
       apiKey: openRouterKey,
-      model: openRouterModel,
+      models: [openRouterModel],
     });
   }
 
@@ -137,7 +137,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
     ps.push({
       base: normalizeBaseUrl(process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai"),
       apiKey: groqKey,
-      model: groqModel,
+      models: Array.from(new Set([groqModel, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"].filter(Boolean))),
     });
   }
 
@@ -147,7 +147,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
     ps.push({
       base: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL?.trim() || "https://api.cerebras.ai"),
       apiKey: cerebrasKey,
-      model: cerebrasModel,
+      models: Array.from(new Set([cerebrasModel, "gpt-oss-120b", "llama3.1-8b"].filter(Boolean))),
     });
   }
 
@@ -156,6 +156,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
   let lastError: EngineError = "upstream_error";
 
   for (const p of ps) {
+    for (const model of p.models) {
     // eslint-disable-next-line no-await-in-loop
     const wrapped = await withTimeout(
       fetch(`${p.base}/v1/chat/completions`, {
@@ -165,7 +166,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
           authorization: `Bearer ${p.apiKey}`,
         },
         body: JSON.stringify({
-          model: p.model,
+          model,
           temperature: 0.2,
           messages: [
             {
@@ -202,6 +203,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
       continue;
     }
     return { ok: true, engine: "OpenAI", ms: nowMs() - started, reply };
+    }
   }
 
   return { ok: false, engine: "OpenAI", ms: nowMs() - started, error: lastError };
