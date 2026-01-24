@@ -1,5 +1,5 @@
 import type { Candidate } from "./types";
-import { eduardoBuitrago } from "@/content/candidates/eduardo-buitrago";
+import { eduardBuitrago } from "@/content/candidates/eduard-buitrago";
 import { joseAngelMartinez } from "@/content/candidates/jose-angel-martinez";
 
 /**
@@ -12,7 +12,7 @@ import { joseAngelMartinez } from "@/content/candidates/jose-angel-martinez";
 export function getCandidates(): Candidate[] {
   return [
     // Deterministic order: Senate first, then House.
-    eduardoBuitrago,
+    eduardBuitrago,
     joseAngelMartinez,
   ];
 }
