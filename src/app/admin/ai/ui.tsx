@@ -90,7 +90,18 @@ export function AdminAiPanel() {
     if (!res.ok) {
       const j = (await res.json().catch(() => null)) as any;
       const err = typeof j?.error === "string" ? j.error : "";
-      const msg = err ? `No fue posible generar el contenido. Motivo: ${err}` : "No fue posible generar el contenido (verifica permisos/configuración).";
+      const meta = j?.meta;
+      const engines =
+        meta && typeof meta === "object" && meta.engines && typeof meta.engines === "object"
+          ? meta.engines
+          : null;
+      const hint =
+        engines && (typeof engines.Actuation === "string" || typeof engines.Volume === "string")
+          ? `\nDiagnóstico (safe): Actuation=${String((engines as any).Actuation)} · Volume=${String((engines as any).Volume)}`
+          : "";
+      const msg = err
+        ? `No fue posible generar el contenido. Motivo: ${err}${hint}`
+        : `No fue posible generar el contenido (verifica permisos/configuración).${hint}`;
       setState({ status: "error", message: msg });
       return;
     }

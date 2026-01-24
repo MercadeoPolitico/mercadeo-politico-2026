@@ -115,6 +115,22 @@ export async function POST(req: Request) {
   // Hard cap at output level too (cost + determinism)
   const maxOut = maxOutputCharsFor(content_type);
 
+  const diag = {
+    attempted: { MSI: false, OpenAI: false },
+    MSI: { ok: false as boolean, error: null as string | null },
+    OpenAI: { ok: false as boolean, error: null as string | null },
+    configured: { Actuation: false, Volume: false },
+    source_engine: null as "MSI" | "OpenAI" | null,
+  };
+
+  // Safe config flags (no secrets)
+  diag.configured.Actuation = Boolean(
+    (process.env.MARLENY_AI_ENDPOINT || process.env.MARLENY_ENDPOINT || process.env.MARLENY_API_URL) &&
+      (process.env.MARLENY_AI_API_KEY || process.env.MARLENY_API_KEY || process.env.MARLENY_TOKEN),
+  );
+  diag.configured.Volume = hasOpenAiConfig();
+
+  diag.attempted.MSI = true;
   const msi = await callMarlenyAI({
     candidateId: candidate_id,
     contentType: content_type,
@@ -127,38 +143,41 @@ export async function POST(req: Request) {
 
   if (msi.ok) {
     textResult = msi.text;
+    diag.MSI.ok = true;
+    diag.source_engine = "MSI";
   } else {
     lastError = msi.error;
+    diag.MSI.ok = false;
+    diag.MSI.error = msi.error;
     // Failover to OpenAI when configured.
     if (hasOpenAiConfig()) {
+      diag.attempted.OpenAI = true;
       let candidateContext = "";
       try {
-        // Best-effort: if admin session exists, enrich with candidate bio/proposals.
-        const adminOk = await isAdminSession();
-        if (adminOk) {
-          const supabase = await createSupabaseServerClient();
-          if (supabase) {
-            const { data: pol } = await supabase
-              .from("politicians")
-              .select("id,slug,name,office,region,party,ballot_number,biography,proposals")
-              .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
-              .maybeSingle();
-            if (pol) {
-              candidateContext = [
-                `Candidato: ${pol.name} (${pol.office})`,
-                `Región: ${pol.region}`,
-                pol.party ? `Partido: ${pol.party}` : "",
-                pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
-                "",
-                "Biografía (extracto):",
-                String(pol.biography || "").slice(0, 1200),
-                "",
-                "Propuestas (extracto):",
-                String(pol.proposals || "").slice(0, 1600),
-              ]
-                .filter(Boolean)
-                .join("\n");
-            }
+        // Best-effort: enrich with candidate bio/proposals using admin client (service role).
+        // This endpoint is token-only server-to-server, so service-role is safe and avoids cookie dependency.
+        const supabase = await createSupabaseServerClient();
+        if (supabase) {
+          const { data: pol } = await supabase
+            .from("politicians")
+            .select("id,slug,name,office,region,party,ballot_number,biography,proposals")
+            .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
+            .maybeSingle();
+          if (pol) {
+            candidateContext = [
+              `Candidato: ${pol.name} (${pol.office})`,
+              `Región: ${pol.region}`,
+              pol.party ? `Partido: ${pol.party}` : "",
+              pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
+              "",
+              "Biografía (extracto):",
+              String(pol.biography || "").slice(0, 1200),
+              "",
+              "Propuestas (extracto):",
+              String(pol.proposals || "").slice(0, 1600),
+            ]
+              .filter(Boolean)
+              .join("\n");
           }
         }
       } catch {
@@ -198,15 +217,34 @@ export async function POST(req: Request) {
       const oa = await callOpenAiOnce({ model, prompt, maxOutputChars: maxOut });
       if (oa.ok) {
         textResult = oa.text;
+        diag.OpenAI.ok = true;
+        diag.source_engine = "OpenAI";
       } else {
         lastError = oa.error;
+        diag.OpenAI.ok = false;
+        diag.OpenAI.error = oa.error;
       }
     }
   }
 
   if (!textResult) {
     const status = lastError === "disabled" || lastError === "not_configured" ? 503 : 502;
-    return NextResponse.json({ error: lastError || "upstream_error" }, { status });
+    return NextResponse.json(
+      {
+        error: lastError || "upstream_error",
+        meta: {
+          source_engine: diag.source_engine,
+          engines: {
+            Actuation: diag.attempted.MSI ? (diag.MSI.ok ? "OK" : diag.MSI.error) : "not_attempted",
+            Volume: diag.attempted.OpenAI ? (diag.OpenAI.ok ? "OK" : diag.OpenAI.error) : "not_attempted",
+          },
+          configured: diag.configured,
+          note:
+            "Este endpoint es server-to-server. El panel admin usa wrappers /api/admin/automation/* (sin exponer secretos).",
+        },
+      },
+      { status },
+    );
   }
 
   const text = textResult.slice(0, maxOut);
