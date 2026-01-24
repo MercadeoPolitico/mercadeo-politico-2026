@@ -24,6 +24,18 @@ function slugify(input: string): string {
   return base.length ? base.slice(0, 64) : `post-${Date.now()}`;
 }
 
+function newsQueryFor(office: string, region: string): string {
+  const off = String(office || "").toLowerCase();
+  const reg = String(region || "").trim();
+
+  // Senado: alcance nacional Colombia (internacional solo si GDELT lo rankea como relevante).
+  if (off.includes("senado")) return "Colombia seguridad";
+
+  // Cámara: prioriza departamento/territorio; si no hay región, cae a Colombia.
+  if (!reg) return "Colombia seguridad";
+  return `${reg} Colombia seguridad`;
+}
+
 export async function GET(_req: Request, ctx: { params: Promise<{ candidateId: string }> }) {
   const req = _req;
   if (!requireCronAuth(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -43,12 +55,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ candidateId: s
   if (!pol) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (pol.auto_blog_enabled === false) return NextResponse.json({ ok: true, skipped: true });
 
-  const regionQuery =
-    pol.region && pol.region.toLowerCase().includes("meta")
-      ? "Meta Colombia Villavicencio"
-      : pol.region && pol.region.toLowerCase().includes("nacional")
-        ? "Colombia"
-        : `${pol.region} Colombia`;
+  const regionQuery = newsQueryFor(pol.office, pol.region);
 
   const article = await fetchTopGdeltArticle(regionQuery);
   const { data: lastPublished } = await admin

@@ -110,3 +110,22 @@ export async function PATCH(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
+export async function DELETE(req: Request) {
+  if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+
+  const body = await readJsonBodyWithLimit(req);
+  if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
+  if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+
+  const b = body.data as Record<string, unknown>;
+  const id = typeof b.id === "string" ? b.id.trim() : "";
+  if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
+
+  const { error } = await supabase.from("ai_drafts").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
+

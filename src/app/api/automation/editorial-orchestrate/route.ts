@@ -42,10 +42,11 @@ function newsQueryFor(office: string, region: string): string {
   const off = office.toLowerCase();
   if (off.includes("senado")) {
     // National scope: Colombia; allow international only if it surfaces naturally as high relevance.
-    return `Colombia ${region && region !== "Colombia" ? region : ""} seguridad`;
+    return "Colombia seguridad";
   }
   // Cámara: prioritize territory (Meta, etc). Allow national if it impacts the region (GDELT ranking helps).
-  return `${region} Colombia seguridad`;
+  const reg = String(region ?? "").trim();
+  return reg ? `${reg} Colombia seguridad` : "Colombia seguridad";
 }
 
 type Sentiment = "positive" | "negative" | "neutral";

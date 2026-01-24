@@ -15,6 +15,7 @@ type Draft = {
     instagram: string;
     x: string;
   };
+  metadata?: Record<string, unknown> | null;
   status: string;
   reviewer_notes: string | null;
   rotation_window_days: number | null;
@@ -159,6 +160,54 @@ export function AdminContentPanel() {
     if (!res.ok) return false;
     await refresh();
     return true;
+  }
+
+  async function deleteDraft(draft: Draft) {
+    const ok = window.confirm(
+      "Vas a ELIMINAR este borrador. Esta acción no se puede deshacer. ¿Deseas continuar?"
+    );
+    if (!ok) return;
+
+    const res = await fetch("/api/admin/drafts", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: draft.id }),
+    });
+    if (!res.ok) return;
+    await refresh();
+    setSelected(null);
+  }
+
+  function getPublishedRef(draft: Draft): { post_id: string | null; slug: string | null } {
+    const meta = (draft.metadata ?? null) as Record<string, unknown> | null;
+    const post_id = meta && typeof meta.published_post_id === "string" ? meta.published_post_id : null;
+    const slug = meta && typeof meta.published_slug === "string" ? meta.published_slug : null;
+    return { post_id, slug };
+  }
+
+  async function managePublishedPost(draft: Draft, action: "archive" | "delete") {
+    const ref = getPublishedRef(draft);
+    if (!ref.post_id && !ref.slug) return;
+
+    const msg =
+      action === "archive"
+        ? "Vas a DESPUBLICAR esta noticia del Centro Informativo (ya no será visible al público). ¿Continuar?"
+        : "Vas a ELIMINAR definitivamente esta noticia del Centro Informativo. Esta acción no se puede deshacer. ¿Continuar?";
+    const ok = window.confirm(msg);
+    if (!ok) return;
+
+    const res = await fetch("/api/admin/news/manage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action,
+        draft_id: draft.id,
+        post_id: ref.post_id ?? undefined,
+        slug: ref.slug ?? undefined,
+      }),
+    });
+    if (!res.ok) return;
+    await refresh();
   }
 
   async function sendToN8n(draft: Draft) {
@@ -410,6 +459,9 @@ export function AdminContentPanel() {
                 <button className="glass-button" type="button" onClick={() => setSelected(null)}>
                   Cerrar
                 </button>
+                <button className="glass-button" type="button" onClick={() => deleteDraft(selected)}>
+                  Eliminar borrador
+                </button>
                 <button
                   className="glass-button"
                   type="button"
@@ -447,6 +499,36 @@ export function AdminContentPanel() {
             </div>
 
             <div className="mt-4 grid gap-3">
+              {(() => {
+                const ref = getPublishedRef(selected);
+                if (!ref.slug && !ref.post_id) return null;
+                return (
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <p className="text-sm font-semibold">Publicación (Centro Informativo)</p>
+                    <p className="mt-1 text-xs text-muted">
+                      {ref.slug ? (
+                        <a className="underline" href={`/centro-informativo#${ref.slug}`} target="_blank" rel="noreferrer">
+                          Abrir publicación pública
+                        </a>
+                      ) : (
+                        <span>ID: {ref.post_id}</span>
+                      )}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button className="glass-button" type="button" onClick={() => managePublishedPost(selected, "archive")}>
+                        Despublicar
+                      </button>
+                      <button className="glass-button" type="button" onClick={() => managePublishedPost(selected, "delete")}>
+                        Eliminar publicación
+                      </button>
+                    </div>
+                    <p className="mt-2 text-xs text-muted">
+                      “Despublicar” la oculta al público. “Eliminar publicación” la borra definitivamente.
+                    </p>
+                  </div>
+                );
+              })()}
+
               <details className="rounded-xl border border-border bg-background p-4">
                 <summary className="cursor-pointer text-sm font-semibold">Destino de redes (admin)</summary>
                 <p className="mt-2 text-xs text-muted">

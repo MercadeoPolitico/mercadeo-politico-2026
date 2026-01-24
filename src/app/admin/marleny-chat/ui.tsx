@@ -1,13 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 const DEFAULT_CANDIDATE = "jose-angel-martinez";
 
+type PoliticianOption = {
+  id: string;
+  slug: string;
+  name: string;
+  office: string;
+  region: string;
+  party: string | null;
+};
+
 export function MarlenyChatClient() {
   const [candidateId, setCandidateId] = useState(DEFAULT_CANDIDATE);
+  const [options, setOptions] = useState<PoliticianOption[]>([]);
+  const [optionsState, setOptionsState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
@@ -19,6 +30,39 @@ export function MarlenyChatClient() {
   const [loading, setLoading] = useState(false);
 
   const canSend = useMemo(() => input.trim().length > 0 && candidateId.trim().length > 0 && !loading, [input, candidateId, loading]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setOptionsState("loading");
+      const res = await fetch("/api/admin/politicians/list", { method: "GET" }).catch(() => null);
+      if (!res || !res.ok) {
+        if (!cancelled) setOptionsState("error");
+        return;
+      }
+      const json = (await res.json().catch(() => null)) as any;
+      const rows = Array.isArray(json?.politicians) ? (json.politicians as any[]) : [];
+      const next = rows
+        .filter((r) => r && typeof r === "object" && typeof r.id === "string")
+        .map((r) => ({
+          id: String(r.id),
+          slug: typeof r.slug === "string" ? r.slug : "",
+          name: typeof r.name === "string" ? r.name : "",
+          office: typeof r.office === "string" ? r.office : "",
+          region: typeof r.region === "string" ? r.region : "",
+          party: typeof r.party === "string" ? r.party : null,
+        })) as PoliticianOption[];
+
+      if (!cancelled) {
+        setOptions(next);
+        setOptionsState("ready");
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function send() {
     if (!canSend) return;
@@ -37,7 +81,22 @@ export function MarlenyChatClient() {
 
     setLoading(false);
     if (!resp.ok) {
-      setMessages((prev) => [...prev, { role: "assistant", content: "No fue posible responder (verifica Marleny SI y permisos)." }]);
+      const j = (await resp.json().catch(() => null)) as any;
+      const reason =
+        typeof j?.error === "string"
+          ? j.error === "unauthorized"
+            ? "Sesión no detectada. Inicia sesión de nuevo."
+            : j.error
+          : null;
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: reason
+            ? `No fue posible responder.\nMotivo: ${reason}`
+            : "No fue posible responder (verifica sesión y configuración).",
+        },
+      ]);
       return;
     }
 
@@ -55,9 +114,23 @@ export function MarlenyChatClient() {
             className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
             value={candidateId}
             onChange={(e) => setCandidateId(e.target.value)}
-            placeholder="jose-angel-martinez"
+            placeholder="Selecciona o escribe…"
+            list="mp26-politicians"
           />
-          <p className="text-xs text-muted">Esto guía el contexto del chat. No se guarda historial.</p>
+          <datalist id="mp26-politicians">
+            {options.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {p.office} · {p.region}
+              </option>
+            ))}
+          </datalist>
+          <p className="text-xs text-muted">
+            {optionsState === "loading"
+              ? "Cargando candidatos…"
+              : optionsState === "error"
+                ? "No se pudo cargar la lista. Puedes escribir el ID manualmente."
+                : "Empieza a escribir y selecciona de la lista (autocompletado). No se guarda historial."}
+          </p>
         </div>
       </div>
 

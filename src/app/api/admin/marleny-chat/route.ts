@@ -30,6 +30,12 @@ function nowMs(): number {
   return Date.now();
 }
 
+function normalizeBaseUrl(raw: string): string {
+  const base = (raw || "https://api.openai.com").trim().replace(/\/+$/, "");
+  // Many users accidentally set OPENAI_BASE_URL to ".../v1". Normalize to host root.
+  return base.endsWith("/v1") ? base.slice(0, -3) : base;
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<{ ok: true; value: T } | { ok: false; error: "timeout" }> {
   return new Promise((resolve) => {
     const t = setTimeout(() => resolve({ ok: false, error: "timeout" }), ms);
@@ -63,7 +69,10 @@ function pickEnv(nameA: string, nameB: string): string | null {
 
 async function callMsiChat(args: { candidateId: string; prompt: string }): Promise<EngineResult> {
   const started = nowMs();
-  const endpoint = pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") ?? pickEnv("MARLENY_API_URL", "MARLENY_API_URL");
+  const endpoint =
+    pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") ??
+    pickEnv("MARLENY_API_URL", "MARLENY_URL") ??
+    pickEnv("MARLENY_BASE_URL", "MARLENY_HOST");
   const apiKey = pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY");
   if (!endpoint || !apiKey) return { ok: false, engine: "MSI", ms: nowMs() - started, error: "not_configured" };
 
@@ -101,7 +110,7 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
   const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
   if (!apiKey) return { ok: false, engine: "OpenAI", ms: nowMs() - started, error: "not_configured" };
 
-  const base = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com").replace(/\/+$/, "");
+  const base = normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com");
   const model = (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
 
   const wrapped = await withTimeout(
@@ -144,15 +153,30 @@ async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
 
 function newsQueryFor(office: string, region: string): string {
   const off = office.toLowerCase();
-  if (off.includes("senado")) return `Colombia seguridad`;
-  return `${region} Colombia seguridad`;
+  if (off.includes("senado")) return "Colombia seguridad";
+  const reg = String(region ?? "").trim();
+  return reg ? `${reg} Colombia seguridad` : "Colombia seguridad";
+}
+
+function normalizeRegionForNews(region: string): { region: string; cityHint: string | null } {
+  const r = String(region ?? "").trim();
+  if (!r) return { region: "Colombia", cityHint: null };
+  const low = r.toLowerCase();
+  // Avoid “Meta” ambiguity (Facebook/brand). Use explicit Dept + city hint.
+  if (low === "meta" || low.includes("departamento del meta") || low.includes("meta (")) {
+    return { region: "Departamento del Meta", cityHint: "Villavicencio" };
+  }
+  if (low.includes("colombia") || low.includes("nacional")) return { region: "Colombia", cityHint: null };
+  return { region: r, cityHint: null };
 }
 
 async function pickTopNewsFor(office: string, region: string) {
-  const regionTrim = (region || "").trim();
+  const norm = normalizeRegionForNews(region);
+  const regionTrim = norm.region;
+  const city = norm.cityHint;
   const queries = [
-    `${regionTrim} Villavicencio seguridad`,
-    `${regionTrim} orden público`,
+    city ? `${regionTrim} ${city} Colombia seguridad` : `${regionTrim} Colombia seguridad`,
+    city ? `${regionTrim} ${city} orden público` : `${regionTrim} orden público`,
     `${regionTrim} extorsión`,
     `${regionTrim} vías terciarias`,
     `${regionTrim} economía`,
@@ -224,30 +248,38 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
-  // Dual-engine arbiter (parallel): MSI first-valid wins, otherwise OpenAI.
+  // Dual-engine arbiter (parallel), but OpenAI is preferred (user asked OpenAI first if needed).
   const msiP = callMsiChat({ candidateId: pol.id, prompt });
   const oaP = callOpenAiChat({ prompt });
 
-  const pending: Array<Promise<EngineResult>> = [msiP, oaP];
   const results: Record<EngineName, EngineResult | null> = { MSI: null, OpenAI: null };
-  let winner: (EngineResult & { ok: true }) | null = null;
 
-  while (pending.length) {
+  // Prefer OpenAI: await OA first; if it fails, try MSI; otherwise fallback.
+  // eslint-disable-next-line no-await-in-loop
+  const oa = await oaP;
+  results.OpenAI = oa;
+  let winner: (EngineResult & { ok: true }) | null = oa.ok ? (oa as any) : null;
+
+  if (!winner) {
     // eslint-disable-next-line no-await-in-loop
-    const r = await Promise.race(pending);
-    results[r.engine] = r;
-    const idx = pending.findIndex((p) => p === (r.engine === "MSI" ? msiP : oaP));
-    if (idx >= 0) pending.splice(idx, 1);
-    if (r.ok && !winner) {
-      winner = r as any;
-      break;
-    }
+    const msi = await msiP;
+    results.MSI = msi;
+    if (msi.ok) winner = msi as any;
+  } else {
+    // We still want MSI diagnostics without blocking too long.
+    void msiP.then((msi) => {
+      results.MSI = msi;
+    });
   }
 
   if (!winner) {
     // Continuity fallback (non-AI): still give a useful answer instead of "nada".
     // This keeps the admin governance surface operational even if both engines are down.
-    const msiConfigured = Boolean(pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") && pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY"));
+    const msiHasEndpoint = Boolean(
+      pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") || pickEnv("MARLENY_API_URL", "MARLENY_URL") || pickEnv("MARLENY_BASE_URL", "MARLENY_HOST")
+    );
+    const msiHasKey = Boolean(pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY"));
+    const msiConfigured = msiHasEndpoint && msiHasKey;
     const openAiConfigured = Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim().length);
 
     const picked = await pickTopNewsFor(pol.office, pol.region);
@@ -255,7 +287,7 @@ export async function POST(req: Request) {
     const reply = article?.title && article?.url
       ? [
           `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
-          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : "FALTA"} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
+          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : `FALTA (${msiHasEndpoint ? "" : "endpoint "}${msiHasKey ? "" : "key"})`.trim()} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
           "",
           `Noticia sugerida para ${pol.name} (${pol.office}, ${pol.region}):`,
           `- Titular: ${article.title}`,
@@ -265,7 +297,7 @@ export async function POST(req: Request) {
         ].join("\n")
       : [
           `No pude usar Synthetic Intelligence en este momento (motores inactivos o sin configuración).`,
-          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : "FALTA"} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
+          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : `FALTA (${msiHasEndpoint ? "" : "endpoint "}${msiHasKey ? "" : "key"})`.trim()} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
           "",
           `Además, no encontré una noticia destacada en este momento para las consultas: ${picked.query}`,
           "Intenta de nuevo en 5–10 minutos o pega un enlace de noticia aquí para que lo use como input.",
@@ -294,7 +326,7 @@ export async function POST(req: Request) {
         ? "msi_timeout"
         : results.MSI && !results.MSI.ok
           ? "msi_error"
-          : "openai_faster";
+          : "openai_preferred";
 
   return NextResponse.json({
     ok: true,
