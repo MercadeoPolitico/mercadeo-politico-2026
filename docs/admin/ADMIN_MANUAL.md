@@ -62,6 +62,79 @@ Depende de lo que esté configurado en n8n, pero el sistema ya maneja el concept
 - `facebook`, `instagram`, `threads`, `tiktok`, `x`, `youtube`
 - Se puede extender a otras redes si n8n tiene nodo/credencial.
 
+### Checklist: cómo conectar redes en n8n (paso a paso)
+**Idea clave**: el Admin Panel decide *qué* y *a qué red* enviar; **n8n** guarda credenciales y ejecuta la publicación.
+
+#### A) Preparación (una sola vez)
+1. Entra a tu n8n (Railway): `https://n8n-production-1504.up.railway.app`
+2. Importa el workflow maestro si aún no lo hiciste:
+   - Archivo: `docs/automation/n8n-master-editorial-orchestrator.json`
+3. Verifica el webhook de recepción (publicación):
+   - El backend envía a `WEBHOOK_URL/N8N_WEBHOOK_URL` con header `x-n8n-webhook-token`.
+   - En n8n, el Webhook debe validar ese token (o usar el header como “shared secret”).
+
+#### B) Conectar cada red (credenciales)
+En n8n ve a **Credentials** → **New**, y crea las credenciales por red (según disponibilidad en tu n8n).
+
+- **Facebook (Pages)**:
+  - Recomendado: nodo Facebook/Graph (o HTTP Request a Graph API).
+  - Necesitas: App de Meta + permisos para publicar en Page + Page Access Token.
+  - Publicación típica: post en Page (texto + link al `Centro Informativo Ciudadano`).
+
+- **Instagram (Business/Creator)**:
+  - Recomendado: Instagram Graph API (requiere cuenta Business/Creator conectada a Page).
+  - Flujo típico: crear “media container” → publicar.
+  - Nota: IG no publica “solo texto” como X; requiere media o carrusel.
+
+- **X (Twitter)**:
+  - Recomendado: nodo X/Twitter (o HTTP Request API v2).
+  - Necesitas: App + OAuth (según el plan de X).
+  - Respeta 280 caracteres o mini-hilo (si tu workflow lo implementa).
+
+- **Threads**:
+  - Si tu n8n no trae nodo: usar **HTTP Request** al API de Threads (Meta).
+  - Requiere: credenciales Meta/Threads y permisos correspondientes.
+  - Si no está disponible, puedes degradar a “publicar en Instagram” (opción común).
+
+- **Telegram**:
+  - Recomendado: nodo Telegram.
+  - Necesitas: Bot token + Chat ID / canal.
+  - Ideal para “canal oficial” y grupos comunitarios.
+
+- **WhatsApp**:
+  - Recomendado: WhatsApp Business Cloud API vía **HTTP Request**.
+  - Nota: WhatsApp no es “red pública” en el mismo sentido; es mensajería. Úsalo para listas/broadcast autorizadas.
+
+- **YouTube**:
+  - Recomendado: nodo YouTube (para subir video o publicar en Community si aplica).
+  - Para “post de texto”, normalmente se usa **Community** (si el canal la tiene habilitada).
+
+- **LinkedIn**:
+  - Recomendado: nodo LinkedIn (o HTTP Request).
+  - Útil para audiencia institucional y “programa/gestión”.
+
+- **Reddit**:
+  - Recomendado: nodo Reddit (o HTTP Request).
+  - Útil para publicaciones “tipo foro” con enfoque analítico.
+
+#### C) Regla de gobierno (muy importante)
+1. El admin **aprueba** el contenido en `/admin/content`.
+2. Luego el admin puede:
+   - **Publicar a redes (n8n)** desde `/admin/content` (elige redes y envía), o
+   - Crear una **publicación** en el workspace del candidato y enviarla a automatización.
+3. n8n debe publicar SOLO si:
+   - recibe un `platform` válido
+   - el token de webhook es válido
+   - hay credenciales configuradas para esa red
+
+#### D) Prueba rápida (recomendada)
+1. En `/admin/content`, abre un borrador `approved`.
+2. Marca 1 red (ej. `x`) y presiona **“Publicar a redes (n8n)”**.
+3. En n8n, revisa el Execution log del webhook y confirma:
+   - el payload llegó
+   - se seleccionó el branch correcto por `platform`
+   - la red publicó (o quedó registrado el error del conector)
+
 ## 7) Auto-publicación (cuando está habilitada)
 Si activas **Auto-publicación** en el perfil del candidato:
 - La automatización puede crear/publicar contenido sin aprobación manual (según workflow).
