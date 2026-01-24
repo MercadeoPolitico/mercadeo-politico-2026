@@ -77,7 +77,14 @@ type EngineName = "MSI" | "OpenAI";
 
 type EngineResult =
   | { ok: true; engine: EngineName; ms: number; data: EngineOutput; raw: string }
-  | { ok: false; engine: EngineName; ms: number; error: "timeout" | "disabled" | "not_configured" | "bad_response" | "upstream_error" | "failed" };
+  | {
+      ok: false;
+      engine: EngineName;
+      ms: number;
+      error: "timeout" | "disabled" | "not_configured" | "bad_response" | "upstream_error" | "failed";
+      // Safe, optional diagnostics (no secrets): providers attempted, http status, host.
+      meta?: unknown;
+    };
 
 function nowMs(): number {
   return Date.now();
@@ -385,7 +392,12 @@ export async function POST(req: Request) {
     const ms = nowMs() - started;
     if (!wrapped.ok) return { ok: false, engine: "MSI", ms, error: "timeout" };
     const r = wrapped.value;
-    if (!r?.ok) return { ok: false, engine: "MSI", ms, error: "failed" };
+    if (!r?.ok) {
+      const err = (r as any)?.error;
+      const mapped =
+        err === "disabled" || err === "not_configured" || err === "bad_request" || err === "upstream_error" ? err : "failed";
+      return { ok: false, engine: "MSI", ms, error: mapped };
+    }
     const raw = String(r.text ?? "");
     const parsed = safeJsonParse(raw);
     const data = extractEngineOutput(parsed);
@@ -409,7 +421,14 @@ export async function POST(req: Request) {
     const ms = nowMs() - started;
     if (!wrapped.ok) return { ok: false, engine: "OpenAI", ms, error: "timeout" };
     const r = wrapped.value;
-    if (!r?.ok) return { ok: false, engine: "OpenAI", ms, error: (r?.error as any) ?? "failed" };
+    if (!r?.ok)
+      return {
+        ok: false,
+        engine: "OpenAI",
+        ms,
+        error: (r?.error as any) ?? "failed",
+        ...(r && (r as any).meta ? { meta: (r as any).meta } : {}),
+      };
     const data = extractEngineOutput(r.data);
     if (!data) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
     if (!baselineValidText(data, pol.name)) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
@@ -438,6 +457,8 @@ export async function POST(req: Request) {
       msi: msi?.ok ? { ok: true, ms: (msi as any).ms } : { ok: false, ms: msi?.ms, error: msi?.error },
       openai: oa?.ok ? { ok: true, ms: (oa as any).ms } : { ok: false, ms: oa?.ms, error: oa?.error },
     });
+
+    const openAiMeta = (oa && !oa.ok && (oa as any).meta) || null;
     return NextResponse.json(
       {
         ok: false,
@@ -445,7 +466,9 @@ export async function POST(req: Request) {
         request_id: requestId,
         engines: {
           MSI: msi?.ok ? { ok: true, ms: msi.ms } : { ok: false, ms: msi?.ms ?? null, error: msi?.error ?? null },
-          OpenAI: oa?.ok ? { ok: true, ms: oa.ms } : { ok: false, ms: oa?.ms ?? null, error: oa?.error ?? null },
+          OpenAI: oa?.ok
+            ? { ok: true, ms: oa.ms }
+            : { ok: false, ms: oa?.ms ?? null, error: oa?.error ?? null, ...(openAiMeta ? { meta: openAiMeta } : {}) },
         },
       },
       { status: 502 },

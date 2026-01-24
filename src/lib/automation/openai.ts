@@ -1,6 +1,14 @@
 import "server-only";
 
-export type OpenAiResult<T> = { ok: true; data: T } | { ok: false; error: "disabled" | "not_configured" | "bad_response" | "upstream_error" };
+export type OpenAiResult<T> =
+  | { ok: true; data: T }
+  | {
+      ok: false;
+      error: "disabled" | "not_configured" | "bad_response" | "upstream_error";
+      meta?: {
+        attempts: Array<{ provider: string; host: string | null; ok: boolean; status: number | null; failure: string | null }>;
+      };
+    };
 
 type Provider = {
   name: "openai" | "openrouter" | "groq" | "cerebras";
@@ -14,10 +22,25 @@ function normalizeBaseUrl(raw: string): string {
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 }
 
+function normalizeSecret(raw: string | undefined): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  // Fix accidental trailing literal \n in copied secrets (common).
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 function providers(): Provider[] {
   const list: Provider[] = [];
 
-  const openAiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  const openAiKey = normalizeSecret(process.env.OPENAI_API_KEY);
   if (openAiKey) {
     list.push({
       name: "openai",
@@ -27,7 +50,7 @@ function providers(): Provider[] {
     });
   }
 
-  const openRouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openRouterKey = normalizeSecret(process.env.OPENROUTER_API_KEY);
   const openRouterModel = (process.env.OPENROUTER_MODEL ?? "").trim();
   if (openRouterKey && openRouterModel) {
     list.push({
@@ -38,7 +61,7 @@ function providers(): Provider[] {
     });
   }
 
-  const groqKey = (process.env.GROQ_API_KEY ?? "").trim();
+  const groqKey = normalizeSecret(process.env.GROQ_API_KEY);
   const groqModel = (process.env.GROQ_MODEL ?? "").trim();
   if (groqKey && groqModel) {
     list.push({
@@ -49,7 +72,7 @@ function providers(): Provider[] {
     });
   }
 
-  const cerebrasKey = (process.env.CEREBRAS_API_KEY ?? "").trim();
+  const cerebrasKey = normalizeSecret(process.env.CEREBRAS_API_KEY);
   const cerebrasModel = (process.env.CEREBRAS_MODEL ?? "").trim();
   if (cerebrasKey && cerebrasModel) {
     list.push({
@@ -78,18 +101,29 @@ function hasConfig(): boolean {
   return providers().length > 0;
 }
 
-async function postJson(p: Provider, path: string, body: unknown): Promise<unknown> {
-  const resp = await fetch(`${p.baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${p.apiKey}`,
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  if (!resp.ok) throw new Error("upstream");
-  return (await resp.json()) as unknown;
+async function postJson(
+  p: Provider,
+  path: string,
+  body: unknown,
+): Promise<{ ok: true; status: number; data: unknown } | { ok: false; status: number | null; failure: string }> {
+  try {
+    const resp = await fetch(`${p.baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${p.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    const status = resp.status;
+    if (!resp.ok) return { ok: false, status, failure: "http_error" };
+    const data = (await resp.json().catch(() => null)) as unknown;
+    if (!data) return { ok: false, status, failure: "bad_json" };
+    return { ok: true, status, data };
+  } catch {
+    return { ok: false, status: null, failure: "network_error" };
+  }
 }
 
 function pickTextCompletion(data: unknown): string {
@@ -110,6 +144,8 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
   const ps = providers();
   if (!ps.length) return { ok: false, error: "not_configured" };
 
+  const attempts: Array<{ provider: string; host: string | null; ok: boolean; status: number | null; failure: string | null }> = [];
+
   for (const p of ps) {
     const payload = {
       model: p.model,
@@ -124,8 +160,14 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
 
     try {
       // eslint-disable-next-line no-await-in-loop
-      const data = await postJson(p, "/v1/chat/completions", payload);
-      const text = pickTextCompletion(data);
+      const r = await postJson(p, "/v1/chat/completions", payload);
+      if (!r.ok) {
+        attempts.push({ provider: p.name, host: hostOf(p.baseUrl), ok: false, status: r.status, failure: r.failure });
+        continue;
+      }
+      attempts.push({ provider: p.name, host: hostOf(p.baseUrl), ok: true, status: r.status, failure: null });
+
+      const text = pickTextCompletion(r.data);
       if (!text) continue;
       try {
         return { ok: true, data: JSON.parse(text) as T };
@@ -139,6 +181,6 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
     }
   }
 
-  return { ok: false, error: "upstream_error" };
+  return { ok: false, error: "upstream_error", meta: { attempts } };
 }
 

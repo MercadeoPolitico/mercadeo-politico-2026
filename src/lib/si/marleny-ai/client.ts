@@ -30,6 +30,13 @@ function hasConfig(): boolean {
   return Boolean(key && key.trim().length && endpoint && endpoint.trim().length);
 }
 
+function normalizeSecret(raw: string | undefined): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  // Fix accidental trailing literal \n in copied secrets (common).
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
+}
+
 function buildPrompt(input: MarlenyAiCallInput): { system: string; user: string } {
   // Short, functional system prompt (cost-aware, no roleplay).
   const system =
@@ -98,7 +105,7 @@ export async function callMarlenyAI(input: MarlenyAiCallInput): Promise<MarlenyA
 
   try {
     const endpoint = (process.env.MARLENY_AI_ENDPOINT ?? process.env.MARLENY_ENDPOINT ?? process.env.MARLENY_API_URL)!.trim();
-    const key = (process.env.MARLENY_AI_API_KEY ?? process.env.MARLENY_API_KEY ?? process.env.MARLENY_TOKEN)!.trim();
+    const key = normalizeSecret(process.env.MARLENY_AI_API_KEY ?? process.env.MARLENY_API_KEY ?? process.env.MARLENY_TOKEN);
     const resp = await fetch(endpoint, {
       method: "POST",
       headers: {

@@ -41,16 +41,30 @@ function normalizeBaseUrl(raw: string): string {
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 }
 
+function normalizeSecret(raw: string | undefined): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
+}
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
+}
+
 function hasVolumeConfig(): boolean {
-  const openAiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  const openAiKey = normalizeSecret(process.env.OPENAI_API_KEY);
   if (openAiKey) return true;
-  const openRouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openRouterKey = normalizeSecret(process.env.OPENROUTER_API_KEY);
   const openRouterModel = (process.env.OPENROUTER_MODEL ?? "").trim();
   if (openRouterKey && openRouterModel) return true;
-  const groqKey = (process.env.GROQ_API_KEY ?? "").trim();
+  const groqKey = normalizeSecret(process.env.GROQ_API_KEY);
   const groqModel = (process.env.GROQ_MODEL ?? "").trim();
   if (groqKey && groqModel) return true;
-  const cerebrasKey = (process.env.CEREBRAS_API_KEY ?? "").trim();
+  const cerebrasKey = normalizeSecret(process.env.CEREBRAS_API_KEY);
   const cerebrasModel = (process.env.CEREBRAS_MODEL ?? "").trim();
   if (cerebrasKey && cerebrasModel) return true;
   return false;
@@ -60,84 +74,103 @@ async function callVolumeOnce(args: {
   model: string;
   prompt: string;
   maxOutputChars: number;
-}): Promise<{ ok: true; text: string } | { ok: false; error: "not_configured" | "upstream_error" | "bad_response" }> {
-  const ps: Array<{ base: string; apiKey: string; model: string }> = [];
+}): Promise<
+  | { ok: true; text: string; attempts: Array<{ provider: string; host: string | null; status: number | null; ok: boolean; failure: string | null }> }
+  | { ok: false; error: "not_configured" | "upstream_error" | "bad_response"; attempts: Array<{ provider: string; host: string | null; status: number | null; ok: boolean; failure: string | null }> }
+> {
+  const ps: Array<{ provider: "openai" | "openrouter" | "groq" | "cerebras"; base: string; apiKey: string; model: string }> = [];
+  const attempts: Array<{ provider: string; host: string | null; status: number | null; ok: boolean; failure: string | null }> = [];
 
-  const openAiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  const openAiKey = normalizeSecret(process.env.OPENAI_API_KEY);
   if (openAiKey) {
     ps.push({
+      provider: "openai",
       base: normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com"),
       apiKey: openAiKey,
       model: args.model,
     });
   }
 
-  const openRouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openRouterKey = normalizeSecret(process.env.OPENROUTER_API_KEY);
   const openRouterModel = (process.env.OPENROUTER_MODEL ?? "").trim();
   if (openRouterKey && openRouterModel) {
     ps.push({
+      provider: "openrouter",
       base: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api"),
       apiKey: openRouterKey,
       model: openRouterModel,
     });
   }
 
-  const groqKey = (process.env.GROQ_API_KEY ?? "").trim();
+  const groqKey = normalizeSecret(process.env.GROQ_API_KEY);
   const groqModel = (process.env.GROQ_MODEL ?? "").trim();
   if (groqKey && groqModel) {
     ps.push({
+      provider: "groq",
       base: normalizeBaseUrl(process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai"),
       apiKey: groqKey,
       model: groqModel,
     });
   }
 
-  const cerebrasKey = (process.env.CEREBRAS_API_KEY ?? "").trim();
+  const cerebrasKey = normalizeSecret(process.env.CEREBRAS_API_KEY);
   const cerebrasModel = (process.env.CEREBRAS_MODEL ?? "").trim();
   if (cerebrasKey && cerebrasModel) {
     ps.push({
+      provider: "cerebras",
       base: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL?.trim() || "https://api.cerebras.ai"),
       apiKey: cerebrasKey,
       model: cerebrasModel,
     });
   }
 
-  if (!ps.length) return { ok: false, error: "not_configured" };
+  if (!ps.length) return { ok: false, error: "not_configured", attempts };
 
   for (const p of ps) {
     // eslint-disable-next-line no-await-in-loop
-    const resp = await fetch(`${p.base}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${p.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: p.model,
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Synthetic Intelligence. Generación bajo control: una solicitud = una respuesta. " +
-              "Sé sobrio, institucional, verificable y ético. Prohibido: desinformación, urgencia falsa, miedo, ataques personales.",
-          },
-          { role: "user", content: args.prompt },
-        ],
-      }),
-      cache: "no-store",
-    });
+    let resp: Response | null = null;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      resp = await fetch(`${p.base}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${p.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: p.model,
+          temperature: 0.2,
+          messages: [
+            {
+              role: "system",
+              content:
+                "Synthetic Intelligence. Generación bajo control: una solicitud = una respuesta. " +
+                "Sé sobrio, institucional, verificable y ético. Prohibido: desinformación, urgencia falsa, miedo, ataques personales.",
+            },
+            { role: "user", content: args.prompt },
+          ],
+        }),
+        cache: "no-store",
+      });
+    } catch {
+      attempts.push({ provider: p.provider, host: hostOf(p.base), status: null, ok: false, failure: "network_error" });
+      continue;
+    }
 
-    if (!resp.ok) continue;
+    if (!resp.ok) {
+      attempts.push({ provider: p.provider, host: hostOf(p.base), status: resp.status, ok: false, failure: "http_error" });
+      continue;
+    }
+    attempts.push({ provider: p.provider, host: hostOf(p.base), status: resp.status, ok: true, failure: null });
     // eslint-disable-next-line no-await-in-loop
     const json = (await resp.json().catch(() => null)) as any;
     const content = json?.choices?.[0]?.message?.content;
     const text = typeof content === "string" ? content.trim() : "";
     if (!text) continue;
-    return { ok: true, text: text.slice(0, args.maxOutputChars) };
+    return { ok: true, text: text.slice(0, args.maxOutputChars), attempts };
   }
 
-  return { ok: false, error: "upstream_error" };
+  return { ok: false, error: "upstream_error", attempts };
 }
 
 export async function POST(req: Request) {
@@ -256,6 +289,7 @@ export async function POST(req: Request) {
       lastError = oa.error;
       diag.OpenAI.ok = false;
       diag.OpenAI.error = oa.error;
+      (diag.OpenAI as any).attempts = oa.attempts;
     }
   }
 
@@ -288,7 +322,12 @@ export async function POST(req: Request) {
           source_engine: diag.source_engine,
           engines: {
             Actuation: diag.attempted.MSI ? (diag.MSI.ok ? "OK" : diag.MSI.error) : "not_attempted",
-            Volume: diag.attempted.OpenAI ? (diag.OpenAI.ok ? "OK" : diag.OpenAI.error) : "not_attempted",
+            Volume: diag.attempted.OpenAI
+              ? {
+                  status: diag.OpenAI.ok ? "OK" : diag.OpenAI.error,
+                  attempts: (diag.OpenAI as any).attempts ?? [],
+                }
+              : "not_attempted",
           },
           configured: diag.configured,
           note:
