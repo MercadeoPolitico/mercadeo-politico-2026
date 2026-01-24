@@ -13,8 +13,7 @@ Dejar el sistema **deployado y estable** en:
 - Build/lint OK.
 - Scheduler recomendado: **Railway Worker** (evita límites de Vercel Cron).
 - Supabase project ref (desde `.env.local`, safe): `adjawofpdxnezbmwafvg`.
-
-> Importante: el CLI de Supabase en esta máquina está autenticado a otra org/proyecto. No ejecutar migraciones hasta autenticar en la org correcta.
+ - Supabase CLI (local) ya quedó **linkeado** al project ref y puede aplicar migraciones remotas.
 
 ---
 
@@ -40,11 +39,17 @@ Dejar el sistema **deployado y estable** en:
 ---
 
 ## 3) Migraciones Supabase
-Aplicar las migraciones nuevas (por SQL Editor o por CLI) para que todo funcione:
+Las migraciones clave del stack ya están en el repo y deben existir en el remoto:
 - `20260124000800_news_subtitle.sql`
 - `20260124000900_rss_health_and_region_otra.sql`
 - `20260124001000_social_auth_trazabilidad.sql`
 - `20260124001100_politicians_last_auto_blog_at.sql`
+- `20260124193000_auto_publish_default_on.sql`
+- `20260126090000_social_destinations_routing_fields.sql`
+- `20260127000100_ai_drafts_indexes.sql` (performance)
+
+Verificación rápida:
+- `npx supabase migration list --linked`
 
 ---
 
@@ -55,4 +60,11 @@ Aplicar las migraciones nuevas (por SQL Editor o por CLI) para que todo funcione
   - `/admin/content` → AUTO ON/OFF visible
   - `/admin/networks` → RSS + señal + “Generar enlace (copiar)”
   - `/autorizar?token=...` → aprobar/rechazar registra trazabilidad
+
+### n8n (webhook de publicación)
+- El backend envía a n8n con header `x-n8n-webhook-token`.
+- Si el webhook responde **404**, normalmente significa:
+  - el workflow no está importado/activo en esa instancia, o
+  - el path del webhook no coincide.
+  Solución recomendada: importar/activar el workflow desde el repo (ver `docs/automation/n8n-master-editorial-orchestrator.md`).
 

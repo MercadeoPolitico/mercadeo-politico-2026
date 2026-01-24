@@ -69,6 +69,17 @@ El workflow expone un Webhook trigger `mp26-editorial-orchestrator` y **rechaza 
   - `IF webhook token ok?`
   - Si no coincide → `Respond 401 (unauthorized)`
 
+### Activación sin UI (recomendado)
+Si el webhook devuelve **404** incluso con URL correcta, el workflow no está activo/importado.
+
+Opción recomendada (sin entrar a n8n como Admin):
+1) Crear una vez un API key en n8n (Settings → n8n API) y guardarlo como `N8N_API_KEY` (secreto, server-only).
+2) Ejecutar el sync desde este repo:
+
+```bash
+node scripts/sync-n8n-workflow.mjs
+```
+
 ---
 
 ## 5) Review & Publish (fase 1)
