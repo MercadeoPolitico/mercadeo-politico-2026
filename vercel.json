@@ -1,17 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/keepalive",
-      "schedule": "*/20 * * * *"
-    },
-    {
-      "path": "/api/cron/keepalive",
-      "schedule": "7-59/20 * * * *"
-    },
-    {
-      "path": "/api/cron/auto-blog",
-      "schedule": "*/20 * * * *"
-    }
-  ]
+  "crons": []
 }
 

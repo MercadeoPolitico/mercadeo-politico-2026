@@ -25,7 +25,7 @@ Una plataforma de comunicación política **ética, automatizada y gobernada** p
   - Fuente (si existe)
 
 ### 2) Automatización “sin caos” (con torre de control)
-- La IA genera borradores + variantes por red.
+- La Synthetic intelligence (SI) genera borradores + variantes por red.
 - El Admin Panel decide:
   - qué se aprueba
   - qué se publica

@@ -4,7 +4,7 @@
 Evitar que servicios “duerman” o se desconecten por inactividad (especialmente en planes free).
 
 Este repo implementa **dos capas reales**:
-- **Vercel Cron**: llama periódicamente `GET /api/cron/keepalive`
+- **Railway Worker (scheduler)**: llama periódicamente `GET /api/cron/keepalive`
 - **GitHub Actions (schedule)**: redundancia que también llama el mismo endpoint
 
 > El endpoint está protegido por `CRON_SECRET` (Bearer).
@@ -25,9 +25,9 @@ Salida: JSON con métricas sin secretos (solo `host`, `ok`, `status`, `ms`).
 
 ---
 
-### 2) Variables de entorno (Vercel)
+### 2) Variables de entorno (App / Vercel y/o Railway)
 Requeridas:
-- `CRON_SECRET`: secreto para Vercel Cron / GitHub Actions
+- `CRON_SECRET`: secreto para Worker / GitHub Actions
 
 Opcionales:
 - `KEEPALIVE_URLS`: lista separada por coma con endpoints públicos a pingear.
@@ -36,10 +36,14 @@ Opcionales:
 
 ---
 
-### 3) Vercel Cron
-Configurado en `vercel.json` para ejecutar en múltiples offsets (reduce “ventanas” de inactividad).
+### 3) Railway Worker (recomendado)
+El worker (`workers/`) ejecuta pings periódicos sin depender de Vercel Cron (útil si hay límites de plan).
 
-Requiere: setear `CRON_SECRET` en Vercel.
+Variables en Railway Worker:
+- `MP26_BASE_URL` = `https://<tu-dominio-vercel>`
+- `CRON_SECRET` = igual al de la app
+
+> Nota: `vercel.json` mantiene `"crons": []` para evitar bloqueos por límites de scheduling.
 
 ---
 

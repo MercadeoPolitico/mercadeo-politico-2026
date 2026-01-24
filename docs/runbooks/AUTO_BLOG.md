@@ -19,11 +19,11 @@ Configuración (en base de datos):
 
 ---
 
-### 2) Cron (Vercel)
+### 2) Scheduler (Railway Worker)
 Endpoint: `GET /api/cron/auto-blog` (protegido por `CRON_SECRET`)
 
 Cadencia:
-- Se ejecuta cada ~20 min (Vercel Cron).
+- Se ejecuta cada ~20 min (Railway Worker).
 - Por candidato, respeta:
   - `politicians.auto_blog_enabled = true`
   - `politicians.auto_publish_enabled = true`
@@ -36,11 +36,16 @@ Motor:
 
 ---
 
-### 3) Variables de entorno requeridas (Vercel)
+### 3) Variables de entorno requeridas
+En la App (Vercel):
 - `CRON_SECRET`
 - `MP26_AUTOMATION_TOKEN` (o `AUTOMATION_API_TOKEN`)
 - Variables de Supabase (incluye `SUPABASE_SERVICE_ROLE_KEY`)
 - n8n forwarding (si aplica): `N8N_FORWARD_ENABLED`, `N8N_WEBHOOK_URL`, `N8N_WEBHOOK_TOKEN`
+
+En Railway Worker:
+- `MP26_BASE_URL` = `https://<tu-dominio-vercel>`
+- `CRON_SECRET` = igual al de la app
 
 ---
 
