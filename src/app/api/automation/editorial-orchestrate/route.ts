@@ -11,10 +11,9 @@ export const runtime = "nodejs";
 function isBrowserOrigin(req: Request): boolean {
   return Boolean(
     req.headers.get("sec-fetch-site") ||
-      req.headers.get("sec-fetch-mode") ||
-      req.headers.get("sec-fetch-dest") ||
-      req.headers.get("origin") ||
-      req.headers.get("referer"),
+      req.headers.get("sec-ch-ua") ||
+      req.headers.get("sec-ch-ua-mobile") ||
+      req.headers.get("sec-ch-ua-platform"),
   );
 }
 
@@ -167,21 +166,17 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<{ ok: true; value: T
 export async function POST(req: Request) {
   // Automation endpoint: server-to-server only (n8n/cron/internal services).
   // Admin UI must call /api/admin/automation/editorial-orchestrate.
-  if (isBrowserOrigin(req)) {
-    console.warn("[editorial-orchestrate] rejected_browser_origin", {
-      path: "/api/automation/editorial-orchestrate",
-      hasOrigin: Boolean(req.headers.get("origin")),
-      hasReferer: Boolean(req.headers.get("referer")),
-      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
-    });
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
   const url = new URL(req.url);
   const testMode = url.searchParams.get("test") === "true";
 
   // Token-only: no browser, no session.
-  if (!allowAutomation(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!allowAutomation(req)) {
+    if (isBrowserOrigin(req)) {
+      console.warn("[editorial-orchestrate] rejected_browser_origin", { path: "/api/automation/editorial-orchestrate" });
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   const requestId = (() => {
     try {
@@ -421,28 +416,20 @@ export async function POST(req: Request) {
     return { ok: true, engine: "OpenAI", ms, data, raw: JSON.stringify(r.data) };
   }
 
-  // Run both in parallel and pick first valid response.
+  // Run both in parallel, but prefer OpenAI first (internal policy).
   const msiP = runMsi();
   const oaP = runOpenAi();
 
-  const pending: Array<Promise<EngineResult>> = [msiP, oaP];
   const results: Record<EngineName, EngineResult | null> = { MSI: null, OpenAI: null };
 
-  let winner: EngineResult & { ok: true } | null = null;
-  while (pending.length) {
-    // eslint-disable-next-line no-await-in-loop
-    const r = await Promise.race(pending);
-    results[r.engine] = r;
-    const idx = pending.findIndex((p) => p === (r.engine === "MSI" ? msiP : oaP));
-    if (idx >= 0) pending.splice(idx, 1);
-    if (r.ok && !winner) {
-      winner = r as any;
-      break;
-    }
-  }
+  // Prefer OpenAI: await OA first; if it fails, fallback to MSI (already running).
+  const oa = await oaP;
+  results.OpenAI = oa;
+  let winner: (EngineResult & { ok: true }) | null = oa.ok ? (oa as any) : null;
 
-  const msi = results.MSI;
-  const oa = results.OpenAI;
+  const msi = await msiP;
+  results.MSI = msi;
+  if (!winner && msi.ok) winner = msi as any;
 
   if (!winner) {
     console.warn("[editorial-orchestrate] no_valid_engine_output", {
@@ -466,11 +453,11 @@ export async function POST(req: Request) {
   }
 
   const arbitration_reason = (() => {
-    if (winner.engine === "MSI") return "first_valid_response";
-    // winner is OpenAI
-    if (msi && !msi.ok && msi.error === "timeout") return "msi_timeout";
-    if (msi && !msi.ok && msi.error !== "timeout") return "msi_error";
-    return "openai_faster";
+    if (winner.engine === "OpenAI") return "openai_preferred";
+    // winner is MSI
+    if (oa && !oa.ok && oa.error === "timeout") return "openai_timeout";
+    if (oa && !oa.ok && oa.error !== "timeout") return "openai_error";
+    return "msi_fallback";
   })();
 
   const metadata = {

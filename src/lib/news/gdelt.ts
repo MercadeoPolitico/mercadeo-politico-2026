@@ -16,6 +16,15 @@ function shouldBiasToColombia(q: string): boolean {
   return s.includes("colombia") || s.includes("meta") || s.includes("villavicencio") || s.includes("departamento del meta");
 }
 
+function isLikelyColombianSource(a: { url?: string; sourceCountry?: string }): boolean {
+  const u = String(a.url ?? "").toLowerCase();
+  const sc = String(a.sourceCountry ?? "").trim().toUpperCase();
+  // Strong hints: Colombian domains or Colombian source country codes.
+  const domainHint = u.includes(".co/") || u.includes(".com.co/") || u.endsWith(".co");
+  const countryHint = sc === "CO" || sc === "COL" || sc === "COLOMBIA" || sc.startsWith("CO");
+  return domainHint || countryHint;
+}
+
 function withDefaultFilters(rawQuery: string): string {
   const base = rawQuery.trim();
   if (!base) return base;
@@ -25,7 +34,8 @@ function withDefaultFilters(rawQuery: string): string {
   if (!hasOp(base, "sourcelang")) parts.push("sourcelang:spanish");
 
   // For Colombia/Meta queries, avoid irrelevant global outlets by default.
-  if (shouldBiasToColombia(base) && !hasOp(base, "sourcecountry")) parts.push("sourcecountry:colombia");
+  // GDELT uses FIPS country codes; Colombia = CO.
+  if (shouldBiasToColombia(base) && !hasOp(base, "sourcecountry")) parts.push("sourcecountry:co");
 
   return parts.join(" ");
 }
@@ -43,7 +53,8 @@ export async function fetchTopGdeltArticle(query: string): Promise<GdeltArticle 
     for (const qRaw of candidates) {
       // eslint-disable-next-line no-await-in-loop
       const q = encodeURIComponent(qRaw);
-      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}&mode=ArtList&format=json&maxrecords=1&sort=HybridRel`;
+      // Pull a small set and pick the best match for Colombia when needed.
+      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${q}&mode=ArtList&format=json&maxrecords=25&sort=HybridRel`;
       // eslint-disable-next-line no-await-in-loop
       const resp = await fetch(url, { cache: "no-store" });
       if (!resp.ok) continue;
@@ -52,15 +63,26 @@ export async function fetchTopGdeltArticle(query: string): Promise<GdeltArticle 
       if (!data || typeof data !== "object") continue;
       const obj = data as Record<string, unknown>;
       const articles = Array.isArray(obj.articles) ? (obj.articles as unknown[]) : [];
-      const first = articles[0];
-      if (!first || typeof first !== "object") continue;
-      const a = first as Record<string, unknown>;
-      const title = typeof a.title === "string" ? a.title.trim() : "";
-      const link = typeof a.url === "string" ? a.url.trim() : "";
-      const seendate = typeof a.seendate === "string" ? a.seendate.trim() : "";
-      const sourceCountry = typeof a.sourceCountry === "string" ? a.sourceCountry.trim() : undefined;
-      if (!title || !link) continue;
-      return { title, url: link, seendate, ...(sourceCountry ? { sourceCountry } : {}) };
+      const mapped = articles
+        .filter((x) => x && typeof x === "object")
+        .map((x) => {
+          const a = x as Record<string, unknown>;
+          const title = typeof a.title === "string" ? a.title.trim() : "";
+          const link = typeof a.url === "string" ? a.url.trim() : "";
+          const seendate = typeof a.seendate === "string" ? a.seendate.trim() : "";
+          const sourceCountry = typeof a.sourceCountry === "string" ? a.sourceCountry.trim() : undefined;
+          return { title, url: link, seendate, sourceCountry };
+        })
+        .filter((a) => a.title && a.url);
+
+      if (mapped.length === 0) continue;
+
+      if (shouldBiasToColombia(qRaw)) {
+        const preferred = mapped.find((a) => isLikelyColombianSource(a));
+        if (preferred) return preferred;
+      }
+
+      return mapped[0] ?? null;
     }
     return null;
   } catch {

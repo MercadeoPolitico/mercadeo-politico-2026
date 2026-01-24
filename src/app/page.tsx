@@ -13,8 +13,9 @@ export default function Home() {
         <div className="absolute -left-24 -top-24 h-[640px] w-[640px] rounded-full bg-amber-300/28 blur-[110px]" />
         <div className="absolute left-1/2 top-[-220px] h-[720px] w-[720px] -translate-x-1/2 rounded-full bg-sky-300/28 blur-[110px]" />
         <div className="absolute -right-24 top-24 h-[640px] w-[640px] rounded-full bg-red-400/24 blur-[120px]" />
-        <div className="absolute -bottom-44 left-24 h-[760px] w-[760px] rounded-full bg-emerald-300/18 blur-[140px]" />
-        <div className="absolute left-1/3 top-1/2 h-[720px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/16 blur-[150px]" />
+        <div className="absolute -bottom-44 left-24 h-[760px] w-[760px] rounded-full bg-emerald-300/22 blur-[150px]" />
+        <div className="absolute left-1/3 top-1/2 h-[720px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/20 blur-[160px]" />
+        <div className="absolute right-[10%] top-[58%] h-[560px] w-[560px] -translate-y-1/2 rounded-full bg-sky-200/14 blur-[160px]" />
         <div className="absolute inset-0 bg-gradient-to-b from-white/10 via-white/0 to-white/10" />
       </div>
 

@@ -20,14 +20,12 @@ export const runtime = "nodejs";
  */
 
 function isBrowserOrigin(req: Request): boolean {
-  // Browser fetches typically include sec-fetch-* and Origin/Referer.
-  // n8n/server-to-server calls normally do not.
+  // Conservative signals that don't appear in Node/n8n fetch.
   return Boolean(
     req.headers.get("sec-fetch-site") ||
-      req.headers.get("sec-fetch-mode") ||
-      req.headers.get("sec-fetch-dest") ||
-      req.headers.get("origin") ||
-      req.headers.get("referer"),
+      req.headers.get("sec-ch-ua") ||
+      req.headers.get("sec-ch-ua-mobile") ||
+      req.headers.get("sec-ch-ua-platform"),
   );
 }
 
@@ -89,20 +87,16 @@ async function callOpenAiOnce(args: {
 export async function POST(req: Request) {
   // Automation endpoints are server-to-server only.
   // Admin UIs must use /api/admin/automation/* wrappers.
-  if (isBrowserOrigin(req)) {
-    console.warn("[automation/generate] rejected_browser_origin", {
-      path: "/api/automation/generate",
-      hasOrigin: Boolean(req.headers.get("origin")),
-      hasReferer: Boolean(req.headers.get("referer")),
-      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
-    });
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
   const apiToken = normalizeToken(process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN);
   const headerToken = normalizeToken(req.headers.get("x-automation-token") ?? "");
   if (!apiToken) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (headerToken !== apiToken) {
+    if (isBrowserOrigin(req)) {
+      console.warn("[automation/generate] rejected_browser_origin", { path: "/api/automation/generate" });
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -130,100 +124,102 @@ export async function POST(req: Request) {
   );
   diag.configured.Volume = hasOpenAiConfig();
 
-  diag.attempted.MSI = true;
-  const msi = await callMarlenyAI({
-    candidateId: candidate_id,
-    contentType: content_type,
-    topic,
-    tone,
-  });
+  let candidateContext = "";
+  try {
+    // Best-effort: enrich with candidate bio/proposals (safe; no secrets).
+    const supabase = await createSupabaseServerClient();
+    if (supabase) {
+      const { data: pol } = await supabase
+        .from("politicians")
+        .select("id,slug,name,office,region,party,ballot_number,biography,proposals")
+        .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
+        .maybeSingle();
+      if (pol) {
+        candidateContext = [
+          `Candidato: ${pol.name} (${pol.office})`,
+          `Región: ${pol.region}`,
+          pol.party ? `Partido: ${pol.party}` : "",
+          pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
+          "",
+          "Biografía (extracto):",
+          String(pol.biography || "").slice(0, 1200),
+          "",
+          "Propuestas (extracto):",
+          String(pol.proposals || "").slice(0, 1600),
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const format =
+    content_type === "proposal"
+      ? "Formato: 4–6 bloques cortos con título y 2–3 líneas por bloque."
+      : content_type === "blog"
+        ? "Formato: (1) título sugerido, (2) resumen en 5–7 líneas, (3) esquema con 6–10 bullets."
+        : [
+            "IMPORTANTE: Responde SOLO en JSON válido (sin markdown).",
+            "JSON schema:",
+            "{",
+            '  "base": string,',
+            '  "variants": { "facebook": string, "instagram": string, "x": string },',
+            '  "image_keywords": string[]',
+            "}",
+          ].join("\n");
+
+  const prompt = [
+    "Generación bajo control (admin).",
+    candidateContext ? "" : `CandidateID: ${candidate_id}`,
+    candidateContext,
+    "",
+    `Tipo: ${content_type}`,
+    `Tema: ${topic}`,
+    tone ? `Tono: ${tone}` : "Tono: sobrio y humano",
+    format,
+    "Reglas: verificable, sin inventar datos, sin ataques personales, sin urgencia falsa.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   let textResult: string | null = null;
   let lastError: string | null = null;
 
-  if (msi.ok) {
-    textResult = msi.text;
-    diag.MSI.ok = true;
-    diag.source_engine = "MSI";
-  } else {
-    lastError = msi.error;
-    diag.MSI.ok = false;
-    diag.MSI.error = msi.error;
-    // Failover to OpenAI when configured.
-    if (hasOpenAiConfig()) {
-      diag.attempted.OpenAI = true;
-      let candidateContext = "";
-      try {
-        // Best-effort: enrich with candidate bio/proposals using admin client (service role).
-        // This endpoint is token-only server-to-server, so service-role is safe and avoids cookie dependency.
-        const supabase = await createSupabaseServerClient();
-        if (supabase) {
-          const { data: pol } = await supabase
-            .from("politicians")
-            .select("id,slug,name,office,region,party,ballot_number,biography,proposals")
-            .or(`id.eq.${candidate_id},slug.eq.${candidate_id}`)
-            .maybeSingle();
-          if (pol) {
-            candidateContext = [
-              `Candidato: ${pol.name} (${pol.office})`,
-              `Región: ${pol.region}`,
-              pol.party ? `Partido: ${pol.party}` : "",
-              pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
-              "",
-              "Biografía (extracto):",
-              String(pol.biography || "").slice(0, 1200),
-              "",
-              "Propuestas (extracto):",
-              String(pol.proposals || "").slice(0, 1600),
-            ]
-              .filter(Boolean)
-              .join("\n");
-          }
-        }
-      } catch {
-        // ignore (keep minimal)
-      }
+  // Prefer Volume (OpenAI) first; fallback to Actuation (MSI).
+  if (hasOpenAiConfig()) {
+    diag.attempted.OpenAI = true;
+    const model = (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
+    const oa = await callOpenAiOnce({ model, prompt, maxOutputChars: maxOut });
+    if (oa.ok) {
+      textResult = oa.text;
+      diag.OpenAI.ok = true;
+      diag.source_engine = "OpenAI";
+    } else {
+      lastError = oa.error;
+      diag.OpenAI.ok = false;
+      diag.OpenAI.error = oa.error;
+    }
+  }
 
-      const format =
-        content_type === "proposal"
-          ? "Formato: 4–6 bloques cortos con título y 2–3 líneas por bloque."
-          : content_type === "blog"
-            ? "Formato: (1) título sugerido, (2) resumen en 5–7 líneas, (3) esquema con 6–10 bullets."
-            : [
-                "IMPORTANTE: Responde SOLO en JSON válido (sin markdown).",
-                "JSON schema:",
-                "{",
-                '  "base": string,',
-                '  "variants": { "facebook": string, "instagram": string, "x": string },',
-                '  "image_keywords": string[]',
-                "}",
-              ].join("\n");
+  if (!textResult) {
+    diag.attempted.MSI = true;
+    const msi = await callMarlenyAI({
+      candidateId: candidate_id,
+      contentType: content_type,
+      topic,
+      tone,
+    });
 
-      const prompt = [
-        "Generación bajo control (admin).",
-        candidateContext ? "" : `CandidateID: ${candidate_id}`,
-        candidateContext,
-        "",
-        `Tipo: ${content_type}`,
-        `Tema: ${topic}`,
-        tone ? `Tono: ${tone}` : "Tono: sobrio y humano",
-        format,
-        "Reglas: verificable, sin inventar datos, sin ataques personales, sin urgencia falsa.",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      const model = (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
-      const oa = await callOpenAiOnce({ model, prompt, maxOutputChars: maxOut });
-      if (oa.ok) {
-        textResult = oa.text;
-        diag.OpenAI.ok = true;
-        diag.source_engine = "OpenAI";
-      } else {
-        lastError = oa.error;
-        diag.OpenAI.ok = false;
-        diag.OpenAI.error = oa.error;
-      }
+    if (msi.ok) {
+      textResult = msi.text;
+      diag.MSI.ok = true;
+      diag.source_engine = "MSI";
+    } else {
+      lastError = msi.error;
+      diag.MSI.ok = false;
+      diag.MSI.error = msi.error;
     }
   }
 

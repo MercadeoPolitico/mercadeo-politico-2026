@@ -155,7 +155,30 @@ export function MarlenyChatClient() {
       <div className="glass-card flex min-h-[520px] flex-col p-6 lg:col-span-2">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-base font-semibold">Chat</h3>
-          <p className="text-xs text-muted">{loading ? "Escribiendo…" : "Listo"}</p>
+          {loading ? (
+            <div className="inline-flex items-center gap-2 text-xs text-muted">
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                className="h-4 w-4 animate-pulse text-sky-200"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                {/* simple “brain” mark */}
+                <path d="M9 4.5c-2.1 0-3.8 1.7-3.8 3.8v.3c-1.1.5-1.9 1.6-1.9 2.9 0 1.2.7 2.3 1.8 2.8v.6c0 2 1.6 3.6 3.6 3.6h.3c.4 1.2 1.5 2 2.8 2" />
+                <path d="M15 4.5c2.1 0 3.8 1.7 3.8 3.8v.3c1.1.5 1.9 1.6 1.9 2.9 0 1.2-.7 2.3-1.8 2.8v.6c0 2-1.6 3.6-3.6 3.6h-.3c-.4 1.2-1.5 2-2.8 2" />
+                <path d="M12 6v12" />
+                <path d="M9.2 9.2c.6-.5 1.4-.8 2.3-.8" />
+                <path d="M14.8 9.2c-.6-.5-1.4-.8-2.3-.8" />
+              </svg>
+              <span>Escribiendo…</span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">Listo</p>
+          )}
         </div>
 
         <div className="mt-4 flex-1 space-y-3 overflow-auto rounded-2xl border border-border bg-background/40 p-4">

@@ -9,10 +9,9 @@ export const runtime = "nodejs";
 function isBrowserOrigin(req: Request): boolean {
   return Boolean(
     req.headers.get("sec-fetch-site") ||
-      req.headers.get("sec-fetch-mode") ||
-      req.headers.get("sec-fetch-dest") ||
-      req.headers.get("origin") ||
-      req.headers.get("referer"),
+      req.headers.get("sec-ch-ua") ||
+      req.headers.get("sec-ch-ua-mobile") ||
+      req.headers.get("sec-ch-ua-platform"),
   );
 }
 
@@ -35,20 +34,16 @@ function normalizeToken(v: unknown): string {
 export async function POST(req: Request) {
   // Automation endpoints are server-to-server only.
   // Admin UIs must use /api/admin/automation/* wrappers.
-  if (isBrowserOrigin(req)) {
-    console.warn("[automation/submit] rejected_browser_origin", {
-      path: "/api/automation/submit",
-      hasOrigin: Boolean(req.headers.get("origin")),
-      hasReferer: Boolean(req.headers.get("referer")),
-      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
-    });
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
   const apiToken = normalizeToken(process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN);
   const headerToken = normalizeToken(req.headers.get("x-automation-token") ?? "");
   if (!apiToken) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (headerToken !== apiToken) {
+    if (isBrowserOrigin(req)) {
+      console.warn("[automation/submit] rejected_browser_origin", { path: "/api/automation/submit" });
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
