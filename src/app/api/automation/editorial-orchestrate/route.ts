@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchTopGdeltArticle } from "@/lib/news/gdelt";
 import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
 import { openAiJson } from "@/lib/automation/openai";
+import { regionalProvidersForCandidate } from "@/lib/news/providers";
 
 export const runtime = "nodejs";
 
@@ -305,12 +306,18 @@ export async function POST(req: Request) {
   }
 
   const query = newsQueryFor(pol.office, pol.region);
+  const regional = regionalProvidersForCandidate({ office: pol.office, region: pol.region });
 
   // 1) Admin inputs first (if provided by automation caller)
   const hasAdminInputs = adminProvidedNewsLinks.length > 0 || adminEditorialNotes.length > 0 || recentMediaUrls.length > 0;
 
   // 2) News selection (GDELT) only if no admin-provided news links
-  const article = adminProvidedNewsLinks.length ? null : await fetchTopGdeltArticle(query);
+  const article =
+    adminProvidedNewsLinks.length
+      ? null
+      : await fetchTopGdeltArticle(query, {
+          preferred_url_hints: regional.url_hints,
+        });
 
   // 2) If no news, fallback: last published post (for reframing)
   const { data: lastPublished } = await admin
@@ -338,6 +345,11 @@ export async function POST(req: Request) {
     "  - facebook: 700-900 caracteres.",
     "  - x: <=280 o mini-hilo (3 partes) separadas por \\n\\n---\\n\\n.",
     "  - reddit: 6-10 líneas, tono analítico y abierto a discusión.",
+    "",
+    "Señal editorial (prioridad local, NO obligatorio):",
+    `- Región usada para sourcing: ${regional.region_used}`,
+    `- Fuentes preferidas: ${regional.preferred_sources.join(", ") || "(ninguna)"}`,
+    "Puedes usar medios nacionales si el tema afecta la región o si no hay buena cobertura local.",
     "",
     `Candidato: ${pol.name} (${pol.office})`,
     pol.party ? `Partido: ${pol.party}` : "",
@@ -435,20 +447,20 @@ export async function POST(req: Request) {
     return { ok: true, engine: "OpenAI", ms, data, raw: JSON.stringify(r.data) };
   }
 
-  // Run both in parallel, but prefer OpenAI first (internal policy).
+  // Run both in parallel, but prefer MSI first (primary reasoning engine).
   const msiP = runMsi();
   const oaP = runOpenAi();
 
   const results: Record<EngineName, EngineResult | null> = { MSI: null, OpenAI: null };
 
-  // Prefer OpenAI: await OA first; if it fails, fallback to MSI (already running).
-  const oa = await oaP;
-  results.OpenAI = oa;
-  let winner: (EngineResult & { ok: true }) | null = oa.ok ? (oa as any) : null;
-
+  // Prefer MSI: await MSI first; if it fails, fallback to OpenAI (already running).
   const msi = await msiP;
   results.MSI = msi;
-  if (!winner && msi.ok) winner = msi as any;
+  let winner: (EngineResult & { ok: true }) | null = msi.ok ? (msi as any) : null;
+
+  const oa = await oaP;
+  results.OpenAI = oa;
+  if (!winner && oa.ok) winner = oa as any;
 
   if (!winner) {
     console.warn("[editorial-orchestrate] no_valid_engine_output", {
@@ -476,11 +488,11 @@ export async function POST(req: Request) {
   }
 
   const arbitration_reason = (() => {
-    if (winner.engine === "OpenAI") return "openai_preferred";
-    // winner is MSI
-    if (oa && !oa.ok && oa.error === "timeout") return "openai_timeout";
-    if (oa && !oa.ok && oa.error !== "timeout") return "openai_error";
-    return "msi_fallback";
+    if (winner.engine === "MSI") return "msi_preferred";
+    // winner is OpenAI
+    if (msi && !msi.ok && msi.error === "timeout") return "msi_timeout";
+    if (msi && !msi.ok && msi.error !== "timeout") return "msi_error";
+    return "openai_fallback";
   })();
 
   const metadata = {
@@ -497,6 +509,8 @@ export async function POST(req: Request) {
       OpenAI: oa?.ok ? { ok: true } : { ok: false, error: oa?.error ?? null },
     },
     candidate: { id: pol.id, slug: pol.slug, office: pol.office, region: pol.region, ballot_number: pol.ballot_number ?? null },
+    region_used: regional.region_used,
+    preferred_sources: regional.preferred_sources,
     admin_inputs: {
       provided_news_links: adminProvidedNewsLinks.length ? adminProvidedNewsLinks.slice(0, 10) : [],
       editorial_notes: adminEditorialNotes || null,

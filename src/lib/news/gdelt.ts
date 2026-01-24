@@ -7,6 +7,16 @@ export type GdeltArticle = {
   sourceCountry?: string;
 };
 
+export type GdeltPickOptions = {
+  /**
+   * Optional list of URL substring hints (e.g., domains or brand strings)
+   * to prefer local/regional outlets when available.
+   *
+   * Not a hard constraint: if no match, we fall back to best overall.
+   */
+  preferred_url_hints?: string[];
+};
+
 function hasOp(q: string, op: string): boolean {
   return new RegExp(`\\b${op}:`, "i").test(q);
 }
@@ -25,6 +35,24 @@ function isLikelyColombianSource(a: { url?: string; sourceCountry?: string }): b
   return domainHint || countryHint;
 }
 
+function normalizeHints(hints: string[] | undefined): string[] {
+  if (!Array.isArray(hints)) return [];
+  return Array.from(
+    new Set(
+      hints
+        .map((h) => String(h || "").trim().toLowerCase())
+        .filter(Boolean)
+        .slice(0, 20),
+    ),
+  );
+}
+
+function matchesAnyHint(url: string, hints: string[]): boolean {
+  if (!hints.length) return false;
+  const u = String(url || "").toLowerCase();
+  return hints.some((h) => u.includes(h));
+}
+
 function withDefaultFilters(rawQuery: string): string {
   const base = rawQuery.trim();
   if (!base) return base;
@@ -40,9 +68,10 @@ function withDefaultFilters(rawQuery: string): string {
   return parts.join(" ");
 }
 
-export async function fetchTopGdeltArticle(query: string): Promise<GdeltArticle | null> {
+export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOptions): Promise<GdeltArticle | null> {
   const raw = query.trim();
   if (!raw) return null;
+  const preferredHints = normalizeHints(opts?.preferred_url_hints);
 
   // Two-pass strategy:
   // 1) Try with default filters (Spanish + Colombia bias for local queries)
@@ -76,6 +105,12 @@ export async function fetchTopGdeltArticle(query: string): Promise<GdeltArticle 
         .filter((a) => a.title && a.url);
 
       if (mapped.length === 0) continue;
+
+      // Region-aware bias: if any article matches preferred URL hints, take it.
+      if (preferredHints.length) {
+        const hinted = mapped.find((a) => matchesAnyHint(a.url, preferredHints));
+        if (hinted) return hinted;
+      }
 
       if (shouldBiasToColombia(qRaw)) {
         const preferred = mapped.find((a) => isLikelyColombianSource(a));
