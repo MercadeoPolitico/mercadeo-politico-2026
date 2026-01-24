@@ -10,6 +10,7 @@ import { submitToN8n } from "@/lib/automation/n8n";
 import { getSiteUrlString } from "@/lib/site";
 import { pickWikimediaImage } from "@/lib/media/wikimedia";
 import { fetchOpenGraphMedia } from "@/lib/media/opengraph";
+import { pickTopRssItem, type RssSource, type RssItem } from "@/lib/news/rss";
 
 export const runtime = "nodejs";
 
@@ -417,6 +418,53 @@ function fallbackSvgDataUrl(seed: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+async function fetchActiveRssSources(args: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  region_key: "meta" | "colombia";
+}): Promise<RssSource[]> {
+  const admin = args.admin;
+  if (!admin) return [];
+  const { data } = await admin
+    .from("news_rss_sources")
+    .select("id,name,region_key,base_url,rss_url,active")
+    .eq("active", true)
+    .eq("region_key", args.region_key)
+    .order("name", { ascending: true });
+  return (data ?? []) as any;
+}
+
+function chooseNewsSignal(args: {
+  gdelt: import("@/lib/news/gdelt").GdeltArticle | null;
+  rss: RssItem | null;
+  prefer_rss?: boolean;
+}): { type: "gdelt"; article: import("@/lib/news/gdelt").GdeltArticle } | { type: "rss"; item: RssItem } | null {
+  // RSS is additive: use it when it's present and GDELT is missing, or when RSS is explicitly preferred.
+  if (args.rss && (!args.gdelt || args.prefer_rss)) return { type: "rss", item: args.rss };
+  if (args.gdelt) return { type: "gdelt", article: args.gdelt };
+  return null;
+}
+
+function appendPublicFooter(args: {
+  text: string;
+  based_on_source_name?: string | null;
+}): string {
+  const base = String(args.text || "").trim();
+  const lines: string[] = [base];
+
+  if (args.based_on_source_name) {
+    lines.push("", `Basado en información publicada por ${args.based_on_source_name}.`);
+  }
+
+  lines.push(
+    "",
+    "Contenido generado y analizado por Marleny Synthetic Intelligence by MarketBrain Technology™.",
+    "Publicidad política pagada. El creador del contenido no es responsable de las opiniones aquí expresadas.",
+    "Contenido de carácter informativo y publicitario conforme a la normativa electoral colombiana.",
+  );
+
+  return lines.filter(Boolean).join("\n");
+}
+
 export async function POST(req: Request) {
   // Automation endpoint: server-to-server only (n8n/cron/internal services).
   // Admin UI must call /api/admin/automation/editorial-orchestrate.
@@ -558,7 +606,25 @@ export async function POST(req: Request) {
   const hasAdminInputs = adminProvidedNewsLinks.length > 0 || adminEditorialNotes.length > 0 || recentMediaUrls.length > 0;
 
   // 2) News selection (GDELT) only if no admin-provided news links
-  const article = adminProvidedNewsLinks.length ? null : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints });
+  const gdeltArticle = adminProvidedNewsLinks.length
+    ? null
+    : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints });
+
+  // RSS additive signal (only when no admin-provided news)
+  const regionKey = regional.region_used === "meta" ? "meta" : "colombia";
+  const rssSources = adminProvidedNewsLinks.length ? [] : await fetchActiveRssSources({ admin, region_key: regionKey });
+  const rssItem =
+    adminProvidedNewsLinks.length
+      ? null
+      : await pickTopRssItem({
+          sources: rssSources,
+          query_terms: [pol.region, pol.office, "Colombia", "seguridad", "corrupción", "Meta", "Villavicencio"].filter(Boolean).map(String),
+        });
+
+  // Decide which signal to use (RSS is additive; never exclusive).
+  const chosen = chooseNewsSignal({ gdelt: gdeltArticle, rss: rssItem, prefer_rss: Boolean(rssItem && !gdeltArticle) });
+  const article = chosen?.type === "gdelt" ? chosen.article : null;
+  const rssChosen = chosen?.type === "rss" ? chosen.item : null;
 
   // 2) If no news, fallback: last published post (for reframing)
   const { data: lastPublished } = await admin
@@ -619,10 +685,15 @@ export async function POST(req: Request) {
     adminEditorialNotes ? `Notas editoriales admin: ${adminEditorialNotes}` : "",
     adminProvidedNewsLinks.length ? `Enlaces de noticia admin:\n${adminProvidedNewsLinks.map((u) => `- ${u}`).join("\n")}` : "",
     "",
-    article ? "Noticia automática (GDELT):" : "No hay noticia automática (GDELT) o se priorizaron inputs admin.",
-    article ? `Titular: ${article.title}` : "",
-    article ? `URL: ${article.url}` : "",
-    article ? `Fecha: ${article.seendate}` : "",
+    rssChosen
+      ? `Noticia RSS (señal adicional):\nMedio: ${rssChosen.source_name}\nTitular: ${rssChosen.title}\nURL: ${rssChosen.url}\nFecha: ${
+          rssChosen.published_at ?? ""
+        }`
+      : "",
+    !rssChosen && article ? "Noticia automática (GDELT):" : "",
+    !rssChosen && article ? `Titular: ${article.title}` : "",
+    !rssChosen && article ? `URL: ${article.url}` : "",
+    !rssChosen && article ? `Fecha: ${article.seendate}` : "",
     "",
     !article && lastPublished
       ? "Fallback: si no hay noticia, reescribe la nota anterior con nuevo título, enfoque y SEO manteniendo verificabilidad:"
@@ -915,7 +986,8 @@ export async function POST(req: Request) {
   }
 
   // Prefer the real article's own media (OpenGraph/Twitter card) with credit to the outlet.
-  const og = article?.url ? await fetchOpenGraphMedia({ url: article.url }) : null;
+  const sourceUrl = rssChosen?.url ?? article?.url ?? null;
+  const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
   const ogImage = og?.image_url && !avoidUrls.includes(og.image_url) ? og.image_url : null;
 
   const imageQuery = [
@@ -952,13 +1024,21 @@ export async function POST(req: Request) {
       recent_media_urls: recentMediaUrls,
     },
     // Compatibility: allow other routes/UIs to read a canonical source URL.
-    source_url: article?.url ?? (adminProvidedNewsLinks[0] ?? null),
+    source_url: sourceUrl ?? (adminProvidedNewsLinks[0] ?? null),
+    source_type: rssChosen ? "rss" : "other",
+    source_name: rssChosen ? rssChosen.source_name : article ? "gdelt" : null,
+    source_region: rssChosen ? rssChosen.source_region : regional.region_used,
+    original_rss_url: rssChosen ? rssChosen.url : null,
+    has_rss_image: rssChosen ? Boolean(rssChosen.rss_image_urls?.length) : false,
+    // RSS images are reference-only, never published.
+    rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
+    image_source: ogImage ? "rss_reference" : "ai_generated",
     media:
       ogImage
         ? {
             type: "image",
             image_url: finalImageUrl,
-            page_url: article?.url ?? null,
+            page_url: sourceUrl ?? null,
             license_short: null,
             attribution: og?.site_name ? `Imagen: ${og.site_name} (crédito al medio, ver fuente)` : "Imagen: crédito al medio, ver fuente",
             author: null,
@@ -977,14 +1057,16 @@ export async function POST(req: Request) {
           : {
               type: "image",
               image_url: finalImageUrl,
-              page_url: article?.url ?? null,
+            page_url: sourceUrl ?? null,
               license_short: "fallback_svg",
               attribution: "Imagen generada localmente (placeholder editorial).",
               author: null,
               source: "fallback_svg",
             },
-    news: article
-      ? { provider: "gdelt", title: article.title, url: article.url, seendate: article.seendate, query }
+    news: rssChosen
+      ? { provider: "rss", title: rssChosen.title, url: rssChosen.url, published_at: rssChosen.published_at, query }
+      : article
+        ? { provider: "gdelt", title: article.title, url: article.url, seendate: article.seendate, query }
       : lastPublished
         ? { provider: "fallback", from: "citizen_news_posts", title: lastPublished.title, source_url: lastPublished.source_url }
         : { provider: "none", query },
@@ -993,7 +1075,7 @@ export async function POST(req: Request) {
     master_editorial: winner.data.master_editorial,
   };
 
-  const topic = article ? `Noticias: ${article.title}` : "Noticias: (sin titular; reescritura editorial)";
+  const topic = rssChosen ? `Noticias RSS: ${rssChosen.title}` : article ? `Noticias: ${article.title}` : "Noticias: (sin titular; reescritura editorial)";
 
   const blogWithCredits = (() => {
     const base = ensureSeoLine(winner.data.platform_variants.blog || "", winner.data.seo_keywords);
@@ -1009,17 +1091,20 @@ export async function POST(req: Request) {
     ].filter(Boolean);
     const creditLine = creditBits.length ? `Crédito imagen: ${creditBits.join(" · ")}` : null;
     const imgLine = `Imagen: ${imageUrl}`;
-    return [base.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
+    const withImg = [base.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
+    // Append public footer (signature + disclaimers), and RSS credit when applicable.
+    const sourceNameForCredit = rssChosen ? rssChosen.source_name : null;
+    return appendPublicFooter({ text: withImg, based_on_source_name: sourceNameForCredit });
   })();
 
   // Persist: generated_text is the BLOG variant (Centro Informativo Ciudadano).
   // Variants: keep required keys for existing admin UI (facebook/instagram/x), plus reddit/blog for automation.
   const variantsJson = {
     blog: blogWithCredits,
-    facebook: winner.data.platform_variants.facebook,
+    facebook: appendPublicFooter({ text: winner.data.platform_variants.facebook, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
     instagram: "",
-    x: winner.data.platform_variants.x,
-    reddit: winner.data.platform_variants.reddit,
+    x: appendPublicFooter({ text: winner.data.platform_variants.x, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
+    reddit: appendPublicFooter({ text: winner.data.platform_variants.reddit, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
   };
 
   const image_keywords =
