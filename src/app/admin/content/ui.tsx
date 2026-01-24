@@ -24,6 +24,18 @@ type Draft = {
   created_at: string;
 };
 
+type PublishedPost = {
+  id: string;
+  candidate_id: string;
+  slug: string;
+  title: string;
+  media_urls: string[] | null;
+  source_url: string | null;
+  status: string;
+  published_at: string | null;
+  created_at: string | null;
+};
+
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 export function AdminContentPanel() {
@@ -33,6 +45,10 @@ export function AdminContentPanel() {
   const [polById, setPolById] = useState<Record<string, { name: string; office: string; region: string }>>({});
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [bulkAllowNoImage, setBulkAllowNoImage] = useState<boolean>(false);
+  const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
+  const [editingPost, setEditingPost] = useState<{ id: string; title: string; body: string; excerpt: string } | null>(null);
+  const [editPostState, setEditPostState] = useState<"idle" | "loading" | "saving" | "error">("idle");
+  const [editPostError, setEditPostError] = useState<string>("");
 
   // Draft creation (generate + store)
   const [candidateId, setCandidateId] = useState("jose-angel-martinez");
@@ -71,6 +87,15 @@ export function AdminContentPanel() {
       }
       return next;
     });
+
+    // Load latest Centro Informativo posts (published + archived) for admin control.
+    fetch("/api/admin/news/list", { method: "GET" })
+      .then(async (r) => {
+        if (!r.ok) return;
+        const j = (await r.json().catch(() => null)) as any;
+        if (j?.ok && Array.isArray(j.posts)) setPublishedPosts(j.posts as PublishedPost[]);
+      })
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -334,6 +359,66 @@ export function AdminContentPanel() {
     await refresh();
   }
 
+  async function managePublishedPostStandalone(post: PublishedPost, action: "archive" | "delete") {
+    const msg =
+      action === "archive"
+        ? "Vas a DESPUBLICAR esta noticia del Centro Informativo (ya no será visible al público). ¿Continuar?"
+        : "Vas a ELIMINAR definitivamente esta noticia del Centro Informativo. Esta acción no se puede deshacer. ¿Continuar?";
+    const ok = window.confirm(msg);
+    if (!ok) return;
+    const res = await fetch("/api/admin/news/manage", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, post_id: post.id, slug: post.slug }),
+    });
+    if (!res.ok) return;
+    await refresh();
+  }
+
+  async function startEditPublishedPost(post: PublishedPost) {
+    setEditPostState("loading");
+    setEditPostError("");
+    const res = await fetch(`/api/admin/news/get?post_id=${encodeURIComponent(post.id)}`, { method: "GET" });
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j?.ok || !j?.post) {
+      setEditPostState("error");
+      setEditPostError("No fue posible cargar la publicación.");
+      return;
+    }
+    setEditingPost({
+      id: String(j.post.id),
+      title: String(j.post.title ?? ""),
+      excerpt: String(j.post.excerpt ?? ""),
+      body: String(j.post.body ?? ""),
+    });
+    setEditPostState("idle");
+  }
+
+  async function saveEditedPublishedPost() {
+    if (!editingPost) return;
+    setEditPostState("saving");
+    setEditPostError("");
+    const res = await fetch("/api/admin/news/update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        post_id: editingPost.id,
+        title: editingPost.title,
+        excerpt: editingPost.excerpt,
+        body: editingPost.body,
+      }),
+    });
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j?.ok) {
+      setEditPostState("error");
+      setEditPostError("No fue posible guardar (verifica permisos/estado).");
+      return;
+    }
+    setEditPostState("idle");
+    setEditingPost(null);
+    await refresh();
+  }
+
   async function sendToN8n(draft: Draft) {
     // Only allow for approved drafts (human-gated)
     if (draft.status !== "approved") return;
@@ -367,7 +452,7 @@ export function AdminContentPanel() {
     const res = await fetch("/api/admin/news/publish", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ draft_id: draft.id }),
+      body: JSON.stringify({ draft_id: draft.id, allow_no_image: allowNoImage(draft) }),
     });
     if (!res.ok) return;
     await refresh();
@@ -707,6 +792,89 @@ export function AdminContentPanel() {
             <p className="text-sm text-muted">Aún no se han generado borradores. Cuando n8n ejecute, aparecerán aquí automáticamente.</p>
           </div>
         ) : null}
+
+        <div className="mt-6 rounded-2xl border border-border bg-background/60 p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Publicados (Centro Informativo)</p>
+              <p className="mt-1 text-xs text-muted">
+                Aquí aparecen las publicaciones públicas (y archivadas). “Despublicar” las oculta del público. También se envía una señal best-effort a n8n para retractar en redes.
+              </p>
+            </div>
+            <button className="glass-button" type="button" onClick={refresh}>
+              Actualizar
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {publishedPosts.map((p) => (
+              <div key={p.id} className="rounded-2xl border border-border bg-background p-4">
+                <p className="text-sm font-semibold">{p.title}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {polById[p.candidate_id]?.name ?? p.candidate_id} · estado: <span className="text-foreground">{p.status}</span>
+                </p>
+                <p className="mt-1 text-xs text-muted">
+                  {p.published_at ? new Date(p.published_at).toLocaleString("es-CO") : ""}
+                  {" · "}
+                  <a className="underline" href={`/centro-informativo#${p.slug}`} target="_blank" rel="noreferrer">
+                    abrir
+                  </a>
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button className="glass-button" type="button" onClick={() => startEditPublishedPost(p)}>
+                    Editar
+                  </button>
+                  <button className="glass-button" type="button" onClick={() => managePublishedPostStandalone(p, "archive")}>
+                    Despublicar
+                  </button>
+                  <button className="glass-button" type="button" onClick={() => managePublishedPostStandalone(p, "delete")}>
+                    Eliminar
+                  </button>
+                </div>
+              </div>
+            ))}
+            {publishedPosts.length === 0 ? <p className="text-sm text-muted">Aún no hay publicaciones.</p> : null}
+          </div>
+
+          {editingPost ? (
+            <div className="mt-5 rounded-2xl border border-border bg-background p-4">
+              <p className="text-sm font-semibold">Editar publicación</p>
+              {editPostState === "error" ? <p className="mt-2 text-xs text-amber-300">{editPostError}</p> : null}
+              <div className="mt-3 grid gap-2">
+                <label className="text-xs font-semibold text-muted">Título</label>
+                <input
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  value={editingPost.title}
+                  onChange={(e) => setEditingPost({ ...editingPost, title: e.target.value })}
+                  maxLength={160}
+                />
+                <label className="mt-2 text-xs font-semibold text-muted">Resumen (excerpt)</label>
+                <textarea
+                  className="min-h-[90px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  value={editingPost.excerpt}
+                  onChange={(e) => setEditingPost({ ...editingPost, excerpt: e.target.value })}
+                />
+                <label className="mt-2 text-xs font-semibold text-muted">Cuerpo</label>
+                <textarea
+                  className="min-h-[220px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  value={editingPost.body}
+                  onChange={(e) => setEditingPost({ ...editingPost, body: e.target.value })}
+                />
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button className="glass-button" type="button" onClick={() => setEditingPost(null)} disabled={editPostState === "saving"}>
+                    Cancelar
+                  </button>
+                  <button className="glass-button" type="button" onClick={saveEditedPublishedPost} disabled={editPostState === "saving"}>
+                    {editPostState === "saving" ? "Guardando…" : "Guardar cambios"}
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-muted">
+                  Al guardar, se actualiza el Centro Informativo y se envía una señal best-effort a n8n para reflejar cambios en redes (si el workflow lo soporta).
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         {selected ? (
           <div className="mt-6 rounded-2xl border border-border bg-background/60 p-5">

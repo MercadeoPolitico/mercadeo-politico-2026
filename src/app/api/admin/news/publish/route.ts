@@ -9,6 +9,14 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+function normalizeLineBreaks(input: string): string {
+  return String(input || "")
+    .replace(/\r/g, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function slugify(input: string): string {
   const base = input
     .toLowerCase()
@@ -43,7 +51,8 @@ export async function POST(req: Request) {
   if (draft.content_type !== "blog") return NextResponse.json({ error: "not_a_blog" }, { status: 400 });
   if (draft.status !== "approved" && draft.status !== "edited") return NextResponse.json({ error: "not_approved" }, { status: 400 });
 
-  const lines = String(draft.generated_text || "").split("\n").map((l) => l.trim());
+  const normalizedBody = normalizeLineBreaks(String(draft.generated_text || ""));
+  const lines = normalizedBody.split("\n").map((l) => l.trim());
   const title = lines.find((l) => l.length > 0)?.slice(0, 160) || "Centro informativo ciudadano";
   const excerpt = lines.filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
   const slug = slugify(`${draft.candidate_id}-${draft.created_at}-${title}`);
@@ -91,7 +100,7 @@ export async function POST(req: Request) {
       slug,
       title,
       excerpt,
-      body: draft.generated_text,
+      body: normalizedBody,
       media_urls: media_url ? [media_url] : null,
       source_url: typeof source_url === "string" ? source_url : null,
       status: "published",

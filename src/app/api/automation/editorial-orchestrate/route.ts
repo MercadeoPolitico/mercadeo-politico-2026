@@ -397,6 +397,14 @@ function stripSeoLine(text: string): string {
   return lines.filter((l) => !/^seo\s*:/i.test(l.trim())).join("\n").trim();
 }
 
+function normalizeLineBreaks(input: string): string {
+  return String(input || "")
+    .replace(/\r/g, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function ensureSeoLine(blog: string, seo: string[]): string {
   const base = String(blog || "").trim();
   if (!base) return base;
@@ -404,6 +412,32 @@ function ensureSeoLine(blog: string, seo: string[]): string {
   const top = (seo ?? []).map((s) => String(s || "").trim()).filter(Boolean).slice(0, 5);
   if (!top.length) return base;
   return `${base}\n\nSEO: ${top.join(", ")}`;
+}
+
+function isBadOgImageUrl(u: string): boolean {
+  const s = String(u || "").toLowerCase();
+  if (!s) return true;
+  // Avoid obvious site assets / logos / icons.
+  const badBits = [
+    "logo",
+    "favicon",
+    "icon",
+    "sprite",
+    "apple-touch-icon",
+    "site-icon",
+    "brand",
+    "avatar",
+    "profile",
+    "header",
+    "footer",
+    "default",
+    "placeholder",
+    "share.png",
+    "share.jpg",
+  ];
+  if (badBits.some((b) => s.includes(b))) return true;
+  if (s.endsWith(".svg")) return true;
+  return false;
 }
 
 function fallbackSvgDataUrl(seed: string): string {
@@ -1042,6 +1076,30 @@ export async function POST(req: Request) {
     for (const u of prevMedia) {
       if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
     }
+
+    // Avoid repeating images across recent posts (candidate + global).
+    const { data: recentCandidatePosts } = await admin
+      .from("citizen_news_posts")
+      .select("media_urls")
+      .eq("status", "published")
+      .eq("candidate_id", pol.id)
+      .order("published_at", { ascending: false })
+      .limit(30);
+    for (const row of recentCandidatePosts ?? []) {
+      const urls = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];
+      for (const u of urls) if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
+    }
+
+    const { data: recentGlobalPosts } = await admin
+      .from("citizen_news_posts")
+      .select("media_urls")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(60);
+    for (const row of recentGlobalPosts ?? []) {
+      const urls = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];
+      for (const u of urls) if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
+    }
   } catch {
     // ignore
   }
@@ -1049,7 +1107,8 @@ export async function POST(req: Request) {
   // Prefer the real article's own media (OpenGraph/Twitter card) with credit to the outlet.
   const sourceUrl = rssChosen?.url ?? article?.url ?? null;
   const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
-  const ogImage = og?.image_url && !avoidUrls.includes(og.image_url) ? og.image_url : null;
+  const ogImage =
+    og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
 
   const imageQuery = [
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
@@ -1140,7 +1199,8 @@ export async function POST(req: Request) {
   const topic = rssChosen ? `Noticias RSS: ${rssChosen.title}` : article ? `Noticias: ${article.title}` : "Noticias: (sin titular; reescritura editorial)";
 
   const blogWithCredits = (() => {
-    const base = ensureSeoLine(winner.data.platform_variants.blog || "", winner.data.seo_keywords);
+    const baseRaw = normalizeLineBreaks(winner.data.platform_variants.blog || "");
+    const base = ensureSeoLine(baseRaw, winner.data.seo_keywords);
     const m = (metadata as any)?.media as Record<string, unknown> | null;
     const mm = m ?? {};
     const imageUrl = typeof (mm as any).image_url === "string" ? String((mm as any).image_url) : null;
@@ -1163,10 +1223,16 @@ export async function POST(req: Request) {
   // Variants: keep required keys for existing admin UI (facebook/instagram/x), plus reddit/blog for automation.
   const variantsJson = {
     blog: blogWithCredits,
-    facebook: appendPublicFooter({ text: winner.data.platform_variants.facebook, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
+    facebook: appendPublicFooter({
+      text: normalizeLineBreaks(winner.data.platform_variants.facebook),
+      based_on_source_name: rssChosen ? rssChosen.source_name : null,
+    }),
     instagram: "",
-    x: appendPublicFooterShort({ text: winner.data.platform_variants.x, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
-    reddit: appendPublicFooter({ text: winner.data.platform_variants.reddit, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
+    x: appendPublicFooterShort({ text: normalizeLineBreaks(winner.data.platform_variants.x), based_on_source_name: rssChosen ? rssChosen.source_name : null }),
+    reddit: appendPublicFooter({
+      text: normalizeLineBreaks(winner.data.platform_variants.reddit),
+      based_on_source_name: rssChosen ? rssChosen.source_name : null,
+    }),
   };
 
   const image_keywords =

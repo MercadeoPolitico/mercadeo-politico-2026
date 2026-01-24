@@ -19,6 +19,15 @@ type Post = {
   published_at: string;
 };
 
+function normalizeLineBreaks(input: string): string {
+  // Some AI engines may output HTML breaks. Centro Informativo stores/render as plain text.
+  return String(input || "")
+    .replace(/\r/g, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export default async function CitizenInfoCenterPage() {
   const supabase = await createSupabaseServerClient();
   // Editorial policy:
@@ -73,19 +82,19 @@ export default async function CitizenInfoCenterPage() {
                   <img
                     src={p.media_urls[0]}
                     alt=""
-                    className="h-auto w-full object-cover"
+                    className="max-h-[360px] w-full object-cover"
                     loading="lazy"
                     referrerPolicy="no-referrer"
                   />
                 </figure>
               ) : null}
 
-              {p.excerpt ? <p className="mt-3 text-sm text-muted whitespace-pre-wrap">{p.excerpt}</p> : null}
+              {p.excerpt ? <p className="mt-3 whitespace-pre-wrap text-sm text-muted">{normalizeLineBreaks(p.excerpt)}</p> : null}
 
               <details className="mt-4 rounded-xl border border-border bg-background/50 p-4">
                 <summary className="cursor-pointer text-sm font-semibold">Leer completo</summary>
                 <div className="mt-3 space-y-3 text-sm text-muted">
-                  {p.body
+                  {normalizeLineBreaks(p.body)
                     .split(/\n{2,}/g)
                     .map((s) => s.trim())
                     .filter(Boolean)

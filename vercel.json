@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/news-blog/eduardo-buitrago",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/breaking-sweep",
+      "schedule": "15 * * * *"
     }
   ]
 }
