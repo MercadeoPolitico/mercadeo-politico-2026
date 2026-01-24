@@ -2,10 +2,10 @@
 
 :root {
   /* Default: glass-forward, patriotic, less "heavy" */
-  --background: #081a33; /* deep navy (lighter than near-black) */
+  --background: #0b2f54; /* brighter navy */
   --foreground: #eef2ff;
-  --surface: rgba(255, 255, 255, 0.10);
-  --border: rgba(255, 255, 255, 0.26);
+  --surface: rgba(255, 255, 255, 0.14);
+  --border: rgba(255, 255, 255, 0.22);
   --muted: rgba(226, 232, 240, 0.82);
 }
 
@@ -21,10 +21,10 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #081a33;
+    --background: #0b2f54;
     --foreground: #eef2ff;
-    --surface: rgba(255, 255, 255, 0.10);
-    --border: rgba(255, 255, 255, 0.26);
+    --surface: rgba(255, 255, 255, 0.14);
+    --border: rgba(255, 255, 255, 0.22);
     --muted: rgba(226, 232, 240, 0.82);
   }
 }
@@ -58,12 +58,13 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(55% 45% at 16% 18%, rgba(250, 204, 21, 0.26), transparent 62%),
-    radial-gradient(52% 45% at 84% 18%, rgba(56, 189, 248, 0.24), transparent 64%),
-    radial-gradient(58% 50% at 54% 86%, rgba(239, 68, 68, 0.20), transparent 64%),
-    radial-gradient(52% 48% at 76% 76%, rgba(34, 211, 238, 0.14), transparent 62%),
-    radial-gradient(60% 55% at 22% 78%, rgba(34, 197, 94, 0.12), transparent 62%);
-  filter: blur(34px);
+    radial-gradient(55% 45% at 14% 16%, rgba(250, 204, 21, 0.30), transparent 62%),
+    radial-gradient(52% 45% at 86% 16%, rgba(56, 189, 248, 0.30), transparent 64%),
+    radial-gradient(58% 50% at 54% 88%, rgba(239, 68, 68, 0.24), transparent 64%),
+    radial-gradient(55% 50% at 80% 78%, rgba(34, 211, 238, 0.18), transparent 62%),
+    radial-gradient(62% 58% at 18% 82%, rgba(34, 197, 94, 0.16), transparent 62%),
+    radial-gradient(50% 45% at 55% 45%, rgba(255, 255, 255, 0.08), transparent 60%);
+  filter: blur(44px);
   opacity: 1;
 }
 
@@ -71,14 +72,14 @@ body::before {
   .glass-card {
     position: relative;
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-    border-radius: 1.5rem;
+    background: rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    -webkit-backdrop-filter: blur(26px);
+    backdrop-filter: blur(26px);
+    border-radius: 2rem;
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-      0 18px 55px rgba(0, 0, 0, 0.25);
+      0 28px 80px rgba(0, 0, 0, 0.18);
   }
 
   .glass-card::before {
@@ -87,22 +88,37 @@ body::before {
     inset: 0;
     pointer-events: none;
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 42%),
-      radial-gradient(55% 45% at 18% 12%, rgba(250, 204, 21, 0.12), transparent 55%),
-      radial-gradient(55% 45% at 82% 14%, rgba(56, 189, 248, 0.10), transparent 58%);
+      linear-gradient(135deg, rgba(255, 255, 255, 0.28), transparent 44%),
+      radial-gradient(55% 45% at 18% 12%, rgba(250, 204, 21, 0.14), transparent 55%),
+      radial-gradient(55% 45% at 82% 14%, rgba(56, 189, 248, 0.14), transparent 58%),
+      radial-gradient(55% 50% at 70% 86%, rgba(34, 197, 94, 0.10), transparent 60%);
     opacity: 0.95;
+  }
+
+  /* Soft edge fade (makes cards blend into background) */
+  .glass-soft-edges {
+    position: relative;
+  }
+  .glass-soft-edges::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    background: radial-gradient(120% 120% at 50% 50%, rgba(0, 0, 0, 0), rgba(11, 47, 84, 0.22) 68%, rgba(11, 47, 84, 0.62) 100%);
+    filter: blur(14px);
+    opacity: 0.65;
   }
 
   .glass-button {
     @apply inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-semibold transition;
-    @apply border-white/25 bg-white/12 text-foreground;
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
+    @apply border-white/25 bg-white/16 text-foreground;
+    -webkit-backdrop-filter: blur(22px);
+    backdrop-filter: blur(22px);
     box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
   .glass-button:hover {
-    @apply bg-white/16;
+    @apply bg-white/20;
     transform: translateY(-1px);
   }
   .glass-button:active {

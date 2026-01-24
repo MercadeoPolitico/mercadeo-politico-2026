@@ -9,7 +9,7 @@ const nav = [
 
 export function SiteHeader() {
   return (
-    <header className="border-b border-border bg-background/70 backdrop-blur-xl">
+    <header className="border-b border-border bg-background/45 backdrop-blur-2xl">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4">
         <Link href="/" className="font-semibold tracking-tight">
           mercadeo-politico-2026

@@ -10,26 +10,29 @@ export default function Home() {
     <div className="relative space-y-14 overflow-hidden">
       {/* Patriotic ambient backdrop (glass-forward, brighter, Colombian accents) */}
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 -top-24 h-[560px] w-[560px] rounded-full bg-amber-300/25 blur-[90px]" />
-        <div className="absolute left-1/2 top-[-180px] h-[640px] w-[640px] -translate-x-1/2 rounded-full bg-sky-300/24 blur-[90px]" />
-        <div className="absolute -right-24 top-24 h-[560px] w-[560px] rounded-full bg-red-400/22 blur-[95px]" />
-        <div className="absolute -bottom-44 left-24 h-[700px] w-[700px] rounded-full bg-emerald-300/14 blur-[110px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,220,120,.16),transparent_56%),radial-gradient(circle_at_70%_12%,rgba(125,211,252,.16),transparent_56%),radial-gradient(circle_at_86%_55%,rgba(248,113,113,.14),transparent_62%),radial-gradient(circle_at_40%_78%,rgba(52,211,153,.10),transparent_62%)]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/0 to-white/5" />
+        <div className="absolute -left-24 -top-24 h-[640px] w-[640px] rounded-full bg-amber-300/28 blur-[110px]" />
+        <div className="absolute left-1/2 top-[-220px] h-[720px] w-[720px] -translate-x-1/2 rounded-full bg-sky-300/28 blur-[110px]" />
+        <div className="absolute -right-24 top-24 h-[640px] w-[640px] rounded-full bg-red-400/24 blur-[120px]" />
+        <div className="absolute -bottom-44 left-24 h-[760px] w-[760px] rounded-full bg-emerald-300/18 blur-[140px]" />
+        <div className="absolute left-1/3 top-1/2 h-[720px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/16 blur-[150px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/10 via-white/0 to-white/10" />
       </div>
 
       <Section>
         <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
           <div className="space-y-5">
             <div className="inline-flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-foreground/90 backdrop-blur-md">
+              <span className="rounded-full border border-white/20 bg-white/12 px-3 py-1 text-xs font-medium text-foreground/95 backdrop-blur-xl">
                 Colombia 2026
               </span>
-              <span className="rounded-full border border-amber-400/25 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-100">
+              <span className="rounded-full border border-amber-300/35 bg-amber-300/18 px-3 py-1 text-xs font-medium text-amber-50">
                 Seguridad proactiva
               </span>
-              <span className="rounded-full border border-sky-400/20 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-100">
+              <span className="rounded-full border border-sky-200/35 bg-sky-200/14 px-3 py-1 text-xs font-medium text-sky-50">
                 Orden · Territorio · Confianza
+              </span>
+              <span className="rounded-full border border-emerald-200/30 bg-emerald-200/12 px-3 py-1 text-xs font-medium text-emerald-50">
+                Vida · Comunidad · Legalidad
               </span>
             </div>
 
@@ -71,9 +74,9 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="glass-card relative p-8">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(250,204,21,.14),transparent_55%),radial-gradient(circle_at_82%_14%,rgba(56,189,248,.14),transparent_58%),radial-gradient(circle_at_78%_78%,rgba(239,68,68,.12),transparent_62%)]" />
-            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-200/60 via-sky-100/50 to-red-200/60" />
+          <div className="glass-card glass-soft-edges relative p-10">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(250,204,21,.16),transparent_58%),radial-gradient(circle_at_82%_14%,rgba(56,189,248,.18),transparent_60%),radial-gradient(circle_at_78%_78%,rgba(34,197,94,.14),transparent_64%),radial-gradient(circle_at_26%_78%,rgba(239,68,68,.14),transparent_64%)]" />
+            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-200/70 via-sky-100/60 to-emerald-200/70" />
             <div className="relative flex items-start gap-5">
               <div className="mt-1 shrink-0">
                 <span className="relative inline-flex h-12 w-12 items-center justify-center">
@@ -98,16 +101,16 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="relative mt-6 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-3xl border border-white/20 bg-white/10 p-4">
+            <div className="relative mt-7 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-3xl border border-white/22 bg-white/14 p-4">
                 <p className="text-sm font-semibold">Prevención</p>
                 <p className="mt-1 text-xs text-muted">Acción temprana para reducir riesgos antes de que escalen.</p>
               </div>
-              <div className="rounded-3xl border border-white/20 bg-white/10 p-4">
+              <div className="rounded-3xl border border-white/22 bg-white/14 p-4">
                 <p className="text-sm font-semibold">Presencia</p>
                 <p className="mt-1 text-xs text-muted">Cercanía institucional y control territorial con legalidad.</p>
               </div>
-              <div className="rounded-3xl border border-white/20 bg-white/10 p-4">
+              <div className="rounded-3xl border border-white/22 bg-white/14 p-4">
                 <p className="text-sm font-semibold">Confianza</p>
                 <p className="mt-1 text-xs text-muted">Mensajes sobrios, verificables y sin manipulación.</p>
               </div>
