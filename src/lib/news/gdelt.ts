@@ -15,6 +15,11 @@ export type GdeltPickOptions = {
    * Not a hard constraint: if no match, we fall back to best overall.
    */
   preferred_url_hints?: string[];
+  /**
+   * If true, prefer sensational/high-impact civic news (still Colombia-biased).
+   * This is a soft preference only.
+   */
+  prefer_sensational?: boolean;
 };
 
 function hasOp(q: string, op: string): boolean {
@@ -68,10 +73,89 @@ function withDefaultFilters(rawQuery: string): string {
   return parts.join(" ");
 }
 
+function safeHostOf(u: string): string {
+  try {
+    return new URL(u).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function seendateScore(seendate: string): number {
+  // Higher is better (more recent). We keep it coarse to avoid timezone issues.
+  const t = Date.parse(seendate);
+  if (!Number.isFinite(t)) return 0;
+  const hoursAgo = (Date.now() - t) / 3_600_000;
+  if (hoursAgo <= 6) return 12;
+  if (hoursAgo <= 12) return 9;
+  if (hoursAgo <= 24) return 6;
+  if (hoursAgo <= 48) return 3;
+  return 1;
+}
+
+function sensationalScore(title: string): number {
+  const t = String(title || "").toLowerCase();
+  if (!t) return 0;
+  // Spanish + Colombia-relevant sensational / high-impact terms.
+  const hits = [
+    "secuestro",
+    "extors",
+    "homicid",
+    "asesin",
+    "sicari",
+    "masacre",
+    "atent",
+    "explosi",
+    "captur",
+    "allan",
+    "incaut",
+    "narcot",
+    "corrup",
+    "soborno",
+    "fraude",
+    "abuso",
+    "violenc",
+    "rob",
+    "atraco",
+    "accidente",
+    "choque",
+    "incendio",
+    "protest",
+    "bloqueo",
+    "paro",
+    "denuncia",
+    "amenaza",
+  ].filter((k) => t.includes(k)).length;
+  return Math.min(10, hits * 2);
+}
+
+function scoreArticle(a: GdeltArticle, args: { qRaw: string; preferredHints: string[]; preferSensational: boolean }): number {
+  let score = 0;
+  score += seendateScore(a.seendate);
+
+  // Prefer local outlets when query implies Colombia.
+  if (shouldBiasToColombia(args.qRaw) && isLikelyColombianSource(a)) score += 10;
+
+  // Prefer configured regional providers.
+  if (args.preferredHints.length && matchesAnyHint(a.url, args.preferredHints)) score += 12;
+
+  // Penalize obviously irrelevant international domains when Colombia is intended.
+  if (shouldBiasToColombia(args.qRaw)) {
+    const host = safeHostOf(a.url);
+    const badHosts = ["thehindu.com", "carbuzz.com"];
+    if (badHosts.some((h) => host.endsWith(h))) score -= 25;
+  }
+
+  if (args.preferSensational) score += sensationalScore(a.title);
+
+  return score;
+}
+
 export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOptions): Promise<GdeltArticle | null> {
   const raw = query.trim();
   if (!raw) return null;
   const preferredHints = normalizeHints(opts?.preferred_url_hints);
+  const preferSensational = opts?.prefer_sensational === true;
 
   // Two-pass strategy:
   // 1) Try with default filters (Spanish + Colombia bias for local queries)
@@ -106,18 +190,31 @@ export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOption
 
       if (mapped.length === 0) continue;
 
-      // Region-aware bias: if any article matches preferred URL hints, take it.
-      if (preferredHints.length) {
-        const hinted = mapped.find((a) => matchesAnyHint(a.url, preferredHints));
-        if (hinted) return hinted;
-      }
+      const biasCo = shouldBiasToColombia(qRaw);
+      const blockedHosts = new Set(["thehindu.com", "carbuzz.com"]);
+      const isBlocked = (u: string) => {
+        const h = safeHostOf(u);
+        if (!h) return false;
+        for (const b of blockedHosts) if (h === b || h.endsWith(`.${b}`)) return true;
+        return false;
+      };
 
-      if (shouldBiasToColombia(qRaw)) {
-        const preferred = mapped.find((a) => isLikelyColombianSource(a));
-        if (preferred) return preferred;
-      }
+      // If Colombia bias is on and we have any Colombian-looking sources, prefer them.
+      const colombian = biasCo ? mapped.filter((a) => isLikelyColombianSource(a)) : [];
 
-      return mapped[0] ?? null;
+      // If we have any preferred regional sources, prefer them strongly.
+      const hinted = preferredHints.length ? mapped.filter((a) => matchesAnyHint(a.url, preferredHints)) : [];
+
+      // If we have some non-blocked options, avoid obviously irrelevant outlets.
+      const nonBlocked = mapped.filter((a) => !isBlocked(a.url));
+
+      const pool = hinted.length ? hinted : colombian.length ? colombian : nonBlocked.length ? nonBlocked : mapped;
+
+      // Score and pick best candidate (soft preferences).
+      const scored = pool
+        .map((a) => ({ a, s: scoreArticle(a, { qRaw, preferredHints, preferSensational }) }))
+        .sort((x, y) => y.s - x.s);
+      return scored[0]?.a ?? null;
     }
     return null;
   } catch {

@@ -9,6 +9,7 @@ import { regionalProvidersForCandidate } from "@/lib/news/providers";
 import { submitToN8n } from "@/lib/automation/n8n";
 import { getSiteUrlString } from "@/lib/site";
 import { pickWikimediaImage } from "@/lib/media/wikimedia";
+import { fetchOpenGraphMedia } from "@/lib/media/opengraph";
 
 export const runtime = "nodejs";
 
@@ -60,6 +61,46 @@ function newsQueryFor(office: string, region: string): string {
   // Cámara: prioritize territory (Meta, etc). Allow national if it impacts the region (GDELT ranking helps).
   const reg = String(region ?? "").trim();
   return reg ? `${reg} Colombia seguridad` : "Colombia seguridad";
+}
+
+function isBlockedNewsUrl(url: string): boolean {
+  try {
+    const h = new URL(url).host.toLowerCase();
+    const blocked = ["thehindu.com", "carbuzz.com"];
+    return blocked.some((b) => h === b || h.endsWith(`.${b}`));
+  } catch {
+    return false;
+  }
+}
+
+async function fetchBestNewsArticle(args: {
+  office: string;
+  region: string;
+  regional_hints: string[];
+}): Promise<import("@/lib/news/gdelt").GdeltArticle | null> {
+  const off = args.office.toLowerCase();
+  const reg = String(args.region || "").trim();
+  const queries =
+    off.includes("senado")
+      ? ["Colombia seguridad", "Colombia corrupción", "Colombia narcotráfico", "Colombia secuestro", "Colombia extorsión"]
+      : reg
+        ? [
+            `${reg} Colombia seguridad`,
+            `${reg} Colombia extorsión`,
+            `${reg} Colombia secuestro`,
+            `${reg} Colombia corrupción`,
+            `Villavicencio seguridad`,
+          ]
+        : ["Colombia seguridad", "Colombia corrupción"];
+
+  for (const q of queries) {
+    // eslint-disable-next-line no-await-in-loop
+    const a = await fetchTopGdeltArticle(q, { preferred_url_hints: args.regional_hints, prefer_sensational: true });
+    if (!a) continue;
+    if (isBlockedNewsUrl(a.url)) continue;
+    return a;
+  }
+  return null;
 }
 
 type Sentiment = "positive" | "negative" | "neutral";
@@ -249,6 +290,39 @@ function ensureSeoLine(blog: string, seo: string[]): string {
   return `${base}\n\nSEO: ${top.join(", ")}`;
 }
 
+function fallbackSvgDataUrl(seed: string): string {
+  const s = String(seed || "mp26").slice(0, 80);
+  const hash = Array.from(s).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 2166136261);
+  const r = (hash % 255) | 0;
+  const g = ((hash >> 8) % 255) | 0;
+  const b = ((hash >> 16) % 255) | 0;
+  const c1 = `rgb(${Math.max(40, r)},${Math.max(60, g)},${Math.max(80, b)})`;
+  const c2 = `rgb(${Math.max(180, 255 - r)},${Math.max(120, 255 - g)},${Math.max(80, 255 - b)})`;
+  const c3 = "rgb(255, 204, 0)"; // Colombia yellow vibe (abstract)
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800">
+  <defs>
+    <radialGradient id="g1" cx="25%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="${c3}" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="${c1}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="rgb(10, 20, 35)" stop-opacity="1"/>
+    </radialGradient>
+    <radialGradient id="g2" cx="80%" cy="65%" r="70%">
+      <stop offset="0%" stop-color="${c2}" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="rgb(10, 20, 35)" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+  </defs>
+  <rect width="1400" height="800" fill="rgb(10,20,35)"/>
+  <rect width="1400" height="800" fill="url(#g1)"/>
+  <circle cx="1100" cy="540" r="360" fill="url(#g2)" filter="url(#blur)"/>
+  <circle cx="360" cy="600" r="260" fill="${c1}" opacity="0.18" filter="url(#blur)"/>
+</svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 export async function POST(req: Request) {
   // Automation endpoint: server-to-server only (n8n/cron/internal services).
   // Admin UI must call /api/admin/automation/editorial-orchestrate.
@@ -390,17 +464,12 @@ export async function POST(req: Request) {
   const hasAdminInputs = adminProvidedNewsLinks.length > 0 || adminEditorialNotes.length > 0 || recentMediaUrls.length > 0;
 
   // 2) News selection (GDELT) only if no admin-provided news links
-  const article =
-    adminProvidedNewsLinks.length
-      ? null
-      : await fetchTopGdeltArticle(query, {
-          preferred_url_hints: regional.url_hints,
-        });
+  const article = adminProvidedNewsLinks.length ? null : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints });
 
   // 2) If no news, fallback: last published post (for reframing)
   const { data: lastPublished } = await admin
     .from("citizen_news_posts")
-    .select("id,title,body,source_url,published_at")
+    .select("id,title,body,source_url,media_urls,published_at")
     .eq("candidate_id", pol.id)
     .eq("status", "published")
     .order("published_at", { ascending: false })
@@ -419,13 +488,16 @@ export async function POST(req: Request) {
     "- No inventar datos/cifras; no ataques personales; no urgencia falsa.",
     "- Debe ser coherente con la biografía y propuestas del candidato.",
     "- Debe explicar explícitamente cómo 1–2 ejes/puntos de la propuesta del candidato aportan a prevenir/mitigar/solucionar (si es negativo) o potenciar (si es positivo).",
+    "- Debe cambiar (reescribir) el título de la noticia real: no copies literal el titular del medio.",
+    "- Debe incluir el nombre del candidato y su número de tarjetón cuando se mencione su implicación.",
+    "- Debe incluir un cierre tipo 'derecho ciudadano al voto' (reformulado cada vez, no literal).",
     "- Incluye link relativo a /centro-informativo en facebook/x (sin URL absoluta).",
     "- Variants:",
     "  - blog: Ideal 450–650 palabras (mínimo aceptable 350, máximo recomendado 800). Presentación atractiva:",
     "    - Primera línea: Título (<=120 caracteres)",
     "    - Luego 1 lead corto",
     "    - Secciones sugeridas: “Qué pasó”, “Por qué importa”, “Cómo encaja con la propuesta del candidato”, “Qué sigue / Recomendaciones”",
-    "    - Cierra con: “Fuente:” (si existe) y “Hashtags:” (3+).",
+    "    - Cierra con: “Fuente:” (si existe), “Hashtags:” (3+) y una línea final 'Mensaje ciudadano:' (con la idea del voto como derecho y líderes proactivos).",
     "  - facebook: 700-900 caracteres.",
     "  - x: <=280 o mini-hilo (3 partes) separadas por \\n\\n---\\n\\n.",
     "  - reddit: 6-10 líneas, tono analítico y abierto a discusión.",
@@ -650,9 +722,17 @@ export async function POST(req: Request) {
     const prevBody = lastPublished?.body ? String(lastPublished.body) : "";
     const m = prevBody.match(/https?:\/\/upload\.wikimedia\.org\/[^\s)]+/i);
     if (m?.[0]) avoidUrls.push(m[0]);
+    const prevMedia = Array.isArray((lastPublished as any)?.media_urls) ? ((lastPublished as any).media_urls as unknown[]) : [];
+    for (const u of prevMedia) {
+      if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
+    }
   } catch {
     // ignore
   }
+
+  // Prefer the real article's own media (OpenGraph/Twitter card) with credit to the outlet.
+  const og = article?.url ? await fetchOpenGraphMedia({ url: article.url }) : null;
+  const ogImage = og?.image_url && !avoidUrls.includes(og.image_url) ? og.image_url : null;
 
   const imageQuery = [
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
@@ -663,7 +743,8 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join(" ");
 
-  const pickedImage = await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
+  const pickedImage = ogImage ? null : await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
+  const finalImageUrl = ogImage ?? pickedImage?.thumb_url ?? pickedImage?.image_url ?? fallbackSvgDataUrl(`${pol.id}-${imageQuery}-${Date.now()}`);
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -689,17 +770,35 @@ export async function POST(req: Request) {
     // Compatibility: allow other routes/UIs to read a canonical source URL.
     source_url: article?.url ?? (adminProvidedNewsLinks[0] ?? null),
     media:
-      pickedImage
+      ogImage
         ? {
             type: "image",
-            image_url: pickedImage.image_url,
-            page_url: pickedImage.page_url,
-            license_short: pickedImage.license_short,
-            attribution: pickedImage.attribution,
-            author: pickedImage.author,
-            source: pickedImage.source,
+            image_url: finalImageUrl,
+            page_url: article?.url ?? null,
+            license_short: null,
+            attribution: og?.site_name ? `Imagen: ${og.site_name} (crédito al medio, ver fuente)` : "Imagen: crédito al medio, ver fuente",
+            author: null,
+            source: "article_og",
           }
-        : null,
+        : pickedImage
+          ? {
+              type: "image",
+              image_url: finalImageUrl,
+              page_url: pickedImage.page_url,
+              license_short: pickedImage.license_short,
+              attribution: pickedImage.attribution,
+              author: pickedImage.author,
+              source: pickedImage.source,
+            }
+          : {
+              type: "image",
+              image_url: finalImageUrl,
+              page_url: article?.url ?? null,
+              license_short: "fallback_svg",
+              attribution: "Imagen generada localmente (placeholder editorial).",
+              author: null,
+              source: "fallback_svg",
+            },
     news: article
       ? { provider: "gdelt", title: article.title, url: article.url, seendate: article.seendate, query }
       : lastPublished
@@ -714,15 +813,18 @@ export async function POST(req: Request) {
 
   const blogWithCredits = (() => {
     const base = ensureSeoLine(winner.data.platform_variants.blog || "", winner.data.seo_keywords);
-    if (!pickedImage) return base;
+    const m = (metadata as any)?.media as Record<string, unknown> | null;
+    const mm = m ?? {};
+    const imageUrl = typeof (mm as any).image_url === "string" ? String((mm as any).image_url) : null;
+    if (!imageUrl) return base;
     const creditBits = [
-      pickedImage.attribution ? pickedImage.attribution : null,
-      pickedImage.author ? `Autor: ${pickedImage.author}` : null,
-      pickedImage.license_short ? `Licencia: ${pickedImage.license_short}` : null,
-      pickedImage.page_url ? `Fuente imagen: ${pickedImage.page_url}` : null,
+      typeof (mm as any).attribution === "string" ? String((mm as any).attribution) : null,
+      typeof (mm as any).author === "string" ? `Autor: ${String((mm as any).author)}` : null,
+      typeof (mm as any).license_short === "string" ? `Licencia: ${String((mm as any).license_short)}` : null,
+      typeof (mm as any).page_url === "string" ? `Fuente imagen: ${String((mm as any).page_url)}` : null,
     ].filter(Boolean);
     const creditLine = creditBits.length ? `Crédito imagen: ${creditBits.join(" · ")}` : null;
-    const imgLine = `Imagen (CC): ${pickedImage.thumb_url ?? pickedImage.image_url}`;
+    const imgLine = `Imagen: ${imageUrl}`;
     return [base.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
   })();
 
@@ -789,7 +891,7 @@ export async function POST(req: Request) {
           title: titleLine.slice(0, 160),
           excerpt,
           body: blogWithCredits,
-          media_urls: pickedImage ? [pickedImage.thumb_url ?? pickedImage.image_url] : null,
+          media_urls: (metadata as any)?.media?.image_url ? [(metadata as any).media.image_url] : null,
           source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
           status: "published",
           published_at: created_at,
