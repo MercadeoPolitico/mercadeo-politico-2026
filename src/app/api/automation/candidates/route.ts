@@ -3,13 +3,20 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
+function normalizeToken(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1).trim();
+  return s;
+}
+
 function allow(req: Request): boolean {
   // Prefer MP26_AUTOMATION_TOKEN (n8n contract), fallback to legacy AUTOMATION_API_TOKEN.
   const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
   if (!apiToken) return false;
-  // Defensive: tolerate accidental whitespace/newline in stored env or header.
-  return headerToken.trim() === String(apiToken).trim();
+  // Defensive: tolerate whitespace/newlines and accidental quotes in env/header.
+  return normalizeToken(headerToken) === normalizeToken(apiToken);
 }
 
 export async function GET(req: Request) {
