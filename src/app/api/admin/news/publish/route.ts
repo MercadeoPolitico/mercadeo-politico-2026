@@ -52,6 +52,14 @@ export async function POST(req: Request) {
       ? (draft.metadata as Record<string, unknown>).source_url
       : null;
 
+  const media_url = (() => {
+    if (!draft.metadata || typeof draft.metadata !== "object") return null;
+    const meta = draft.metadata as Record<string, unknown>;
+    const media = meta.media && typeof meta.media === "object" ? (meta.media as Record<string, unknown>) : null;
+    const url = media && typeof media.image_url === "string" ? media.image_url.trim() : "";
+    return url && /^https?:\/\//i.test(url) ? url : null;
+  })();
+
   const { data: inserted, error: insErr } = await supabase
     .from("citizen_news_posts")
     .insert({
@@ -60,7 +68,7 @@ export async function POST(req: Request) {
       title,
       excerpt,
       body: draft.generated_text,
-      media_urls: null,
+      media_urls: media_url ? [media_url] : null,
       source_url: typeof source_url === "string" ? source_url : null,
       status: "published",
       published_at: new Date().toISOString(),

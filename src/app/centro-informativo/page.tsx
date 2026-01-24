@@ -14,6 +14,7 @@ type Post = {
   title: string;
   excerpt: string;
   body: string;
+  media_urls: string[] | null;
   source_url: string | null;
   published_at: string;
 };
@@ -26,7 +27,7 @@ export default async function CitizenInfoCenterPage() {
   const { data } = supabase
     ? await supabase
         .from("citizen_news_posts")
-        .select("id,candidate_id,slug,title,excerpt,body,source_url,published_at")
+        .select("id,candidate_id,slug,title,excerpt,body,media_urls,source_url,published_at")
         .eq("status", "published")
         .order("published_at", { ascending: false })
         .limit(30)
@@ -65,6 +66,19 @@ export default async function CitizenInfoCenterPage() {
                   </a>
                 ) : null}
               </div>
+
+              {p.media_urls?.length ? (
+                <figure className="mt-4 overflow-hidden rounded-2xl border border-border bg-background/40">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.media_urls[0]}
+                    alt=""
+                    className="h-auto w-full object-cover"
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                  />
+                </figure>
+              ) : null}
 
               {p.excerpt ? <p className="mt-3 text-sm text-muted whitespace-pre-wrap">{p.excerpt}</p> : null}
 

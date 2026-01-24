@@ -161,3 +161,11 @@ Valida:
 
 > Nota: requiere que el token esté en `.env.local` o en variables de entorno del shell.
 
+## 10) Redes sociales (conectar / gobernar)
+Guía paso a paso:
+- `docs/admin/SOCIAL_NETWORKS.md`
+
+Resumen:
+- El **Admin Panel** activa/desactiva redes por candidato (`politician_social_links`).
+- La publicación real la ejecuta **n8n** (credenciales OAuth/tokens viven allá).
+

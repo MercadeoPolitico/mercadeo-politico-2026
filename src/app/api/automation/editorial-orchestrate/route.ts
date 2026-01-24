@@ -8,6 +8,7 @@ import { openAiJson } from "@/lib/automation/openai";
 import { regionalProvidersForCandidate } from "@/lib/news/providers";
 import { submitToN8n } from "@/lib/automation/n8n";
 import { getSiteUrlString } from "@/lib/site";
+import { pickWikimediaImage } from "@/lib/media/wikimedia";
 
 export const runtime = "nodejs";
 
@@ -232,6 +233,22 @@ function slugify(input: string): string {
   return base.length ? base.slice(0, 64) : `post-${Date.now()}`;
 }
 
+function wordCount(text: string): number {
+  return String(text || "")
+    .trim()
+    .split(/\s+/g)
+    .filter(Boolean).length;
+}
+
+function ensureSeoLine(blog: string, seo: string[]): string {
+  const base = String(blog || "").trim();
+  if (!base) return base;
+  if (/^seo\s*:/im.test(base)) return base;
+  const top = (seo ?? []).map((s) => String(s || "").trim()).filter(Boolean).slice(0, 5);
+  if (!top.length) return base;
+  return `${base}\n\nSEO: ${top.join(", ")}`;
+}
+
 export async function POST(req: Request) {
   // Automation endpoint: server-to-server only (n8n/cron/internal services).
   // Admin UI must call /api/admin/automation/editorial-orchestrate.
@@ -401,9 +418,14 @@ export async function POST(req: Request) {
     "- Informativo, propositivo, no agresivo, no propagandístico.",
     "- No inventar datos/cifras; no ataques personales; no urgencia falsa.",
     "- Debe ser coherente con la biografía y propuestas del candidato.",
+    "- Debe explicar explícitamente cómo 1–2 ejes/puntos de la propuesta del candidato aportan a prevenir/mitigar/solucionar (si es negativo) o potenciar (si es positivo).",
     "- Incluye link relativo a /centro-informativo en facebook/x (sin URL absoluta).",
     "- Variants:",
-    "  - blog: <= 30 líneas, incluye al final “Fuente:” (si existe) y “Hashtags:” (3+).",
+    "  - blog: Ideal 450–650 palabras (mínimo aceptable 350, máximo recomendado 800). Presentación atractiva:",
+    "    - Primera línea: Título (<=120 caracteres)",
+    "    - Luego 1 lead corto",
+    "    - Secciones sugeridas: “Qué pasó”, “Por qué importa”, “Cómo encaja con la propuesta del candidato”, “Qué sigue / Recomendaciones”",
+    "    - Cierra con: “Fuente:” (si existe) y “Hashtags:” (3+).",
     "  - facebook: 700-900 caracteres.",
     "  - x: <=280 o mini-hilo (3 partes) separadas por \\n\\n---\\n\\n.",
     "  - reddit: 6-10 líneas, tono analítico y abierto a discusión.",
@@ -509,20 +531,19 @@ export async function POST(req: Request) {
     return { ok: true, engine: "OpenAI", ms, data, raw: JSON.stringify(r.data) };
   }
 
-  // Run both in parallel, but prefer MSI first (primary reasoning engine).
+  // Run both in parallel, but prefer OpenAI first (internal preference; not user-visible).
   const msiP = runMsi();
   const oaP = runOpenAi();
 
   const results: Record<EngineName, EngineResult | null> = { MSI: null, OpenAI: null };
 
-  // Prefer MSI: await MSI first; if it fails, fallback to OpenAI (already running).
-  const msi = await msiP;
-  results.MSI = msi;
-  let winner: (EngineResult & { ok: true }) | null = msi.ok ? (msi as any) : null;
-
   const oa = await oaP;
   results.OpenAI = oa;
-  if (!winner && oa.ok) winner = oa as any;
+  let winner: (EngineResult & { ok: true }) | null = oa.ok ? (oa as any) : null;
+
+  const msi = await msiP;
+  results.MSI = msi;
+  if (!winner && msi.ok) winner = msi as any;
 
   if (!winner) {
     console.warn("[editorial-orchestrate] no_valid_engine_output", {
@@ -562,12 +583,87 @@ export async function POST(req: Request) {
   }
 
   const arbitration_reason = (() => {
-    if (winner.engine === "MSI") return "msi_preferred";
-    // winner is OpenAI
-    if (msi && !msi.ok && msi.error === "timeout") return "msi_timeout";
-    if (msi && !msi.ok && msi.error !== "timeout") return "msi_error";
-    return "openai_fallback";
+    if (winner.engine === "OpenAI") return "openai_preferred";
+    if (oa && !oa.ok && oa.error === "timeout") return "openai_timeout";
+    if (oa && !oa.ok) return "openai_error";
+    return "msi_fallback";
   })();
+
+  // Enforce target blog length (best-effort) before persisting.
+  const wc = wordCount(winner.data.platform_variants.blog);
+  if (wc < 350 || wc > 800) {
+    const topic = [
+      "Ajusta SOLO el contenido del JSON para cumplir longitud y estructura del blog.",
+      "Reglas:",
+      "- Devuelve SOLO JSON con el MISMO esquema.",
+      "- Mantén hechos verificables (sin inventar cifras/datos).",
+      "- Blog: 450–650 palabras (mín. 350, máx. 800).",
+      "- Debe explicar cómo 1–2 ejes de propuesta del candidato aportan a la situación.",
+      "- Conserva hashtags (3+) y 'Fuente:' si existe.",
+      "- Integra 3–5 SEO keywords dentro del texto de forma natural.",
+      "",
+      "JSON (entrada):",
+      JSON.stringify(winner.data),
+    ].join("\\n");
+
+    const wrapped = await withTimeout(
+      callMarlenyAI({
+        candidateId: pol.id,
+        contentType: "blog",
+        topic,
+        tone: "editorial sobrio, institucional, humano",
+      }),
+      25000,
+    );
+
+    let adjusted: EngineOutput | null = null;
+    if (wrapped.ok && wrapped.value?.ok) {
+      const parsed = safeJsonParse(String(wrapped.value.text ?? ""));
+      const data = extractEngineOutput(parsed);
+      if (data && baselineValidText(data, pol.name)) adjusted = data;
+    }
+
+    // Fallback: if MSI is down, adjust using Volume (OpenAI-compatible).
+    if (!adjusted) {
+      const oaAdj = await withTimeout(
+        openAiJson<EngineOutput>({
+          task: "editorial_adjust_length",
+          system:
+            "Eres un editor cívico para Colombia. Ajusta el JSON para cumplir reglas de longitud/estructura/SEO sin inventar datos. " +
+            "Responde SOLO JSON con el esquema indicado.",
+          user: topic,
+        }),
+        20000,
+      );
+      if (oaAdj.ok && oaAdj.value?.ok) {
+        const data = extractEngineOutput(oaAdj.value.data);
+        if (data && baselineValidText(data, pol.name)) adjusted = data;
+      }
+    }
+
+    if (adjusted) (winner as any).data = adjusted;
+  }
+
+  // Pick a CC image (Wikimedia) and store attribution (best-effort).
+  const avoidUrls: string[] = [];
+  try {
+    const prevBody = lastPublished?.body ? String(lastPublished.body) : "";
+    const m = prevBody.match(/https?:\/\/upload\.wikimedia\.org\/[^\s)]+/i);
+    if (m?.[0]) avoidUrls.push(m[0]);
+  } catch {
+    // ignore
+  }
+
+  const imageQuery = [
+    ...(winner.data.image_keywords?.slice(0, 4) ?? []),
+    ...(winner.data.seo_keywords?.slice(0, 2) ?? []),
+    pol.region,
+    "Colombia",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const pickedImage = await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -592,6 +688,18 @@ export async function POST(req: Request) {
     },
     // Compatibility: allow other routes/UIs to read a canonical source URL.
     source_url: article?.url ?? (adminProvidedNewsLinks[0] ?? null),
+    media:
+      pickedImage
+        ? {
+            type: "image",
+            image_url: pickedImage.image_url,
+            page_url: pickedImage.page_url,
+            license_short: pickedImage.license_short,
+            attribution: pickedImage.attribution,
+            author: pickedImage.author,
+            source: pickedImage.source,
+          }
+        : null,
     news: article
       ? { provider: "gdelt", title: article.title, url: article.url, seendate: article.seendate, query }
       : lastPublished
@@ -604,10 +712,24 @@ export async function POST(req: Request) {
 
   const topic = article ? `Noticias: ${article.title}` : "Noticias: (sin titular; reescritura editorial)";
 
+  const blogWithCredits = (() => {
+    const base = ensureSeoLine(winner.data.platform_variants.blog || "", winner.data.seo_keywords);
+    if (!pickedImage) return base;
+    const creditBits = [
+      pickedImage.attribution ? pickedImage.attribution : null,
+      pickedImage.author ? `Autor: ${pickedImage.author}` : null,
+      pickedImage.license_short ? `Licencia: ${pickedImage.license_short}` : null,
+      pickedImage.page_url ? `Fuente imagen: ${pickedImage.page_url}` : null,
+    ].filter(Boolean);
+    const creditLine = creditBits.length ? `Crédito imagen: ${creditBits.join(" · ")}` : null;
+    const imgLine = `Imagen (CC): ${pickedImage.thumb_url ?? pickedImage.image_url}`;
+    return [base.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
+  })();
+
   // Persist: generated_text is the BLOG variant (Centro Informativo Ciudadano).
   // Variants: keep required keys for existing admin UI (facebook/instagram/x), plus reddit/blog for automation.
   const variantsJson = {
-    blog: winner.data.platform_variants.blog,
+    blog: blogWithCredits,
     facebook: winner.data.platform_variants.facebook,
     instagram: "",
     x: winner.data.platform_variants.x,
@@ -624,7 +746,7 @@ export async function POST(req: Request) {
       content_type: "blog",
       topic,
       tone: "orchestrated_arbiter",
-      generated_text: winner.data.platform_variants.blog,
+      generated_text: blogWithCredits,
       variants: variantsJson,
       metadata,
       image_keywords,
@@ -655,8 +777,8 @@ export async function POST(req: Request) {
   if (pol.auto_publish_enabled === true) {
     try {
       const created_at = new Date().toISOString();
-      const titleLine = winner.data.platform_variants.blog.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;
-      const excerpt = winner.data.platform_variants.blog.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
+      const titleLine = blogWithCredits.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;
+      const excerpt = blogWithCredits.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
       const slug = slugify(`${pol.slug}-${created_at}-${titleLine}`);
 
       const { data: post, error: postErr } = await admin
@@ -666,8 +788,8 @@ export async function POST(req: Request) {
           slug,
           title: titleLine.slice(0, 160),
           excerpt,
-          body: winner.data.platform_variants.blog,
-          media_urls: null,
+          body: blogWithCredits,
+          media_urls: pickedImage ? [pickedImage.thumb_url ?? pickedImage.image_url] : null,
           source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
           status: "published",
           published_at: created_at,
@@ -687,6 +809,21 @@ export async function POST(req: Request) {
         // Forward teaser to n8n (best-effort; does NOT block).
         const publicLink = `${getSiteUrlString()}/centro-informativo#${slug}`;
         const teaser = `${titleLine}\n\nLee el análisis completo:\n${publicLink}`.slice(0, 800);
+        let socialLinks: Array<{ platform: string; handle: string | null; url: string }> = [];
+        try {
+          const { data } = await admin
+            .from("politician_social_links")
+            .select("platform,handle,url,status")
+            .eq("politician_id", pol.id)
+            .eq("status", "active")
+            .order("created_at", { ascending: true });
+          socialLinks =
+            (data ?? [])
+              .filter((r: any) => typeof r?.platform === "string" && typeof r?.url === "string")
+              .map((r: any) => ({ platform: String(r.platform), handle: typeof r.handle === "string" ? r.handle : null, url: String(r.url) }));
+        } catch {
+          // ignore (best-effort)
+        }
         void submitToN8n({
           candidate_id: pol.id,
           content_type: "social",
@@ -694,11 +831,18 @@ export async function POST(req: Request) {
           token_estimate: 0,
           created_at,
           source: "web",
+          variants: {
+            facebook: variantsJson.facebook,
+            instagram: variantsJson.instagram,
+            x: variantsJson.x,
+          },
           metadata: {
             origin: "auto_publish_editorial_orchestrate",
             blog_slug: slug,
             source_url: (metadata as any).source_url ?? null,
             variants: variantsJson,
+            media: (metadata as any).media ?? null,
+            social_links: socialLinks,
           },
         });
       } else {

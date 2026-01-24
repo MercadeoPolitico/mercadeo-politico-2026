@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { fetchTopGdeltArticle } from "@/lib/news/gdelt";
 import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
+import { pickWikimediaImage } from "@/lib/media/wikimedia";
 
 export const runtime = "nodejs";
 
@@ -50,15 +51,18 @@ export async function POST(req: Request) {
   const article = await fetchTopGdeltArticle(regionQuery);
 
   const topicParts = [
-    "Centro informativo ciudadano: redacta una nota breve y verificable basada en la actualidad.",
+    "Centro informativo ciudadano: reescribe la noticia como artículo cívico, verificable y útil.",
     "Reglas:",
-    "- Máximo ~30 líneas (párrafos cortos).",
+    "- Longitud: Ideal 450–650 palabras (mínimo 350, máximo 800).",
+    "- Presentación atractiva con subtítulos. Primera línea: Título (<=120 caracteres).",
     "- Prioriza noticias por geolocalización del candidato (región/territorio).",
     "- Si hay un hecho nacional de alto impacto coherente con la propuesta del candidato, puedes usarlo.",
     "- Sin miedo, sin ataques personales, sin urgencia falsa.",
     "- Enfócate en seguridad proactiva y soluciones institucionales cuando aplique.",
+    "- Debe explicar explícitamente cómo 1–2 ejes/puntos del programa del candidato aportan a prevenir/mitigar/solucionar (si es negativo) o potenciar (si es positivo).",
     "- Incluye 1 línea final: “Fuente:” con un enlace si se proporciona.",
     "- Agrega al final 3 hashtags relevantes para el incidente (línea 'Hashtags:').",
+    "- Agrega al final 5 keywords SEO tendencia (línea 'SEO: ...').",
     "",
     `Candidato: ${pol.name} (${pol.office})`,
     `Región: ${pol.region}`,
@@ -70,7 +74,6 @@ export async function POST(req: Request) {
     "Incluye:",
     "- Título sugerido",
     "- Cuerpo",
-    "- 5 keywords SEO tendencia (una por línea, prefijo “SEO:”)",
   ].filter(Boolean);
 
   const ai = await callMarlenyAI({
@@ -85,17 +88,40 @@ export async function POST(req: Request) {
   }
 
   const created_at = new Date().toISOString();
+  const titleLine = ai.text.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;
+  const imageQuery = `${(article?.title ?? titleLine).slice(0, 140)} ${pol.region} Colombia`;
+  const pickedImage = await pickWikimediaImage({ query: imageQuery });
+  const textWithCredits =
+    pickedImage
+      ? [
+          ai.text.trim(),
+          "",
+          `Imagen (CC): ${pickedImage.image_url}`,
+          `Crédito imagen: ${[pickedImage.attribution, pickedImage.author ? `Autor: ${pickedImage.author}` : null, pickedImage.license_short ? `Licencia: ${pickedImage.license_short}` : null, pickedImage.page_url ? `Fuente imagen: ${pickedImage.page_url}` : null].filter(Boolean).join(" · ")}`,
+        ].join("\n")
+      : ai.text;
   const { error: insErr } = await admin.from("ai_drafts").insert({
     candidate_id: pol.id,
     content_type: "blog",
     topic: article?.title ?? `Actualidad: ${regionQuery}`,
     tone: "sereno, institucional",
-    generated_text: ai.text,
+    generated_text: textWithCredits,
     variants: {},
     metadata: {
       source: "gdelt",
       source_url: article?.url ?? null,
       region_query: regionQuery,
+      media: pickedImage
+        ? {
+            type: "image",
+            image_url: pickedImage.image_url,
+            page_url: pickedImage.page_url,
+            license_short: pickedImage.license_short,
+            attribution: pickedImage.attribution,
+            author: pickedImage.author,
+            source: pickedImage.source,
+          }
+        : null,
     },
     image_keywords: null,
     source: "web",
