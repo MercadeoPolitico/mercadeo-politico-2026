@@ -63,7 +63,7 @@ function pickEnv(nameA: string, nameB: string): string | null {
 
 async function callMsiChat(args: { candidateId: string; prompt: string }): Promise<EngineResult> {
   const started = nowMs();
-  const endpoint = pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT");
+  const endpoint = pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") ?? pickEnv("MARLENY_API_URL", "MARLENY_API_URL");
   const apiKey = pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY");
   if (!endpoint || !apiKey) return { ok: false, engine: "MSI", ms: nowMs() - started, error: "not_configured" };
 
