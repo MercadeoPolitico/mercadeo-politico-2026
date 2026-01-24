@@ -155,6 +155,55 @@ function baselineValidText(out: EngineOutput, candidateName: string): boolean {
   return true;
 }
 
+function isLikelySpanish(text: string): boolean {
+  const t = String(text || "").toLowerCase();
+  if (!t.trim()) return false;
+  const esHits = [" el ", " la ", " de ", " que ", " y ", " en ", " por ", " para ", " con ", " colombia", " meta", " bogotá"].filter((w) =>
+    t.includes(w),
+  ).length;
+  const enHits = [" the ", " and ", " to ", " of ", " in ", " over ", " after ", " with ", " for "].filter((w) => t.includes(w)).length;
+  const hasAccents = /[áéíóúñ]/i.test(t);
+  if (enHits >= 3 && esHits <= 1 && !hasAccents) return false;
+  return esHits >= 2 || hasAccents;
+}
+
+async function rewriteToSpanishColombia(args: {
+  pol: { id: string; name: string; office: string; party: string | null; region: string; ballot_number: string | null };
+  out: EngineOutput;
+}): Promise<EngineOutput | null> {
+  const topic = [
+    "Reescribe el siguiente JSON para que TODO el texto quede en español (Colombia).",
+    "Reglas:",
+    "- Mantén el MISMO esquema JSON y los mismos campos.",
+    "- Traduce si hay inglés. No inventes datos nuevos.",
+    "- Mantén el enfoque cívico, sobrio y verificable.",
+    "- Conserva /centro-informativo como enlace relativo donde aplique.",
+    "",
+    "JSON (entrada):",
+    JSON.stringify(args.out),
+  ].join("\n");
+
+  const wrapped = await withTimeout(
+    callMarlenyAI({
+      candidateId: args.pol.id,
+      contentType: "blog",
+      topic,
+      tone: "editorial sobrio, institucional, humano",
+    }),
+    25000,
+  );
+  if (!wrapped.ok) return null;
+  const r = wrapped.value;
+  if (!r?.ok) return null;
+  const parsed = safeJsonParse(String(r.text ?? ""));
+  const data = extractEngineOutput(parsed);
+  if (!data) return null;
+  if (!baselineValidText(data, args.pol.name)) return null;
+  const combined = `${data.master_editorial}\n${data.platform_variants.blog}\n${data.platform_variants.facebook}\n${data.platform_variants.x}\n${data.platform_variants.reddit}`;
+  if (!isLikelySpanish(combined)) return null;
+  return data;
+}
+
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<{ ok: true; value: T } | { ok: false; error: "timeout" }> {
   return new Promise((resolve) => {
     const t = setTimeout(() => resolve({ ok: false, error: "timeout" }), ms);
@@ -336,6 +385,7 @@ export async function POST(req: Request) {
     "",
     "Reglas globales (muy importantes):",
     "- Español (Colombia).",
+    "- Si la noticia/titular está en inglés, traduce y redacta TODO el resultado final en español (Colombia).",
     "- Informativo, propositivo, no agresivo, no propagandístico.",
     "- No inventar datos/cifras; no ataques personales; no urgencia falsa.",
     "- Debe ser coherente con la biografía y propuestas del candidato.",
@@ -485,6 +535,18 @@ export async function POST(req: Request) {
       },
       { status: 502 },
     );
+  }
+
+  // Enforce Spanish (Colombia) before persisting.
+  const combined = `${winner.data.master_editorial}\n${winner.data.platform_variants.blog}\n${winner.data.platform_variants.facebook}\n${winner.data.platform_variants.x}\n${winner.data.platform_variants.reddit}`;
+  if (!isLikelySpanish(combined)) {
+    const rewritten = await rewriteToSpanishColombia({ pol, out: winner.data });
+    if (rewritten) {
+      console.info("[editorial-orchestrate] rewritten_to_spanish", { requestId, candidate_id: pol.id, source_engine: winner.engine });
+      (winner as any).data = rewritten;
+    } else {
+      console.warn("[editorial-orchestrate] non_spanish_output", { requestId, candidate_id: pol.id, source_engine: winner.engine });
+    }
   }
 
   const arbitration_reason = (() => {
