@@ -59,14 +59,25 @@ async function main() {
   const targets = [camara, senado];
 
   for (const c of targets) {
-    const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-automation-token": token },
-      body: JSON.stringify({ candidate_id: c.id, max_items: 1 }),
-      cache: "no-store",
+    let last = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-automation-token": token },
+        body: JSON.stringify({ candidate_id: c.id, max_items: 1 }),
+        cache: "no-store",
+      });
+      const j = await r.json().catch(() => ({}));
+      last = { ok: r.ok, request_id: j?.request_id ?? null, error: j?.error ?? null };
+      if (r.ok) break;
+      await sleep(800);
+    }
+    console.log("[smoke] orchestrate", {
+      ok: Boolean(last?.ok),
+      candidate: { id: c.id, office: c.office, region: c.region },
+      request_id: last?.request_id ?? null,
+      error: last?.ok ? null : last?.error ?? "unknown",
     });
-    const j = await r.json().catch(() => ({}));
-    console.log("[smoke] orchestrate", { ok: r.ok, candidate: { id: c.id, office: c.office, region: c.region }, request_id: j?.request_id ?? null });
   }
 
   // Wait a moment for inserts to settle
