@@ -10,12 +10,14 @@ type Destination = {
   network_key?: string | null;
   scope?: "page" | "profile" | "channel" | string | null;
   target_id?: string | null;
-  credential_ref?: string | null;
   network_type: string;
   profile_or_page_url: string;
   owner_name: string | null;
   owner_contact_phone: string | null;
   owner_contact_email: string | null;
+  authorized_by_name?: string | null;
+  authorized_by_phone?: string | null;
+  authorized_by_email?: string | null;
   active: boolean;
   authorization_status: "pending" | "approved" | "expired" | "revoked";
   last_invite_sent_at: string | null;
@@ -24,7 +26,20 @@ type Destination = {
 };
 
 type Stats = { total: number; approved: number; pending: number; expired: number };
-type RssSource = { id: string; name: string; region_key: "meta" | "colombia"; base_url: string; rss_url: string; active: boolean; updated_at: string };
+type HealthStatus = "ok" | "warn" | "down" | null;
+type RssSource = {
+  id: string;
+  name: string;
+  region_key: "meta" | "colombia" | "otra";
+  base_url: string;
+  rss_url: string;
+  active: boolean;
+  updated_at: string;
+  last_health_status?: HealthStatus;
+  last_health_checked_at?: string | null;
+  last_health_ms?: number | null;
+  last_item_count?: number | null;
+};
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -58,19 +73,25 @@ export function NetworksPanel() {
   const [stats, setStats] = useState<Stats>({ total: 0, approved: 0, pending: 0, expired: 0 });
   const [msg, setMsg] = useState<string | null>(null);
   const [rssSources, setRssSources] = useState<RssSource[]>([]);
+  const [inviteInfo, setInviteInfo] = useState<Record<string, { invite_url: string; expires_at: string }>>({});
+  const [rssForm, setRssForm] = useState<{ name: string; region_key: RssSource["region_key"]; rss_url: string; active: boolean }>({
+    name: "",
+    region_key: "meta",
+    rss_url: "",
+    active: true,
+  });
 
   const [newFor, setNewFor] = useState<string>("");
   const [newName, setNewName] = useState("");
   const [newKey, setNewKey] = useState<NetworkKey | "">("");
   const [newScope, setNewScope] = useState<Scope>("profile");
   const [newTargetId, setNewTargetId] = useState("");
-  const [newCredRef, setNewCredRef] = useState("");
   const [newType, setNewType] = useState<(typeof NETWORK_TYPES)[number]>("official");
   const [newUrl, setNewUrl] = useState("");
   const [newOwner, setNewOwner] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
-  const [routing, setRouting] = useState<Record<string, { network_key: NetworkKey | ""; scope: Scope; target_id: string; credential_ref: string }>>({});
+  const [routing, setRouting] = useState<Record<string, { network_key: NetworkKey | ""; scope: Scope; target_id: string }>>({});
 
   const byCandidate = useMemo(() => {
     const map: Record<string, Destination[]> = {};
@@ -97,7 +118,7 @@ export function NetworksPanel() {
     if (!newFor && Array.isArray(j.candidates) && j.candidates.length) setNewFor(String(j.candidates[0].id));
 
     // RSS sources (admin-only visibility)
-    fetch("/api/admin/rss/list", { method: "GET" })
+    fetch("/api/admin/rss/list?with_health=1", { method: "GET" })
       .then(async (rr) => {
         const jj = (await rr.json().catch(() => null)) as any;
         if (rr.ok && jj?.ok && Array.isArray(jj.sources)) setRssSources(jj.sources as RssSource[]);
@@ -122,7 +143,6 @@ export function NetworksPanel() {
       network_key: guessedKey || null,
       scope,
       target_id: newTargetId.trim() || null,
-      credential_ref: newCredRef.trim() || null,
       network_type: newType,
       profile_or_page_url: newUrl.trim(),
       owner_name: newOwner.trim() ? newOwner.trim() : null,
@@ -140,11 +160,16 @@ export function NetworksPanel() {
       setMsg("No fue posible agregar la red. Verifica URL y datos.");
       return;
     }
+    // Immediately generate an authorization link (core requirement).
+    try {
+      await sendInvite({ id: String(j.id) } as any);
+    } catch {
+      // ignore; still saved
+    }
     setNewName("");
     setNewKey("");
     setNewScope("profile");
     setNewTargetId("");
-    setNewCredRef("");
     setNewUrl("");
     setNewOwner("");
     setNewPhone("");
@@ -166,7 +191,7 @@ export function NetworksPanel() {
     await refresh();
   }
 
-  async function saveRouting(d: Destination, patch: Partial<Pick<Destination, "network_key" | "scope" | "target_id" | "credential_ref">>) {
+  async function saveRouting(d: Destination, patch: Partial<Pick<Destination, "network_key" | "scope" | "target_id">>) {
     setMsg(null);
     const r = await fetch("/api/admin/networks/destinations", {
       method: "PATCH",
@@ -225,24 +250,25 @@ export function NetworksPanel() {
       return;
     }
 
-    // Best UX: open WhatsApp deep-link in new tab. Admin sends without ver secretos.
-    if (typeof j.whatsapp_url === "string" && j.whatsapp_url.startsWith("https://wa.me/")) {
-      window.open(j.whatsapp_url, "_blank", "noopener,noreferrer");
+    if (typeof j.invite_url === "string") {
+      setInviteInfo((p) => ({ ...p, [d.id]: { invite_url: String(j.invite_url), expires_at: String(j.expires_at ?? "") } }));
+      try {
+        await navigator.clipboard.writeText(String(j.invite_url));
+        setMsg("Enlace generado y copiado. Envíalo por WhatsApp al dueño para autorizar (expira en 5 horas).");
+      } catch {
+        setMsg("Enlace generado. Cópialo y envíalo por WhatsApp al dueño (expira en 5 horas).");
+      }
     }
     await refresh();
-    setMsg("Enlace generado. Se abrió WhatsApp para enviarlo al dueño (expira en 5 horas).");
   }
 
-  function badge(status: Destination["authorization_status"]) {
-    const cls =
-      status === "approved"
-        ? "text-emerald-300"
-        : status === "pending"
-          ? "text-amber-300"
-          : status === "expired"
-            ? "text-rose-300"
-            : "text-muted";
-    return <span className={cls}>{status}</span>;
+  function destSignal(d: Destination): { status: HealthStatus; label: string } {
+    if (!d.active) return { status: null, label: "inactiva" };
+    if (d.authorization_status === "approved") return { status: "ok", label: "aprobada" };
+    if (d.authorization_status === "pending") return { status: "warn", label: "pendiente" };
+    if (d.authorization_status === "expired") return { status: "down", label: "expirada" };
+    if (d.authorization_status === "revoked") return { status: "down", label: "revocada" };
+    return { status: null, label: d.authorization_status };
   }
 
   function scopeLabel(c: Candidate): { label: string; cls: string } {
@@ -260,6 +286,67 @@ export function NetworksPanel() {
     });
     if (!r.ok) {
       setMsg("No fue posible actualizar RSS.");
+      return;
+    }
+    await refresh();
+  }
+
+  function signalColor(s: HealthStatus, active: boolean): { cls: string; label: string } {
+    if (!active) return { cls: "text-muted", label: "inactiva" };
+    if (s === "ok") return { cls: "text-emerald-300", label: "ok" };
+    if (s === "warn") return { cls: "text-amber-300", label: "degradada" };
+    if (s === "down") return { cls: "text-rose-300", label: "caída" };
+    return { cls: "text-muted", label: "sin datos" };
+  }
+
+  function SignalIcon({ status, active }: { status: HealthStatus; active: boolean }) {
+    const c = signalColor(status, active);
+    const bar = (n: number) => (
+      <span
+        className={`inline-block w-[5px] rounded-sm ${c.cls}`}
+        style={{ height: `${4 + n * 4}px`, opacity: !active ? 0.35 : 1 }}
+      />
+    );
+    return (
+      <span className="inline-flex items-end gap-[2px]" title={c.label}>
+        {bar(0)}
+        {bar(1)}
+        {bar(2)}
+        {bar(3)}
+      </span>
+    );
+  }
+
+  async function createRss() {
+    setMsg(null);
+    const payload = { ...rssForm, name: rssForm.name.trim(), rss_url: rssForm.rss_url.trim() };
+    const r = await fetch("/api/admin/rss/sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    const j = (await r.json().catch(() => null)) as any;
+    if (!r.ok || !j?.ok) {
+      setMsg("No fue posible crear la fuente RSS. Verifica URL y región.");
+      return;
+    }
+    setRssForm({ name: "", region_key: rssForm.region_key, rss_url: "", active: true });
+    await refresh();
+  }
+
+  async function updateRss(src: RssSource, patch: Partial<Pick<RssSource, "name" | "region_key" | "rss_url" | "active">>) {
+    setMsg(null);
+    const r = await fetch("/api/admin/rss/sources", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: src.id, ...patch }) });
+    if (!r.ok) {
+      setMsg("No fue posible actualizar RSS.");
+      return;
+    }
+    await refresh();
+  }
+
+  async function deleteRss(src: RssSource) {
+    setMsg(null);
+    const ok = window.confirm(`Vas a ELIMINAR la fuente RSS "${src.name}". ¿Continuar?`);
+    if (!ok) return;
+    const r = await fetch("/api/admin/rss/sources", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: src.id }) });
+    if (!r.ok) {
+      setMsg("No fue posible eliminar RSS.");
       return;
     }
     await refresh();
@@ -305,18 +392,58 @@ export function NetworksPanel() {
       <div className="glass-card p-6">
         <p className="text-sm font-semibold">Fuentes RSS (señal adicional)</p>
         <p className="mt-1 text-xs text-muted">
-          Estas fuentes alimentan el motor como señales estructuradas (no reemplazan otras fuentes). Puedes activar/desactivar por región.
+          Estas fuentes alimentan el motor como señales estructuradas (no reemplazan otras fuentes). Formato requerido:{" "}
+          <span className="font-mono">name · region · rss_url · active</span>. La “señal” se calcula automáticamente (no manual).
         </p>
+
+        <div className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
+          <p className="text-sm font-semibold">Agregar fuente</p>
+          <div className="mt-3 grid gap-2 md:grid-cols-4">
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              placeholder="name (ej. Periódico del Meta)"
+              value={rssForm.name}
+              onChange={(e) => setRssForm((p) => ({ ...p, name: e.target.value }))}
+            />
+            <select
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={rssForm.region_key}
+              onChange={(e) => setRssForm((p) => ({ ...p, region_key: e.target.value as any }))}
+            >
+              <option value="meta">meta</option>
+              <option value="colombia">colombia</option>
+              <option value="otra">otra</option>
+            </select>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm md:col-span-2"
+              placeholder="rss_url (https://...)"
+              value={rssForm.rss_url}
+              onChange={(e) => setRssForm((p) => ({ ...p, rss_url: e.target.value }))}
+            />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-xs text-muted">
+              <input type="checkbox" checked={rssForm.active} onChange={(e) => setRssForm((p) => ({ ...p, active: e.target.checked }))} />
+              Activa
+            </label>
+            <button className="glass-button" type="button" onClick={createRss} disabled={!rssForm.name.trim() || !rssForm.rss_url.trim()}>
+              Guardar RSS
+            </button>
+          </div>
+        </div>
+
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          {(["meta", "colombia"] as const).map((rk) => {
+          {(["meta", "colombia", "otra"] as const).map((rk) => {
             const rows = rssSources.filter((s) => s.region_key === rk);
             return (
               <div key={rk} className="rounded-2xl border border-border bg-background/60 p-4">
-                <p className="text-sm font-semibold">{rk === "meta" ? "Meta (regional)" : "Colombia (nacional)"}</p>
+                <p className="text-sm font-semibold">
+                  {rk === "meta" ? "Meta (regional)" : rk === "colombia" ? "Colombia (nacional)" : "Otra (manual)"}
+                </p>
                 <div className="mt-3 grid gap-2">
                   {rows.map((s) => (
                     <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">{s.name}</p>
                         <p className="mt-1 text-xs text-muted">
                           <a className="underline" href={s.rss_url} target="_blank" rel="noreferrer">
@@ -327,10 +454,27 @@ export function NetworksPanel() {
                             sitio
                           </a>
                         </p>
+                        <p className="mt-1 text-[11px] text-muted">
+                          señal:{" "}
+                          <span className={signalColor(s.last_health_status ?? null, s.active).cls}>
+                            {signalColor(s.last_health_status ?? null, s.active).label}
+                          </span>
+                          {typeof s.last_health_ms === "number" ? ` · ${s.last_health_ms}ms` : ""}
+                          {typeof s.last_item_count === "number" ? ` · items=${s.last_item_count}` : ""}
+                        </p>
                       </div>
-                      <button className="glass-button" type="button" onClick={() => toggleRss(s)}>
-                        {s.active ? "Desactivar" : "Activar"}
-                      </button>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <SignalIcon status={s.last_health_status ?? null} active={s.active} />
+                        <button className="glass-button" type="button" onClick={() => toggleRss(s)}>
+                          {s.active ? "Desactivar" : "Activar"}
+                        </button>
+                        <button className="glass-button" type="button" onClick={refresh} title="Re-chequear (refrescar)">
+                          Rechequear
+                        </button>
+                        <button className="glass-button" type="button" onClick={() => deleteRss(s)}>
+                          Eliminar
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {rows.length === 0 ? <p className="text-sm text-muted">Sin fuentes.</p> : null}
@@ -387,13 +531,9 @@ export function NetworksPanel() {
               placeholder="Opcional (recomendado para publicación en n8n)"
             />
 
-            <label className="mt-2 text-xs font-semibold text-muted">Credential ref (n8n)</label>
-            <input
-              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-              value={newCredRef}
-              onChange={(e) => setNewCredRef(e.target.value)}
-              placeholder="Ej: meta_default / x_default / telegram_default"
-            />
+            <p className="mt-2 text-xs text-muted">
+              Credenciales: el sistema las resuelve internamente por red (el admin no debe elegir credenciales).
+            </p>
 
             <label className="mt-2 text-xs font-semibold text-muted">Tipo</label>
             <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={newType} onChange={(e) => setNewType(e.target.value as any)}>
@@ -456,8 +596,7 @@ export function NetworksPanel() {
                     const effectiveKey = (routing[d.id]?.network_key ?? (d.network_key as any) ?? guessed ?? "") as NetworkKey | "";
                     const effectiveScope = (routing[d.id]?.scope ?? ((d.scope as any) || defaultScopeFor(effectiveKey || guessed || ""))) as Scope;
                     const effectiveTargetId = routing[d.id]?.target_id ?? (d.target_id ?? "");
-                    const effectiveCredRef = routing[d.id]?.credential_ref ?? (d.credential_ref ?? "");
-                    const current = routing[d.id] ?? { network_key: effectiveKey, scope: effectiveScope, target_id: effectiveTargetId, credential_ref: effectiveCredRef };
+                    const current = routing[d.id] ?? { network_key: effectiveKey, scope: effectiveScope, target_id: effectiveTargetId };
 
                     return (
                       <div key={d.id} className="rounded-2xl border border-border bg-background/60 p-4">
@@ -465,7 +604,14 @@ export function NetworksPanel() {
                         <div>
                           <p className="text-sm font-semibold">{d.network_name}</p>
                           <p className="mt-1 text-xs text-muted">
-                            {d.network_type} · {badge(d.authorization_status)} · {d.active ? <span className="text-emerald-300">active</span> : <span className="text-rose-300">inactive</span>}
+                            <span className="inline-flex items-center gap-2">
+                              <SignalIcon status={destSignal(d).status} active={d.active} />{" "}
+                              <span className={signalColor(destSignal(d).status, d.active).cls}>{destSignal(d).label}</span>
+                            </span>
+                            {" · "}
+                            {d.network_type}
+                            {" · "}
+                            {d.active ? <span className="text-emerald-300">active</span> : <span className="text-rose-300">inactive</span>}
                           </p>
                           <p className="mt-1 text-xs text-muted">
                             ruteo: <span className="font-medium">{effectiveKey || "(auto)"}</span> · scope:{" "}
@@ -484,6 +630,10 @@ export function NetworksPanel() {
                           </p>
                           <p className="mt-2 text-xs text-muted">
                             Dueño: {d.owner_name ?? "—"} · WhatsApp: {d.owner_contact_phone ?? "—"}
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            Autorizó: {d.authorized_by_name ?? "—"}
+                            {d.authorized_at ? ` · ${new Date(d.authorized_at).toLocaleString("es-CO")}` : ""}
                           </p>
                           <p className="mt-1 text-xs text-muted">
                             Último invite: {d.last_invite_sent_at ? new Date(d.last_invite_sent_at).toLocaleString("es-CO") : "—"}
@@ -533,13 +683,8 @@ export function NetworksPanel() {
                                 />
                               </div>
                               <div className="grid gap-1">
-                                <label className="text-[11px] font-semibold text-muted">Credential ref</label>
-                                <input
-                                  className="w-full rounded-lg border border-border bg-background px-2 py-1 text-xs"
-                                  value={current.credential_ref}
-                                  onChange={(e) => setRouting((p) => ({ ...p, [d.id]: { ...current, credential_ref: e.target.value } }))}
-                                  placeholder="meta_default / x_default / telegram_default"
-                                />
+                                <label className="text-[11px] font-semibold text-muted">Credencial</label>
+                                <p className="text-xs text-muted">Auto (por red)</p>
                               </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -551,13 +696,16 @@ export function NetworksPanel() {
                                     network_key: current.network_key || null,
                                     scope: current.scope,
                                     target_id: current.target_id.trim() || null,
-                                    credential_ref: current.credential_ref.trim() || null,
                                   })
                                 }
                               >
                                 Guardar ruteo
                               </button>
-                              <button className="glass-button" type="button" onClick={() => setRouting((p) => ({ ...p, [d.id]: { ...current, network_key: guessed || "", scope: defaultScopeFor(guessed || ""), target_id: current.target_id, credential_ref: current.credential_ref } }))}>
+                              <button
+                                className="glass-button"
+                                type="button"
+                                onClick={() => setRouting((p) => ({ ...p, [d.id]: { ...current, network_key: guessed || "", scope: defaultScopeFor(guessed || ""), target_id: current.target_id } }))}
+                              >
                                 Auto-detectar
                               </button>
                             </div>
@@ -567,8 +715,17 @@ export function NetworksPanel() {
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button className="glass-button" type="button" onClick={() => sendInvite(d)}>
-                          Enviar enlace (WhatsApp)
+                          Generar enlace (copiar)
                         </button>
+                        {inviteInfo[d.id]?.invite_url ? (
+                          <button
+                            className="glass-button"
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(inviteInfo[d.id]!.invite_url)}
+                          >
+                            Copiar enlace
+                          </button>
+                        ) : null}
                         <button className="glass-button" type="button" onClick={() => toggleActive(d)}>
                           {d.active ? "Desactivar" : "Activar"}
                         </button>
@@ -579,6 +736,17 @@ export function NetworksPanel() {
                           Eliminar
                         </button>
                       </div>
+
+                      {inviteInfo[d.id]?.invite_url ? (
+                        <div className="mt-3 rounded-xl border border-border bg-background p-3">
+                          <p className="text-xs font-semibold text-muted">Enlace de autorización (para WhatsApp)</p>
+                          <p className="mt-1 break-all text-xs text-muted">{inviteInfo[d.id]!.invite_url}</p>
+                          <p className="mt-1 text-[11px] text-muted">
+                            Expira:{" "}
+                            {inviteInfo[d.id]!.expires_at ? new Date(inviteInfo[d.id]!.expires_at).toLocaleString("es-CO") : "—"}
+                          </p>
+                        </div>
+                      ) : null}
 
                       <div className="mt-3 rounded-xl border border-border bg-background p-3">
                         <p className="text-xs text-muted">

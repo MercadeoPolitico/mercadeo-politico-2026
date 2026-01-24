@@ -115,3 +115,73 @@ Incluye: Facebook/IG/X/Threads/Telegram/WhatsApp/YouTube/LinkedIn/Reddit y prueb
 - No existe forma de “borrar el caché del navegador completo”; solo del **origen** (lo que hace `Clear-Site-Data`).
 - Publicación real a redes depende de conectores/credenciales en n8n (por diseño).
 
+---
+
+## 9) Automatización resiliente (anti-sleep)
+Implementación ✅:
+- **Vercel Cron**: `vercel.json` llama `GET /api/cron/keepalive` cada ~20 min.
+- **GitHub Actions**: redundancia `.github/workflows/keepalive.yml` llama el mismo endpoint.
+- **Keepalive endpoint**: `GET /api/cron/keepalive` hace:
+  - ping Supabase (query mínima, sin secretos)
+  - ping HTTP configurable vía `KEEPALIVE_URLS` (Railway/n8n u otros)
+
+Runbook:
+- `docs/runbooks/KEEPALIVE.md`
+
+---
+
+## 10) Centro Informativo: subtítulo editorial + título sin nombre
+Requerimiento ✅:
+- **Título**: NO menciona al candidato.
+- **Subtítulo**: Sí incluye `Nombre · Cargo · Eje…` y se guarda como **campo separado**.
+
+Aplicado en:
+- generación automática `/api/automation/editorial-orchestrate` (draft + autopublish)
+- publicación admin `/api/admin/news/publish`
+- render público `/centro-informativo` (muestra subtítulo bajo el título)
+
+Migración:
+- `supabase/migrations/20260124000800_news_subtitle.sql`
+
+---
+
+## 11) Admin → n8n / Redes: RSS administrable + señal automática
+Implementación ✅:
+- CRUD RSS (sin deploy) desde el Admin Panel:
+  - `POST/PATCH/DELETE /api/admin/rss/sources`
+  - `GET /api/admin/rss/list?with_health=1`
+- Indicador “señal” (verde/amarillo/rojo) calculado automáticamente por latencia y capacidad de parseo.
+- Soporta `region_key`: `meta | colombia | otra`
+
+Migración:
+- `supabase/migrations/20260124000900_rss_health_and_region_otra.sql`
+
+---
+
+## 12) Autorización de destinos sociales (link + trazabilidad)
+Implementación ✅ (sin tokens en UI):
+- Admin crea destino social → el sistema genera enlace único `/autorizar?token=...`.
+- El dueño aprueba/rechaza en `/autorizar`.
+- Se registra trazabilidad:
+  - quién autorizó (nombre/email/whatsapp opcional)
+  - cuándo autorizó
+  - ip + user-agent (server-side)
+
+Migración:
+- `supabase/migrations/20260124001000_social_auth_trazabilidad.sql`
+
+---
+
+## 13) Auto-blog/autopublish: control global en Admin → Contenido
+Implementación ✅:
+- Toggle global en `/admin/content` (AUTO ON/OFF).
+- Cron global `/api/cron/auto-blog` corre cada 20 min y aplica cadencia **1 noticia por político cada 4 horas** (default ON).
+- Respeta:
+  - `app_settings.auto_blog_global_enabled`
+  - `politicians.auto_blog_enabled`
+  - `politicians.auto_publish_enabled`
+- Guarda `politicians.last_auto_blog_at` para cadencia.
+
+Migración:
+- `supabase/migrations/20260124001100_politicians_last_auto_blog_at.sql`
+

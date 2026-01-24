@@ -39,7 +39,6 @@ export async function POST(req: Request) {
   const network_key = isNonEmptyString(b.network_key) ? b.network_key.trim().toLowerCase() : "";
   const scope = isNonEmptyString(b.scope) ? b.scope.trim().toLowerCase() : "profile";
   const target_id = isNonEmptyString(b.target_id) ? b.target_id.trim() : null;
-  const credential_ref = isNonEmptyString(b.credential_ref) ? b.credential_ref.trim() : null;
   const network_type = isNonEmptyString(b.network_type) ? b.network_type.trim().toLowerCase() : "official";
   const profile_or_page_url = isNonEmptyString(b.profile_or_page_url) ? b.profile_or_page_url.trim() : "";
   const owner_name = isNonEmptyString(b.owner_name) ? b.owner_name.trim() : null;
@@ -65,7 +64,7 @@ export async function POST(req: Request) {
       network_key: network_key || null,
       scope,
       target_id,
-      credential_ref,
+      credential_ref: null,
       network_type,
       profile_or_page_url,
       owner_name,
@@ -112,7 +111,7 @@ export async function PATCH(req: Request) {
     }
   }
   if (b.target_id === null || isNonEmptyString(b.target_id)) patch.target_id = b.target_id ? String(b.target_id).trim() : null;
-  if (b.credential_ref === null || isNonEmptyString(b.credential_ref)) patch.credential_ref = b.credential_ref ? String(b.credential_ref).trim() : null;
+  // credential_ref is resolved internally; never set from Admin UI.
   if (isNonEmptyString(b.network_type)) {
     const nt = b.network_type.trim().toLowerCase();
     if (!isNetworkType(nt)) return NextResponse.json({ error: "network_type_invalid" }, { status: 400 });

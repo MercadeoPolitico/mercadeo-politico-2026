@@ -415,6 +415,68 @@ function ensureSeoLine(blog: string, seo: string[]): string {
   return `${base}\n\nSEO: ${top.join(", ")}`;
 }
 
+function normalizeSpaces(s: string): string {
+  return String(s || "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .trim();
+}
+
+function deriveEditorialAxisFromProposals(proposalsRaw: string): string | null {
+  const raw = String(proposalsRaw || "").trim();
+  if (!raw) return null;
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // Prefer a short heading (## / ###) that looks like an axis.
+  for (const l of lines) {
+    const t = l.replace(/^#+\s*/, "").trim();
+    if (t.length >= 10 && t.length <= 72) return t;
+  }
+  // Fallback: first bullet
+  const bullet = lines.find((l) => l.startsWith("- ") || l.startsWith("* "));
+  if (bullet) {
+    const t = bullet.replace(/^[-*]\s+/, "").trim();
+    if (t.length >= 10) return t.slice(0, 72);
+  }
+  // Fallback: first sentence-ish chunk
+  const first = lines[0] ?? "";
+  return first.length >= 10 ? first.slice(0, 72) : null;
+}
+
+function sanitizeHeadline(args: { titleLine: string; candidateName: string; ballotNumber?: string | number | null; region?: string | null }): string {
+  const name = String(args.candidateName || "").trim();
+  const bn = args.ballotNumber ? String(args.ballotNumber) : "";
+  let t = String(args.titleLine || "").trim();
+  if (!t) return "";
+  // Remove obvious candidate mentions (case-insensitive).
+  if (name.length >= 3) {
+    const escaped = name.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    t = t.replaceAll(new RegExp(escaped, "ig"), "").trim();
+  }
+  if (bn) {
+    t = t.replaceAll(new RegExp(`\\b${bn.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), "").trim();
+    t = t.replaceAll(/tarjet[oó]n\s*\d+/gi, "").trim();
+  }
+  // Remove leftover punctuation/extra separators.
+  t = t.replaceAll(/[·|•]+/g, " ").trim();
+  t = normalizeSpaces(t);
+  // Guardrails: ensure it's still a meaningful title.
+  if (t.length < 12) {
+    const reg = String(args.region || "").trim();
+    return reg ? `Actualidad ciudadana · ${reg}` : "Actualidad ciudadana · Colombia";
+  }
+  return t.slice(0, 120);
+}
+
+function buildSubtitle(args: { candidateName: string; office: string; axis: string | null }): string {
+  const name = normalizeSpaces(args.candidateName).slice(0, 80);
+  const office = normalizeSpaces(args.office).slice(0, 40);
+  const axis = args.axis ? normalizeSpaces(args.axis).slice(0, 64) : "Agenda cívica y seguridad ciudadana";
+  return `${name} · ${office} · ${axis}…`.slice(0, 140);
+}
+
 function isBadOgImageUrl(u: string): boolean {
   const s = String(u || "").toLowerCase();
   if (!s) return true;
@@ -1205,13 +1267,27 @@ export async function POST(req: Request) {
 
   const topic = rssChosen ? `Noticias RSS: ${rssChosen.title}` : article ? `Noticias: ${article.title}` : "Noticias: (sin titular; reescritura editorial)";
 
+  // Subtitle must mention the candidate; title must NOT mention them.
+  const axis = deriveEditorialAxisFromProposals(String(pol.proposals || "")) ?? null;
+  const subtitle = buildSubtitle({ candidateName: pol.name, office: pol.office, axis });
+
   const blogWithCredits = (() => {
     const baseRaw = normalizeLineBreaks(winner.data.platform_variants.blog || "");
     const base = ensureSeoLine(baseRaw, winner.data.seo_keywords);
+    // Enforce sanitized headline on first line (no candidate mentions).
+    const lines = base.split("\n");
+    const first = (lines.find((l) => l.trim().length > 0) ?? "").trim();
+    const safeTitle = sanitizeHeadline({
+      titleLine: first,
+      candidateName: pol.name,
+      ballotNumber: pol.ballot_number ?? null,
+      region: pol.region ?? null,
+    });
+    const rebuilt = safeTitle ? [safeTitle, ...lines.slice(1)].join("\n").trim() : base.trim();
     const m = (metadata as any)?.media as Record<string, unknown> | null;
     const mm = m ?? {};
     const imageUrl = typeof (mm as any).image_url === "string" ? String((mm as any).image_url) : null;
-    if (!imageUrl) return base;
+    if (!imageUrl) return rebuilt;
     const creditBits = [
       typeof (mm as any).attribution === "string" ? String((mm as any).attribution) : null,
       typeof (mm as any).author === "string" ? `Autor: ${String((mm as any).author)}` : null,
@@ -1220,7 +1296,7 @@ export async function POST(req: Request) {
     ].filter(Boolean);
     const creditLine = creditBits.length ? `Crédito imagen: ${creditBits.join(" · ")}` : null;
     const imgLine = `Imagen: ${imageUrl}`;
-    const withImg = [base.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
+    const withImg = [rebuilt.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
     // Append public footer (signature + disclaimers), and RSS credit when applicable.
     const sourceNameForCredit = rssChosen ? rssChosen.source_name : null;
     return appendPublicFooter({ text: withImg, based_on_source_name: sourceNameForCredit });
@@ -1278,6 +1354,7 @@ export async function POST(req: Request) {
       image_keywords,
       source: "n8n",
       status: "draft",
+      subtitle,
     })
     .select("id")
     .single();
@@ -1304,6 +1381,12 @@ export async function POST(req: Request) {
     try {
       const created_at = new Date().toISOString();
       const titleLine = blogWithCredits.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;
+      const safeTitle = sanitizeHeadline({
+        titleLine,
+        candidateName: pol.name,
+        ballotNumber: pol.ballot_number ?? null,
+        region: pol.region ?? null,
+      });
       const excerpt = blogWithCredits.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
       const slug = slugify(`${pol.slug}-${created_at}-${titleLine}`);
 
@@ -1312,7 +1395,8 @@ export async function POST(req: Request) {
         .insert({
           candidate_id: pol.id,
           slug,
-          title: titleLine.slice(0, 160),
+          title: safeTitle.slice(0, 160),
+          subtitle,
           excerpt,
           body: blogWithCredits,
           media_urls: (metadata as any)?.media?.image_url ? [(metadata as any).media.image_url] : null,

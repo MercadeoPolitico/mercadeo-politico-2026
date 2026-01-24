@@ -74,6 +74,9 @@ export async function POST(req: Request) {
   const b = body.data as Record<string, unknown>;
   const token = normalizeToken(b.token);
   const decision = normalizeToken(b.decision);
+  const authorized_by_name = normalizeToken(b.authorized_by_name);
+  const authorized_by_email = normalizeToken(b.authorized_by_email);
+  const authorized_by_phone = normalizeToken(b.authorized_by_phone);
   if (!token) return NextResponse.json({ ok: false, error: "token_required" }, { status: 400 });
   if (decision !== "approve" && decision !== "reject") return NextResponse.json({ ok: false, error: "decision_invalid" }, { status: 400 });
 
@@ -91,16 +94,38 @@ export async function POST(req: Request) {
   const now = new Date().toISOString();
   const mapped = decision === "approve" ? "approved" : "rejected";
 
+  const ip =
+    normalizeToken(req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim() ||
+    normalizeToken(req.headers.get("x-real-ip") ?? "").trim() ||
+    "";
+  const ua = normalizeToken(req.headers.get("user-agent") ?? "");
+
   const { error: invErr } = await admin
     .from("politician_social_auth_invites")
-    .update({ used_at: now, decision: mapped })
+    .update({
+      used_at: now,
+      decision: mapped,
+      authorized_by_name: authorized_by_name || null,
+      authorized_by_email: authorized_by_email || null,
+      authorized_by_phone: authorized_by_phone || null,
+      authorized_ip: ip || null,
+      authorized_user_agent: ua || null,
+    })
     .eq("id", invite.id);
   if (invErr) return NextResponse.json({ ok: false, error: "update_failed" }, { status: 500 });
 
   if (decision === "approve") {
     await admin
       .from("politician_social_destinations")
-      .update({ authorization_status: "approved", active: true, authorized_at: now, updated_at: now })
+      .update({
+        authorization_status: "approved",
+        active: true,
+        authorized_at: now,
+        authorized_by_name: authorized_by_name || null,
+        authorized_by_email: authorized_by_email || null,
+        authorized_by_phone: authorized_by_phone || null,
+        updated_at: now,
+      })
       .eq("id", invite.destination_id);
   } else {
     await admin

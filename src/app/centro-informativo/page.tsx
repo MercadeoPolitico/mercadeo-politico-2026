@@ -12,6 +12,7 @@ type Post = {
   candidate_id: string;
   slug: string;
   title: string;
+  subtitle: string | null;
   excerpt: string;
   body: string;
   media_urls: string[] | null;
@@ -36,7 +37,7 @@ export default async function CitizenInfoCenterPage() {
   const { data } = supabase
     ? await supabase
         .from("citizen_news_posts")
-        .select("id,candidate_id,slug,title,excerpt,body,media_urls,source_url,published_at")
+        .select("id,candidate_id,slug,title,subtitle,excerpt,body,media_urls,source_url,published_at")
         .eq("status", "published")
         .order("published_at", { ascending: false })
         .limit(30)
@@ -64,9 +65,9 @@ export default async function CitizenInfoCenterPage() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 className="text-balance text-lg font-semibold">{p.title}</h2>
+                  {p.subtitle ? <p className="mt-1 text-xs text-muted">{p.subtitle}</p> : null}
                   <p className="mt-1 text-xs text-muted">
-                    {new Date(p.published_at).toLocaleString("es-CO")} ·{" "}
-                    <span className="font-mono">{p.candidate_id}</span>
+                    {new Date(p.published_at).toLocaleString("es-CO")}
                   </p>
                 </div>
                 {p.source_url ? (

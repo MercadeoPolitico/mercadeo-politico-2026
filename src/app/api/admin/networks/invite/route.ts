@@ -56,7 +56,6 @@ export async function POST(req: Request) {
 
   const rawPhone = typeof dest.owner_contact_phone === "string" ? dest.owner_contact_phone : "";
   const phone = normalizePhone(rawPhone);
-  if (!phone) return NextResponse.json({ error: "owner_contact_phone_required" }, { status: 400 });
 
   const token = crypto.randomBytes(24).toString("hex"); // 48 chars
   const token_hash = sha256Hex(token);
@@ -76,7 +75,7 @@ export async function POST(req: Request) {
     "Si no lo apruebas explícitamente, no se publicará nada.",
   ].join("\n");
 
-  const whatsapp_url = waMeLink(phone, message);
+  const whatsapp_url = phone ? waMeLink(phone, message) : null;
 
   // Insert invite row and reset destination status to pending.
   const { error: invErr } = await supabase.from("politician_social_auth_invites").insert({

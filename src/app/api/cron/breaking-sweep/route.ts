@@ -39,6 +39,16 @@ function hoursAgo(seendate: string): number {
   return (Date.now() - t) / 3_600_000;
 }
 
+async function getAppSetting(admin: any, key: string): Promise<string | null> {
+  const { data } = await admin.from("app_settings").select("value").eq("key", key).maybeSingle();
+  return data && typeof data.value === "string" ? String(data.value) : null;
+}
+
+function parseEnabled(v: string | null): boolean {
+  if (v === null) return true;
+  return v.trim().toLowerCase() !== "false";
+}
+
 export async function GET(req: Request) {
   if (!requireCronAuth(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -47,6 +57,10 @@ export async function GET(req: Request) {
 
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+
+  // Respect global automation master switch (controlled in Admin → Contenido).
+  const enabled = parseEnabled(await getAppSetting(admin, "auto_blog_global_enabled"));
+  if (!enabled) return NextResponse.json({ ok: true, enabled: false, skipped: true, reason: "global_off" });
 
   const { data: cands } = await admin
     .from("politicians")

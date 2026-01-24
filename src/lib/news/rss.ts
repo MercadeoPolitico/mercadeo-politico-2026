@@ -200,7 +200,10 @@ export async function fetchRssItems(args: { source: RssSource; limit?: number })
   const limit = typeof args.limit === "number" ? args.limit : 10;
   const source = args.source;
   try {
-    const resp = await fetch(source.rss_url, { method: "GET", cache: "no-store" });
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 6500);
+    const resp = await fetch(source.rss_url, { method: "GET", cache: "no-store", signal: controller.signal });
+    clearTimeout(t);
     if (!resp.ok) return [];
     const xml = (await resp.text()).slice(0, 500_000);
     const lower = xml.toLowerCase();

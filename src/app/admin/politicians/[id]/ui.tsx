@@ -60,27 +60,19 @@ export function PoliticianWorkspaceClient({
       bio: politician.biography ?? "",
       proposals: politician.proposals ?? "",
       ballotNumber: politician.ballot_number ? String(politician.ballot_number) : "",
-      autoPublish: Boolean(politician.auto_publish_enabled),
-      autoBlog: Boolean(politician.auto_blog_enabled),
     }),
-    [politician.auto_blog_enabled, politician.auto_publish_enabled, politician.ballot_number, politician.biography, politician.proposals]
+    [politician.ballot_number, politician.biography, politician.proposals]
   );
 
   const [bio, setBio] = useState(initialSnapshot.bio);
   const [proposals, setProposals] = useState(initialSnapshot.proposals);
   const [ballotNumber, setBallotNumber] = useState<string>(initialSnapshot.ballotNumber);
-  const [autoPublish, setAutoPublish] = useState<boolean>(initialSnapshot.autoPublish);
-  const [autoBlog, setAutoBlog] = useState<boolean>(initialSnapshot.autoBlog);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState(initialSnapshot);
 
   const hasUnsavedProfileChanges =
-    bio !== savedSnapshot.bio ||
-    proposals !== savedSnapshot.proposals ||
-    ballotNumber !== savedSnapshot.ballotNumber ||
-    autoPublish !== savedSnapshot.autoPublish ||
-    autoBlog !== savedSnapshot.autoBlog;
+    bio !== savedSnapshot.bio || proposals !== savedSnapshot.proposals || ballotNumber !== savedSnapshot.ballotNumber;
 
   const [links, setLinks] = useState<SocialLink[]>(initialLinks);
   const [newPlatform, setNewPlatform] = useState("facebook");
@@ -144,8 +136,6 @@ export function PoliticianWorkspaceClient({
         biography: bio,
         proposals,
         ballot_number: Number.isFinite(bn as number) ? (bn as number) : null,
-        auto_publish_enabled: autoPublish,
-        auto_blog_enabled: autoBlog,
         updated_at: new Date().toISOString(),
       })
       .eq("id", politician.id);
@@ -155,7 +145,7 @@ export function PoliticianWorkspaceClient({
       return;
     }
     setProfileMsg("Guardado.");
-    setSavedSnapshot({ bio, proposals, ballotNumber, autoPublish, autoBlog });
+    setSavedSnapshot({ bio, proposals, ballotNumber });
   }
 
   async function addLink() {
@@ -326,36 +316,9 @@ export function PoliticianWorkspaceClient({
     setFiles(next);
   }
 
-  async function toggleAutoPublish(next: boolean) {
-    if (next) {
-      const ok = window.confirm(
-        "ADVERTENCIA: Al activar auto-publicación, el sistema podrá generar y enviar contenido automáticamente (sin aprobación manual). ¿Deseas continuar?"
-      );
-      if (!ok) return;
-    }
-    setAutoPublish(next);
-    setProfileMsg("Recuerda guardar el perfil para aplicar el cambio.");
-  }
-
-  async function toggleAutoBlog(next: boolean) {
-    if (!next) {
-      const ok = window.confirm(
-        "Al desactivar auto-blog, este candidato no generará blogs automáticos ni por cron ni desde el botón del hub. ¿Deseas continuar?"
-      );
-      if (!ok) return;
-    }
-    setAutoBlog(next);
-    setProfileMsg("Recuerda guardar el perfil para aplicar el cambio.");
-  }
-
   async function generateNewsBlog() {
     setHubMsg(null);
     setHubLoading(true);
-    if (!autoBlog) {
-      setHubLoading(false);
-      setHubMsg("Auto-blog está OFF para este candidato. Actívalo y guarda el perfil para generar.");
-      return;
-    }
     const resp = await fetch("/api/admin/politicians/news-blog", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -372,12 +335,6 @@ export function PoliticianWorkspaceClient({
   async function orchestrateEditorial() {
     setHubMsg(null);
     setHubLoading(true);
-    if (!autoBlog) {
-      setHubLoading(false);
-      setHubMsg("Auto-blog está OFF para este candidato. Actívalo y guarda el perfil para generar.");
-      return;
-    }
-
     const resp = await fetch("/api/admin/automation/editorial-orchestrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -391,10 +348,6 @@ export function PoliticianWorkspaceClient({
     }
 
     const data = (await resp.json()) as { ok?: unknown; skipped?: unknown; id?: unknown };
-    if (data.skipped === true) {
-      setHubMsg("Auto-blog está OFF para este candidato (skip).");
-      return;
-    }
     if (data.ok === true) {
       setHubMsg("Borrador creado en cola de revisión (ai_drafts).");
       return;
@@ -505,31 +458,22 @@ export function PoliticianWorkspaceClient({
           </div>
           <div className="flex items-end justify-between gap-3 rounded-2xl border border-border bg-background/60 p-4">
             <div>
-              <p className="text-sm font-semibold">Auto-publicación (avance)</p>
-              <p className="text-xs text-muted">Si está ON, cron podrá publicar y/o enviar automáticamente.</p>
+              <p className="text-sm font-semibold">Automatización</p>
+              <p className="text-xs text-muted">
+                El auto-blog + auto-publicación se controlan globalmente desde <span className="text-foreground">Admin → Contenido</span>.
+              </p>
             </div>
-            <button
-              className={`glass-button ${autoPublish ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100" : ""}`}
-              type="button"
-              onClick={() => void toggleAutoPublish(!autoPublish)}
-            >
-              {autoPublish ? "ON" : "OFF"}
-            </button>
+            <div className="text-right">
+              <p className="text-xs text-muted">Estado actual (candidato):</p>
+              <p className="mt-1 text-xs">
+                <span className={politician.auto_blog_enabled ? "text-emerald-300" : "text-rose-300"}>auto_blog={String(politician.auto_blog_enabled)}</span>
+                {" · "}
+                <span className={politician.auto_publish_enabled ? "text-emerald-300" : "text-rose-300"}>
+                  auto_publish={String(politician.auto_publish_enabled)}
+                </span>
+              </p>
+            </div>
           </div>
-        </div>
-
-        <div className="flex items-end justify-between gap-3 rounded-2xl border border-border bg-background/60 p-4">
-          <div>
-            <p className="text-sm font-semibold">Auto-blog (noticias)</p>
-            <p className="text-xs text-muted">Controla la generación automática. Si está OFF, no se generan blogs.</p>
-          </div>
-          <button
-            className={`glass-button ${autoBlog ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100" : ""}`}
-            type="button"
-            onClick={() => void toggleAutoBlog(!autoBlog)}
-          >
-            {autoBlog ? "ON" : "OFF"}
-          </button>
         </div>
 
         {profileMsg ? <p className="text-sm text-muted">{profileMsg}</p> : null}

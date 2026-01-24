@@ -16,6 +16,7 @@ type State =
 export function AuthorizeClient({ token }: { token: string }) {
   const [state, setState] = useState<State>({ kind: "loading" });
   const [submitting, setSubmitting] = useState(false);
+  const [who, setWho] = useState<{ name: string; email: string; phone: string }>({ name: "", email: "", phone: "" });
 
   const trimmed = useMemo(() => (token || "").trim(), [token]);
 
@@ -47,6 +48,11 @@ export function AuthorizeClient({ token }: { token: string }) {
           destination: j.destination,
           expires_at: j.invite?.expires_at ?? "",
         });
+        setWho({
+          name: typeof j?.destination?.owner_name === "string" ? String(j.destination.owner_name) : "",
+          email: "",
+          phone: "",
+        });
       })
       .catch(() => {
         if (!cancelled) setState({ kind: "error", message: "Error de red. Intenta de nuevo." });
@@ -62,7 +68,13 @@ export function AuthorizeClient({ token }: { token: string }) {
     const r = await fetch("/api/public/network-authorization", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token: trimmed, decision }),
+      body: JSON.stringify({
+        token: trimmed,
+        decision,
+        authorized_by_name: who.name.trim() ? who.name.trim() : null,
+        authorized_by_email: who.email.trim() ? who.email.trim() : null,
+        authorized_by_phone: who.phone.trim() ? who.phone.trim() : null,
+      }),
     });
     const j = (await r.json().catch(() => null)) as any;
     setSubmitting(false);
@@ -133,6 +145,35 @@ export function AuthorizeClient({ token }: { token: string }) {
           Al aprobar, autorizas que el sistema publique contenido en esta red cuando el contenido sea aprobado editorialmente.
           Puedes revocar más adelante solicitándolo al admin.
         </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-1">
+            <label className="text-xs font-semibold text-muted">Tu nombre (confirmación)</label>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={who.name}
+              onChange={(e) => setWho((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Nombre y apellido"
+            />
+          </div>
+          <div className="grid gap-1">
+            <label className="text-xs font-semibold text-muted">Email (opcional)</label>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={who.email}
+              onChange={(e) => setWho((p) => ({ ...p, email: e.target.value }))}
+              placeholder="correo@ejemplo.com"
+            />
+          </div>
+          <div className="grid gap-1">
+            <label className="text-xs font-semibold text-muted">WhatsApp (opcional)</label>
+            <input
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={who.phone}
+              onChange={(e) => setWho((p) => ({ ...p, phone: e.target.value }))}
+              placeholder="+57..."
+            />
+          </div>
+        </div>
         <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <button className="glass-button" disabled={submitting} onClick={() => decide("approve")} type="button">
             {submitting ? "Procesando…" : "Aprobar"}

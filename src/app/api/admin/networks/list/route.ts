@@ -47,7 +47,7 @@ export async function GET() {
   const { data: destinations } = await supabase
     .from("politician_social_destinations")
     .select(
-      "id,politician_id,network_name,network_key,scope,target_id,credential_ref,network_type,profile_or_page_url,owner_name,owner_contact_phone,owner_contact_email,active,authorization_status,last_invite_sent_at,authorized_at,revoked_at,created_at,updated_at",
+      "id,politician_id,network_name,network_key,scope,target_id,credential_ref,network_type,profile_or_page_url,owner_name,owner_contact_phone,owner_contact_email,authorized_by_name,authorized_by_phone,authorized_by_email,active,authorization_status,last_invite_sent_at,authorized_at,revoked_at,created_at,updated_at",
     )
     .order("created_at", { ascending: false });
 

@@ -1,0 +1,32 @@
+name: MP26 Keepalive
+
+on:
+  schedule:
+    # Redundancia: si Vercel Cron o Railway "duerme", GitHub vuelve a tocar el endpoint.
+    - cron: "7-59/20 * * * *"
+    - cron: "*/20 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Curl keepalive endpoint
+        env:
+          URL: ${{ secrets.MP26_KEEPALIVE_URL }}
+          CRON_SECRET: ${{ secrets.MP26_CRON_SECRET }}
+        run: |
+          if [ -z "$URL" ]; then echo "Missing secret: MP26_KEEPALIVE_URL" && exit 1; fi
+          if [ -z "$CRON_SECRET" ]; then echo "Missing secret: MP26_CRON_SECRET" && exit 1; fi
+          curl -fsS -m 20 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${URL}"
+

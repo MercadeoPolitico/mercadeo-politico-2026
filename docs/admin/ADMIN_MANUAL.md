@@ -22,8 +22,8 @@ En `/admin` verás indicadores de estado:
 En el workspace puedes:
 - **Editar perfil**: biografía, propuestas, número de tarjetón.
 - **Guardar cambios**: botón “Guardar cambios/Guardar perfil”.
-- **Auto-blog** (ON/OFF): habilita o detiene generación automática de borradores.
-- **Auto-publicación** (ON/OFF): habilita la publicación automática donde aplique (solo si hay integraciones configuradas).
+- **Automatización**: el control **global** de auto-blog/autopublicación está en **Admin → Contenido** (toggle “AUTO ON/OFF”).
+  - En el workspace solo se ve el estado actual del candidato (referencial).
 
 ## 4) Marketing Hub (archivos + generación)
 En el workspace del candidato:
@@ -36,6 +36,9 @@ En el workspace del candidato:
 
 ## 5) Cola editorial (revisión humana)
 En `/admin/content`:
+0. **Auto-blog/autopublicación (global)**:
+   - Toggle arriba a la derecha: **AUTO ON/OFF**.
+   - Cuando está ON: el sistema genera y publica **1 noticia por político cada 4 horas** (y envía a redes aprobadas vía n8n).
 1. Selecciona un borrador de la lista.
 2. Revisa y edita:
    - Texto principal (blog)
@@ -45,10 +48,42 @@ En `/admin/content`:
    - **Publicar en Centro informativo**: publica en `/centro-informativo` (solo para `blog` y si está `approved` o `edited`).
    - **Enviar a redes (auto)**: envía el borrador a n8n usando `metadata.destinations` (solo redes **approved** + **active**). n8n ejecuta publicación por red, sin decisiones editoriales.
 
+### Subtítulo editorial (automático)
+En cada noticia publicada:
+- **Título**: no menciona al candidato.
+- **Subtítulo**: sí muestra `Nombre · Cargo · Eje…` y aparece debajo del título.
+
 ## 6) Publicaciones en redes (manual y autorizado)
 El sistema funciona así (sin guardar tokens en la app):
 - La app **no guarda credenciales** de redes sociales.
 - **n8n guarda las credenciales** (conectores oficiales) y recibe el contenido desde la app.
+
+## 6.1) n8n / Redes (torre de control)
+Ruta: `/admin/networks`
+
+### A) Destinos sociales (autorización por enlace)
+1. Crea un destino social (candidato + red + URL del perfil/página).
+2. El sistema genera un **enlace copiable** (se pega en WhatsApp).
+3. El dueño abre `/autorizar?token=...` y **aprueba o rechaza**.
+4. El Admin Panel muestra estado con “señal” (verde/amarillo/rojo) y registra:
+   - quién autorizó (nombre; email/whatsapp opcional)
+   - cuándo autorizó
+
+Acciones:
+- **Generar enlace (copiar)**: crea un nuevo enlace (expira en 5 horas).
+- **Revocar**: desactiva la autorización.
+
+> Nota: el admin **no ve** ni elige “credential_ref”; el sistema resuelve credenciales internamente por red.
+
+### B) Fuentes RSS (gestionables por admin)
+En la misma pestaña puedes:
+- **Agregar** RSS (name, region, rss_url, active)
+- **Editar / eliminar** fuentes
+- Ver “señal” automática por fuente:
+  - verde: ok
+  - amarillo: degradada
+  - rojo: caída
+
 
 ### Flujo recomendado (gobernado, seguro)
 1. Admin genera y aprueba un borrador en `/admin/content`.

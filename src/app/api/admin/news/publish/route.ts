@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   const { data: draft } = await supabase
     .from("ai_drafts")
-    .select("id,candidate_id,content_type,generated_text,metadata,status,created_at")
+    .select("id,candidate_id,content_type,generated_text,subtitle,metadata,status,created_at")
     .eq("id", draft_id)
     .maybeSingle();
 
@@ -56,6 +56,7 @@ export async function POST(req: Request) {
   const title = lines.find((l) => l.length > 0)?.slice(0, 160) || "Centro informativo ciudadano";
   const excerpt = lines.filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
   const slug = slugify(`${draft.candidate_id}-${draft.created_at}-${title}`);
+  const subtitle = typeof (draft as any).subtitle === "string" ? String((draft as any).subtitle).trim() : "";
 
   const source_url =
     draft.metadata && typeof draft.metadata === "object" && "source_url" in (draft.metadata as Record<string, unknown>)
@@ -99,6 +100,7 @@ export async function POST(req: Request) {
       candidate_id: draft.candidate_id,
       slug,
       title,
+      subtitle: subtitle || null,
       excerpt,
       body: normalizedBody,
       media_urls: media_url ? [media_url] : null,

@@ -60,6 +60,7 @@ export function AdminContentPanel() {
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [bulkAllowNoImage, setBulkAllowNoImage] = useState<boolean>(false);
   const [publishedPosts, setPublishedPosts] = useState<PublishedPost[]>([]);
+  const [publishedChecked, setPublishedChecked] = useState<Record<string, boolean>>({});
   const [editingPost, setEditingPost] = useState<{ id: string; title: string; body: string; excerpt: string } | null>(null);
   const [editPostState, setEditPostState] = useState<"idle" | "loading" | "saving" | "error">("idle");
   const [editPostError, setEditPostError] = useState<string>("");
@@ -76,6 +77,9 @@ export function AdminContentPanel() {
   const [genResult, setGenResult] = useState<GenerateResponse | null>(null);
   const [variants, setVariants] = useState<SocialVariants | null>(null);
   const [genErrorMsg, setGenErrorMsg] = useState<string>("");
+  const [autoBlogEnabled, setAutoBlogEnabled] = useState<boolean>(true);
+  const [autoBlogEveryHours, setAutoBlogEveryHours] = useState<number>(4);
+  const [autoBlogSaving, setAutoBlogSaving] = useState<boolean>(false);
 
   const [imageState, setImageState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [imageErrorMsg, setImageErrorMsg] = useState<string>("");
@@ -107,7 +111,18 @@ export function AdminContentPanel() {
       .then(async (r) => {
         if (!r.ok) return;
         const j = (await r.json().catch(() => null)) as any;
-        if (j?.ok && Array.isArray(j.posts)) setPublishedPosts(j.posts as PublishedPost[]);
+        if (j?.ok && Array.isArray(j.posts)) {
+          const posts = j.posts as PublishedPost[];
+          setPublishedPosts(posts);
+          const ids = new Set(posts.map((p) => p.id));
+          setPublishedChecked((prev) => {
+            const next: Record<string, boolean> = {};
+            for (const [k, v] of Object.entries(prev)) {
+              if (v && ids.has(k)) next[k] = true;
+            }
+            return next;
+          });
+        }
       })
       .catch(() => {});
   }
@@ -156,6 +171,36 @@ export function AdminContentPanel() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/settings/auto-blog", { method: "GET" })
+      .then(async (r) => {
+        const j = (await r.json().catch(() => null)) as any;
+        if (cancelled) return;
+        if (r.ok && j?.ok) {
+          setAutoBlogEnabled(Boolean(j.enabled));
+          const h = typeof j.every_hours === "number" ? j.every_hours : 4;
+          setAutoBlogEveryHours(Number.isFinite(h) ? h : 4);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggleAutoBlogGlobal(next: boolean) {
+    setAutoBlogSaving(true);
+    setAutoBlogEnabled(next);
+    await fetch("/api/admin/settings/auto-blog", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: next, every_hours: 4 }),
+    }).catch(() => {});
+    setAutoBlogEveryHours(4);
+    setAutoBlogSaving(false);
+  }
 
   async function generate() {
     if (!canGenerate) return;
@@ -389,6 +434,60 @@ export function AdminContentPanel() {
     await refresh();
   }
 
+  const selectedPostIds = useMemo(() => Object.keys(publishedChecked).filter((k) => publishedChecked[k]), [publishedChecked]);
+  const selectedPosts = useMemo(() => publishedPosts.filter((p) => selectedPostIds.includes(p.id)), [publishedPosts, selectedPostIds]);
+  const bulkHasPostSelection = selectedPostIds.length > 0;
+
+  function togglePublishedChecked(id: string) {
+    setPublishedChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  function clearPublishedSelection() {
+    setPublishedChecked({});
+  }
+
+  async function bulkArchivePublished() {
+    if (!bulkHasPostSelection) return;
+    const ok = window.confirm(`Vas a DESPUBLICAR ${selectedPostIds.length} publicaciones. ¿Continuar?`);
+    if (!ok) return;
+    let okCount = 0;
+    let failCount = 0;
+    for (const p of selectedPosts) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetch("/api/admin/news/manage", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "archive", post_id: p.id, slug: p.slug }),
+      });
+      if (res.ok) okCount++;
+      else failCount++;
+    }
+    window.alert(`Centro Informativo: despublicadas=${okCount} · fallidas=${failCount}`);
+    clearPublishedSelection();
+    await refresh();
+  }
+
+  async function bulkDeletePublished() {
+    if (!bulkHasPostSelection) return;
+    const ok = window.confirm(`Vas a ELIMINAR ${selectedPostIds.length} publicaciones. Esta acción no se puede deshacer. ¿Continuar?`);
+    if (!ok) return;
+    let okCount = 0;
+    let failCount = 0;
+    for (const p of selectedPosts) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetch("/api/admin/news/manage", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "delete", post_id: p.id, slug: p.slug }),
+      });
+      if (res.ok) okCount++;
+      else failCount++;
+    }
+    window.alert(`Centro Informativo: eliminadas=${okCount} · fallidas=${failCount}`);
+    clearPublishedSelection();
+    await refresh();
+  }
+
   async function startEditPublishedPost(post: PublishedPost) {
     setEditPostState("loading");
     setEditPostError("");
@@ -572,7 +671,25 @@ export function AdminContentPanel() {
   return (
     <div className="space-y-8">
       <div className="glass-card p-6">
-        <h3 className="text-base font-semibold">Generar borrador</h3>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold">Generar borrador</h3>
+            <p className="mt-1 text-xs text-muted">
+              Automático: si está ON, el sistema genera y publica 1 noticia por político cada {autoBlogEveryHours}h (y envía a redes aprobadas vía n8n).
+            </p>
+          </div>
+          <button
+            className={`glass-button ${
+              autoBlogEnabled ? "border-emerald-300/40 bg-emerald-400/15 text-emerald-100" : "border-rose-300/40 bg-rose-400/10 text-rose-100"
+            }`}
+            type="button"
+            onClick={() => void toggleAutoBlogGlobal(!autoBlogEnabled)}
+            disabled={autoBlogSaving}
+            title="Control global del auto-blog/autopublicación"
+          >
+            {autoBlogSaving ? "…" : autoBlogEnabled ? "AUTO ON" : "AUTO OFF"}
+          </button>
+        </div>
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="grid gap-3">
             <div className="grid gap-1">
@@ -820,6 +937,10 @@ export function AdminContentPanel() {
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {publishedPosts.map((p) => (
               <div key={p.id} className="rounded-2xl border border-border bg-background p-4">
+                <label className="flex items-center justify-end gap-2 text-xs text-muted">
+                  <input type="checkbox" checked={Boolean(publishedChecked[p.id])} onChange={() => togglePublishedChecked(p.id)} />
+                  <span>Seleccionar</span>
+                </label>
                 <p className="text-sm font-semibold">{p.title}</p>
                 <p className="mt-1 text-xs text-muted">
                   {polById[p.candidate_id]?.name ?? p.candidate_id} · estado: <span className="text-foreground">{p.status}</span>
@@ -846,6 +967,26 @@ export function AdminContentPanel() {
             ))}
             {publishedPosts.length === 0 ? <p className="text-sm text-muted">Aún no hay publicaciones.</p> : null}
           </div>
+
+          {bulkHasPostSelection ? (
+            <div className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold">Publicaciones seleccionadas: {selectedPostIds.length}</p>
+                <div className="flex flex-wrap gap-2">
+                  <button className="glass-button" type="button" onClick={bulkArchivePublished}>
+                    Despublicar seleccionadas
+                  </button>
+                  <button className="glass-button" type="button" onClick={bulkDeletePublished}>
+                    Eliminar seleccionadas
+                  </button>
+                  <button className="glass-button" type="button" onClick={clearPublishedSelection}>
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-muted">Esto solo afecta el Centro Informativo (publicaciones públicas/archivadas).</p>
+            </div>
+          ) : null}
 
           {editingPost ? (
             <div className="mt-5 rounded-2xl border border-border bg-background p-4">
