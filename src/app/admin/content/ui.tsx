@@ -363,6 +363,33 @@ export function AdminContentPanel() {
     await refresh();
   }
 
+  async function sendDraftToApprovedNetworks(draft: Draft) {
+    if (draft.status !== "approved" && draft.status !== "edited") return;
+    const ok = window.confirm(
+      "Esto enviará el borrador a n8n SOLO para redes aprobadas (autorizadas por el dueño). ¿Continuar?"
+    );
+    if (!ok) return;
+
+    const res = await fetch("/api/admin/automation/publish-to-n8n", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draft_id: draft.id }),
+    });
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j?.ok) {
+      const err = typeof j?.error === "string" ? j.error : "upstream_error";
+      const msg =
+        err === "no_approved_networks"
+          ? "No hay redes aprobadas para este candidato. Ve a Admin → n8n / Redes y envía enlaces por WhatsApp."
+          : `No se pudo enviar a redes: ${err}`;
+      window.alert(msg);
+      await refresh();
+      return;
+    }
+    await refresh();
+    window.alert(`Enviado a n8n. Redes aprobadas: ${j?.destinations_count ?? "—"}`);
+  }
+
   return (
     <div className="space-y-8">
       <div className="glass-card p-6">
@@ -587,6 +614,14 @@ export function AdminContentPanel() {
                   disabled={selected.status !== "approved" && selected.status !== "edited"}
                 >
                   Publicar a redes (n8n)
+                </button>
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={() => sendDraftToApprovedNetworks(selected)}
+                  disabled={selected.status !== "approved" && selected.status !== "edited"}
+                >
+                  Enviar a redes (solo aprobadas)
                 </button>
               </div>
             </div>
