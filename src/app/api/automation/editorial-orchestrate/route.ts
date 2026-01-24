@@ -6,6 +6,8 @@ import { fetchTopGdeltArticle } from "@/lib/news/gdelt";
 import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
 import { openAiJson } from "@/lib/automation/openai";
 import { regionalProvidersForCandidate } from "@/lib/news/providers";
+import { submitToN8n } from "@/lib/automation/n8n";
+import { getSiteUrlString } from "@/lib/site";
 
 export const runtime = "nodejs";
 
@@ -218,6 +220,16 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<{ ok: true; value: T
       },
     );
   });
+}
+
+function slugify(input: string): string {
+  const base = input
+    .toLowerCase()
+    .normalize("NFKD")
+    .replaceAll(/[\u0300-\u036f]/g, "")
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
+  return base.length ? base.slice(0, 64) : `post-${Date.now()}`;
 }
 
 export async function POST(req: Request) {
@@ -578,6 +590,8 @@ export async function POST(req: Request) {
       editorial_notes: adminEditorialNotes || null,
       recent_media_urls: recentMediaUrls,
     },
+    // Compatibility: allow other routes/UIs to read a canonical source URL.
+    source_url: article?.url ?? (adminProvidedNewsLinks[0] ?? null),
     news: article
       ? { provider: "gdelt", title: article.title, url: article.url, seendate: article.seendate, query }
       : lastPublished
@@ -633,6 +647,66 @@ export async function POST(req: Request) {
   if (!verifyRow?.id) {
     console.error("[editorial-orchestrate] assertion_failed_no_row_after_insert", { requestId, inserted_id: inserted.id });
     return NextResponse.json({ ok: false, error: "assertion_failed", request_id: requestId }, { status: 500 });
+  }
+
+  // Optional auto-publish (governed by candidate-level toggle).
+  // - If OFF, Centro Informativo can remain empty (editorial policy).
+  // - If ON, we publish immediately and optionally forward a teaser to n8n.
+  if (pol.auto_publish_enabled === true) {
+    try {
+      const created_at = new Date().toISOString();
+      const titleLine = winner.data.platform_variants.blog.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;
+      const excerpt = winner.data.platform_variants.blog.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
+      const slug = slugify(`${pol.slug}-${created_at}-${titleLine}`);
+
+      const { data: post, error: postErr } = await admin
+        .from("citizen_news_posts")
+        .insert({
+          candidate_id: pol.id,
+          slug,
+          title: titleLine.slice(0, 160),
+          excerpt,
+          body: winner.data.platform_variants.blog,
+          media_urls: null,
+          source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
+          status: "published",
+          published_at: created_at,
+          created_at,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (!postErr) {
+        // Backlink draft -> post
+        const nextMeta =
+          metadata && typeof metadata === "object"
+            ? { ...(metadata as Record<string, unknown>), published_post_id: post?.id ?? null, published_slug: slug, auto_published_at: created_at }
+            : { published_post_id: post?.id ?? null, published_slug: slug, auto_published_at: created_at };
+        await admin.from("ai_drafts").update({ metadata: nextMeta }).eq("id", inserted.id);
+
+        // Forward teaser to n8n (best-effort; does NOT block).
+        const publicLink = `${getSiteUrlString()}/centro-informativo#${slug}`;
+        const teaser = `${titleLine}\n\nLee el análisis completo:\n${publicLink}`.slice(0, 800);
+        void submitToN8n({
+          candidate_id: pol.id,
+          content_type: "social",
+          generated_text: teaser,
+          token_estimate: 0,
+          created_at,
+          source: "web",
+          metadata: {
+            origin: "auto_publish_editorial_orchestrate",
+            blog_slug: slug,
+            source_url: (metadata as any).source_url ?? null,
+            variants: variantsJson,
+          },
+        });
+      } else {
+        console.warn("[editorial-orchestrate] auto_publish_failed", { requestId, candidate_id: pol.id });
+      }
+    } catch {
+      console.warn("[editorial-orchestrate] auto_publish_exception", { requestId, candidate_id: pol.id });
+    }
   }
 
   return NextResponse.json({
