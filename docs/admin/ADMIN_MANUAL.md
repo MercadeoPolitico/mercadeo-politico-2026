@@ -97,19 +97,17 @@ Depende de lo que esté configurado en n8n, pero el sistema ya maneja el concept
 - `facebook`, `instagram`, `threads`, `tiktok`, `x`, `youtube`
 - Se puede extender a otras redes si n8n tiene nodo/credencial.
 
-### Checklist: cómo conectar redes en n8n (paso a paso)
-**Idea clave**: el Admin Panel decide *qué* y *a qué red* enviar; **n8n** guarda credenciales y ejecuta la publicación.
+### Checklist (operación) — sin entrar a n8n como Admin
+**Idea clave**: el Admin Panel decide *qué* y *a qué red* enviar; **n8n** ejecuta la publicación.
 
-#### A) Preparación (una sola vez)
-1. Entra a tu n8n (Railway): `https://n8n-production-1504.up.railway.app`
-2. Importa el workflow maestro si aún no lo hiciste:
-   - Archivo: `docs/automation/n8n-master-editorial-orchestrator.json`
-3. Verifica el webhook de recepción (publicación):
-   - El backend envía a `WEBHOOK_URL/N8N_WEBHOOK_URL` con header `x-n8n-webhook-token`.
-   - En n8n, el Webhook debe validar ese token (o usar el header como “shared secret”).
+- El Admin **NO** entra a n8n.
+- La configuración de n8n (infra) queda fuera del flujo del Admin Panel.
+- El webhook de n8n queda **server-to-server** con token:
+  - El backend envía `x-n8n-webhook-token: <N8N_WEBHOOK_TOKEN>`.
+  - El workflow maestro valida ese header contra `process.env.N8N_WEBHOOK_TOKEN` y responde **401** si no coincide.
 
-#### B) Conectar cada red (credenciales)
-En n8n ve a **Credentials** → **New**, y crea las credenciales por red (según disponibilidad en tu n8n).
+Si un operador necesita revisar infraestructura, ver:
+- `docs/automation/n8n-master-editorial-orchestrator.md`
 
 - **Facebook (Pages)**:
   - Recomendado: nodo Facebook/Graph (o HTTP Request a Graph API).

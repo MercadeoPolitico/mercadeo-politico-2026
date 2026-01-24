@@ -57,9 +57,17 @@ Implementación sugerida:
 Importa este archivo en n8n:
 - `docs/automation/n8n-master-editorial-orchestrator.json`
 
-Luego ajusta:
+Luego ajusta (env en n8n):
 - `MP26_BASE_URL`
 - `MP26_AUTOMATION_TOKEN`
+- `N8N_WEBHOOK_TOKEN`
+
+### Seguridad del webhook (server-to-server)
+El workflow expone un Webhook trigger `mp26-editorial-orchestrator` y **rechaza llamadas públicas**:
+- El backend llama el webhook con header `x-n8n-webhook-token: <N8N_WEBHOOK_TOKEN>`
+- El workflow valida el token en el nodo:
+  - `IF webhook token ok?`
+  - Si no coincide → `Respond 401 (unauthorized)`
 
 ---
 

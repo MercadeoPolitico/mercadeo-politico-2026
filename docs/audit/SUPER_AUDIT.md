@@ -172,6 +172,17 @@ Migración:
 
 ---
 
+## 12.1) Seguridad del webhook n8n (server-to-server)
+Implementación ✅:
+- Backend → n8n envía siempre: `x-n8n-webhook-token: <N8N_WEBHOOK_TOKEN>`
+- Workflow n8n valida el token y responde **401** cuando no coincide:
+  - `IF webhook token ok?` → `Respond 401 (unauthorized)`
+
+Nota:
+- Esto cierra el webhook para llamadas no autorizadas sin requerir acciones del Admin Panel ni acceso del Admin a n8n.
+
+---
+
 ## 13) Auto-blog/autopublish: control global en Admin → Contenido
 Implementación ✅:
 - Toggle global en `/admin/content` (AUTO ON/OFF).

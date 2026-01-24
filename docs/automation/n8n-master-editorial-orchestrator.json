@@ -4,7 +4,7 @@
     {
       "parameters": {
         "path": "mp26-editorial-orchestrator",
-        "responseMode": "lastNode",
+        "responseMode": "responseNode",
         "options": {}
       },
       "id": "manual-webhook",
@@ -14,6 +14,43 @@
       "position": [
         280,
         120
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{String($json?.headers?.['x-n8n-webhook-token'] ?? '').trim() || String($json?.headers?.authorization ?? '').replace(/^Bearer\\s+/i,'').trim()}}",
+              "operation": "equals",
+              "value2": "={{$env.N8N_WEBHOOK_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "if-webhook-token",
+      "name": "IF webhook token ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":false,\"error\":\"unauthorized\"}",
+        "responseCode": 401,
+        "options": {}
+      },
+      "id": "respond-unauthorized",
+      "name": "Respond 401 (unauthorized)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        650,
+        240
       ]
     },
     {
@@ -32,7 +69,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
-        520,
+        620,
         120
       ]
     },
@@ -287,6 +324,22 @@
         1700,
         120
       ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "respond-ok",
+      "name": "Respond 200 (ok)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        120
+      ]
     }
   ],
   "connections": {
@@ -294,10 +347,20 @@
       "main": [
         [
           {
-            "node": "IF publish payload?",
+            "node": "IF webhook token ok?",
             "type": "main",
             "index": 0
           }
+        ]
+      ]
+    },
+    "IF webhook token ok?": {
+      "main": [
+        [
+          { "node": "IF publish payload?", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Respond 401 (unauthorized)", "type": "main", "index": 0 }
         ]
       ]
     },
@@ -337,6 +400,7 @@
     "PUBLISH reddit": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
     "SKIP unknown network": { "main": [ [ { "node": "Merge publish results", "type": "main", "index": 0 } ] ] },
     "Merge publish results": { "main": [ [ { "node": "Collect published/failed/skipped", "type": "main", "index": 0 } ] ] },
+    "Collect published/failed/skipped": { "main": [ [ { "node": "Respond 200 (ok)", "type": "main", "index": 0 } ] ] },
     "Cron (every 6h)": {
       "main": [
         [
