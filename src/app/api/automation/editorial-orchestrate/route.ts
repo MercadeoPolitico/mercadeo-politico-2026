@@ -486,6 +486,18 @@ function appendPublicFooter(args: {
   return lines.filter(Boolean).join("\n");
 }
 
+function appendPublicFooterShort(args: { text: string; based_on_source_name?: string | null }): string {
+  const base = String(args.text || "").trim();
+  const bits: string[] = [base];
+  if (args.based_on_source_name) bits.push(`(Basado en ${args.based_on_source_name})`);
+  bits.push(
+    "MSI by MarketBrain™.",
+    "Publicidad política pagada. El creador no es responsable de opiniones.",
+    "Info/publicidad conforme normativa electoral colombiana.",
+  );
+  return bits.filter(Boolean).join(" ");
+}
+
 export async function POST(req: Request) {
   // Automation endpoint: server-to-server only (n8n/cron/internal services).
   // Admin UI must call /api/admin/automation/editorial-orchestrate.
@@ -1066,7 +1078,7 @@ export async function POST(req: Request) {
     has_rss_image: rssChosen ? Boolean(rssChosen.rss_image_urls?.length) : false,
     // RSS images are reference-only, never published.
     rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
-    image_source: ogImage ? "rss_reference" : "ai_generated",
+    image_source: rssChosen && (rssChosen.rss_image_urls?.length ?? 0) > 0 ? "rss_reference" : "ai_generated",
     media:
       ogImage
         ? {
@@ -1137,7 +1149,7 @@ export async function POST(req: Request) {
     blog: blogWithCredits,
     facebook: appendPublicFooter({ text: winner.data.platform_variants.facebook, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
     instagram: "",
-    x: appendPublicFooter({ text: winner.data.platform_variants.x, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
+    x: appendPublicFooterShort({ text: winner.data.platform_variants.x, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
     reddit: appendPublicFooter({ text: winner.data.platform_variants.reddit, based_on_source_name: rssChosen ? rssChosen.source_name : null }),
   };
 
