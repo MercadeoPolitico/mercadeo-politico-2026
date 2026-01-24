@@ -7,7 +7,8 @@ function normalizeToken(v: unknown): string {
   const s = String(v ?? "").trim();
   if (!s) return "";
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1).trim();
-  return s;
+  // Fix accidental trailing literal \n in copied secrets (common).
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
 }
 
 function allow(req: Request): boolean {
