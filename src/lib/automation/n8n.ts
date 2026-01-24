@@ -3,6 +3,15 @@ import type { SubmitToN8nRequest } from "./types";
 
 export type N8nSubmitResult = { ok: true } | { ok: false; error: "disabled" | "not_configured" | "upstream_error" };
 
+function normalizeWebhookUrl(raw: string | null | undefined): string | null {
+  const s = String(raw ?? "").trim().replace(/\/+$/, "");
+  if (!s) return null;
+  // Backward-compatible: allow setting only the n8n base URL.
+  // If the configured URL doesn't include a webhook path, assume the main publish webhook path.
+  if (!s.includes("/webhook/") && !s.includes("/webhook-test/")) return `${s}/webhook/mp26-editorial-orchestrator`;
+  return s;
+}
+
 function isEnabled(): boolean {
   // Continuity-first:
   // - If N8N_FORWARD_ENABLED="false" => disabled.
@@ -15,7 +24,7 @@ function isEnabled(): boolean {
 }
 
 function hasConfig(): boolean {
-  const url = process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL;
+  const url = normalizeWebhookUrl(process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL);
   const token =
     process.env.N8N_WEBHOOK_TOKEN ??
     process.env.WEBHOOK_TOKEN ??
@@ -30,7 +39,7 @@ export async function submitToN8n(payload: SubmitToN8nRequest): Promise<N8nSubmi
   if (!hasConfig()) return { ok: false, error: "not_configured" };
 
   try {
-    const url = (process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL)!.trim();
+    const url = normalizeWebhookUrl(process.env.N8N_WEBHOOK_URL ?? process.env.WEBHOOK_URL)!;
     const token =
       (process.env.N8N_WEBHOOK_TOKEN ??
         process.env.WEBHOOK_TOKEN ??
