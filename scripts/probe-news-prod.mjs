@@ -47,6 +47,20 @@ async function main() {
 
   console.log("[probe-news] base", base);
 
+  // Probe AI connectivity (token-protected; safe output).
+  const aiProbeHeaders = { "x-automation-token": token };
+  const openaiProbe = await getJson(`${base}/api/health/openai?probe=true`, { headers: aiProbeHeaders });
+  console.log("[probe-news] openai_probe_status", openaiProbe.status, "has_probe", Boolean(openaiProbe.json?.probe));
+  if (openaiProbe.json?.probe?.results) {
+    console.log("[probe-news] openai_probe_results", openaiProbe.json.probe.results);
+  }
+
+  const marlenyProbe = await getJson(`${base}/api/health/marleny?probe=true`, { headers: aiProbeHeaders });
+  console.log("[probe-news] marleny_probe_status", marlenyProbe.status, "has_probe", Boolean(marlenyProbe.json?.probe));
+  if (marlenyProbe.json?.probe) {
+    console.log("[probe-news] marleny_probe_result", marlenyProbe.json.probe);
+  }
+
   // Resolve a candidate id (eligible for automation)
   const cand = await getJson(`${base}/api/automation/candidates`, { headers: { "x-automation-token": token } });
   console.log("[probe-news] candidates_status", cand.status, "ok", cand.json?.ok === true);
