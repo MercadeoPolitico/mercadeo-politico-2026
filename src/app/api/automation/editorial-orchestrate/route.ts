@@ -82,7 +82,15 @@ async function fetchBestNewsArticle(args: {
   const reg = String(args.region || "").trim();
   const queries =
     off.includes("senado")
-      ? ["Colombia seguridad", "Colombia corrupción", "Colombia narcotráfico", "Colombia secuestro", "Colombia extorsión"]
+      ? [
+          "Colombia seguridad",
+          "Colombia corrupción",
+          "Colombia narcotráfico",
+          "Colombia secuestro",
+          "Colombia extorsión",
+          // fallback: still Colombia, broader
+          "Colombia",
+        ]
       : reg
         ? [
             `${reg} Colombia seguridad`,
@@ -90,8 +98,12 @@ async function fetchBestNewsArticle(args: {
             `${reg} Colombia secuestro`,
             `${reg} Colombia corrupción`,
             `Villavicencio seguridad`,
+            // fallback to national if local isn't available but could impact region
+            "Colombia seguridad",
+            "Colombia corrupción",
+            "Colombia",
           ]
-        : ["Colombia seguridad", "Colombia corrupción"];
+        : ["Colombia seguridad", "Colombia corrupción", "Colombia"];
 
   for (const q of queries) {
     // eslint-disable-next-line no-await-in-loop
