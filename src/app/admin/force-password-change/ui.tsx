@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type EnvDiag = {
   NEXT_PUBLIC_SUPABASE_URL: boolean;
@@ -11,12 +12,15 @@ type EnvDiag = {
 
 export function ForcePasswordChangeClient() {
   const router = useRouter();
+  const search = useSearchParams();
 
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [envDiag, setEnvDiag] = useState<EnvDiag | null>(null);
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +34,40 @@ export function ForcePasswordChangeClient() {
       cancelled = true;
     };
   }, []);
+
+  // Password recovery flow (email link): exchange code for session in the browser.
+  // This allows updating the password even if SSR cookies are not present yet.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function run() {
+      try {
+        const code = search.get("code");
+        if (!code) {
+          if (!cancelled) setRecoveryChecked(true);
+          return;
+        }
+
+        const supabase = createSupabaseBrowserClient();
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!cancelled) {
+          setRecoveryReady(!error);
+          setRecoveryChecked(true);
+          if (error) setError("El enlace de recuperación no es válido o expiró. Solicita uno nuevo desde el login.");
+        }
+      } catch {
+        if (!cancelled) {
+          setRecoveryReady(false);
+          setRecoveryChecked(true);
+        }
+      }
+    }
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [search]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,6 +83,28 @@ export function ForcePasswordChangeClient() {
     }
 
     setLoading(true);
+
+    // If this page was reached via recovery email link (has ?code=...), update password in browser session.
+    if (recoveryChecked && recoveryReady) {
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { error } = await supabase.auth.updateUser({ password });
+        setLoading(false);
+        if (error) {
+          setError("No fue posible actualizar la contraseña (recovery). Intenta solicitar un nuevo enlace.");
+          return;
+        }
+        // After recovery password update, user should login again to establish SSR cookies for admin middleware.
+        router.replace("/admin/login?reason=must_change_password");
+        return;
+      } catch {
+        setLoading(false);
+        setError("No fue posible actualizar la contraseña (recovery).");
+        return;
+      }
+    }
+
+    // Default flow: user already has SSR session (forced password change after admin reset).
     const updateResp = await fetch("/api/auth/update-password", {
       method: "POST",
       headers: { "content-type": "application/json" },

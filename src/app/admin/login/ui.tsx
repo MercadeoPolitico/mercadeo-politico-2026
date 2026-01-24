@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type EnvDiag = {
   NEXT_PUBLIC_SUPABASE_URL: boolean;
@@ -18,8 +19,11 @@ export function AdminLoginClient() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [envDiag, setEnvDiag] = useState<EnvDiag | null>(null);
   const [runtimeProjectRef, setRuntimeProjectRef] = useState<string | null>(null);
 
@@ -96,6 +100,35 @@ export function AdminLoginClient() {
     }
     router.replace("/admin/login");
     router.refresh();
+  }
+
+  async function requestPasswordReset() {
+    setError(null);
+    setResetMsg(null);
+    const e = email.trim();
+    if (!e) {
+      setResetMsg("Escribe tu email arriba y luego presiona “Restablecer contraseña”.");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const { error } = await supabase.auth.resetPasswordForEmail(e, {
+        // Keep user inside the app after clicking the email link.
+        // This page already exists and is used for forced password changes.
+        redirectTo: `${window.location.origin}/admin/force-password-change`,
+      });
+      if (error) {
+        setResetMsg("No fue posible enviar el correo de restablecimiento. Verifica el email o inténtalo más tarde.");
+      } else {
+        setResetMsg("Listo. Si el email existe, recibirás un enlace para restablecer tu contraseña.");
+      }
+    } catch {
+      setResetMsg("No fue posible iniciar el restablecimiento en este momento.");
+    } finally {
+      setResetLoading(false);
+    }
   }
 
   return (
@@ -181,22 +214,49 @@ export function AdminLoginClient() {
           <label className="text-sm font-medium" htmlFor="password">
             Contraseña
           </label>
-          <input
-            id="password"
-            className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="flex items-stretch gap-2">
+            <input
+              id="password"
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            <button
+              className="rounded-xl border border-border bg-background px-3 text-sm text-muted hover:bg-surface hover:text-foreground"
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+            >
+              {showPassword ? "🙈" : "👁️"}
+            </button>
+          </div>
         </div>
 
         {error ? <p className="text-sm text-amber-300">{error}</p> : null}
+        {resetMsg ? <p className="text-sm text-muted">{resetMsg}</p> : null}
 
         <button className="glass-button w-full" type="submit" disabled={loading}>
           {loading ? "Ingresando…" : "Ingresar"}
         </button>
+
+        <div className="grid gap-2">
+          <button
+            className="rounded-xl border border-border bg-background px-3 py-2 text-sm text-muted hover:bg-surface hover:text-foreground"
+            type="button"
+            onClick={() => void requestPasswordReset()}
+            disabled={resetLoading}
+          >
+            {resetLoading ? "Enviando enlace…" : "Restablecer contraseña (email)"}
+          </button>
+          <p className="text-xs text-muted">
+            Si eres <strong className="text-foreground">super_admin</strong> y perdiste acceso total, también puedes usar el script{" "}
+            <code>scripts/reset-super-admin-password.mjs</code> en local (lee <code>.env.local</code> y no imprime secretos).
+          </p>
+        </div>
 
         <div className="pt-2 text-center text-xs text-muted">
           <Link className="underline-offset-4 hover:underline" href="/admin">
