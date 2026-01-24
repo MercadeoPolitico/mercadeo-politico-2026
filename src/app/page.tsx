@@ -159,20 +159,20 @@ export default function Home() {
           <div className="glass-card p-6">
             <p className="text-sm font-semibold">Eduard Buitrago Acero</p>
             <div className="mt-3 grid gap-2 text-sm">
-              <TrackedExternalLink className="underline" candidateSlug="eduardo-buitrago" href="https://x.com/yosoyeduardb">
+              <TrackedExternalLink className="underline" candidateSlug="eduard-buitrago" href="https://x.com/yosoyeduardb">
                 X · @yosoyeduardb
               </TrackedExternalLink>
               <TrackedExternalLink
                 className="underline"
-                candidateSlug="eduardo-buitrago"
+                candidateSlug="eduard-buitrago"
                 href="https://www.instagram.com/soyeduardbuitrago?igsh=bnpsNmI2MGZ3azQy"
               >
                 Instagram · @soyeduardbuitrago
               </TrackedExternalLink>
-              <TrackedExternalLink className="underline" candidateSlug="eduardo-buitrago" href="https://www.youtube.com/@soyeduardbuitrago7801">
+              <TrackedExternalLink className="underline" candidateSlug="eduard-buitrago" href="https://www.youtube.com/@soyeduardbuitrago7801">
                 YouTube · @soyeduardbuitrago7801
               </TrackedExternalLink>
-              <TrackedExternalLink className="underline" candidateSlug="eduardo-buitrago" href="https://www.facebook.com/share/17x8kFiAGs/">
+              <TrackedExternalLink className="underline" candidateSlug="eduard-buitrago" href="https://www.facebook.com/share/17x8kFiAGs/">
                 Facebook
               </TrackedExternalLink>
             </div>

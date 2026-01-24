@@ -43,7 +43,7 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
     ? await supabase
         .from("politicians")
         .select("id,slug,name,office,party,region,ballot_number,biography,proposals")
-        .eq("slug", slug)
+        .or(`slug.eq.${slug},id.eq.${slug}`)
         .maybeSingle()
     : { data: null };
 
