@@ -4,6 +4,7 @@ import "../styles/globals.css";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { getSiteUrlString, siteConfig } from "@/lib/site";
+import { CacheResetWatcher } from "@/components/CacheResetWatcher";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -77,6 +78,7 @@ export default function RootLayout({
           Saltar al contenido principal
         </a>
         <SiteHeader />
+        <CacheResetWatcher />
         <main id="main" className="mx-auto w-full max-w-6xl px-4 py-10">
           {children}
         </main>

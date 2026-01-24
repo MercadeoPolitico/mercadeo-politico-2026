@@ -2,6 +2,7 @@ import { Section } from "@/components/Section";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 import { requireAdmin } from "@/lib/auth/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { CacheResetCard } from "./CacheResetCard";
 
 function envOn(name: string): boolean {
   return process.env[name] === "true";
@@ -91,6 +92,9 @@ export default async function AdminDashboardPage() {
               {pubsPending} / {pubsApproved} / {pubsSent}
             </p>
           </div>
+        </div>
+        <div className="mt-4">
+          <CacheResetCard />
         </div>
       </Section>
 
