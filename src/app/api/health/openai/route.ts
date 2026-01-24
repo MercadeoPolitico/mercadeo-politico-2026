@@ -29,19 +29,25 @@ function normalizeBaseUrl(raw: string | undefined, fallback: string): string {
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
 }
 
-async function probeChatCompletion(args: { baseUrl: string; apiKey: string; model: string }): Promise<{ ok: boolean; status: number | null; failure: string | null }> {
+async function probeChatCompletion(args: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  includeResponseFormat: boolean;
+}): Promise<{ ok: boolean; status: number | null; failure: string | null }> {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 6000);
+    const body: any = {
+      model: args.model,
+      temperature: 0,
+      messages: [{ role: "user", content: "ping" }],
+    };
+    if (args.includeResponseFormat) body.response_format = { type: "json_object" };
     const resp = await fetch(`${args.baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${args.apiKey}` },
-      body: JSON.stringify({
-        model: args.model,
-        temperature: 0,
-        messages: [{ role: "user", content: "ping" }],
-        response_format: { type: "json_object" },
-      }),
+      body: JSON.stringify(body),
       cache: "no-store",
       signal: ctrl.signal,
     });
@@ -79,6 +85,7 @@ export async function GET(req: Request) {
           baseUrl: normalizeBaseUrl(process.env.OPENAI_BASE_URL, "https://api.openai.com"),
           apiKey: openAiKey,
           model: (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim(),
+          includeResponseFormat: true,
         })),
       });
     }
@@ -93,6 +100,7 @@ export async function GET(req: Request) {
           baseUrl: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL, "https://openrouter.ai/api"),
           apiKey: openRouterKey,
           model: openRouterModel,
+          includeResponseFormat: false,
         })),
       });
     }
@@ -107,6 +115,7 @@ export async function GET(req: Request) {
           baseUrl: normalizeBaseUrl(process.env.GROQ_BASE_URL, "https://api.groq.com/openai"),
           apiKey: groqKey,
           model: groqModel,
+          includeResponseFormat: false,
         })),
       });
     }
@@ -121,6 +130,7 @@ export async function GET(req: Request) {
           baseUrl: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL, "https://api.cerebras.ai"),
           apiKey: cerebrasKey,
           model: cerebrasModel,
+          includeResponseFormat: false,
         })),
       });
     }

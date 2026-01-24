@@ -137,6 +137,26 @@ function pickTextCompletion(data: unknown): string {
   return content.trim();
 }
 
+function tryParseJsonObject<T>(text: string): T | null {
+  const t = text.trim();
+  if (!t) return null;
+  try {
+    return JSON.parse(t) as T;
+  } catch {
+    // Common provider behavior: wrap JSON with extra text or markdown fences.
+    const start = t.indexOf("{");
+    const end = t.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(t.slice(start, end + 1)) as T;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 export async function openAiJson<T>(args: { task: string; system: string; user: string }): Promise<OpenAiResult<T>> {
   if (!isEnabled()) return { ok: false, error: "disabled" };
   if (!hasConfig()) return { ok: false, error: "not_configured" };
@@ -147,16 +167,16 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
   const attempts: Array<{ provider: string; host: string | null; ok: boolean; status: number | null; failure: string | null }> = [];
 
   for (const p of ps) {
-    const payload = {
+    const payload: Record<string, unknown> = {
       model: p.model,
       temperature: 0.2,
       messages: [
         { role: "system", content: args.system },
         { role: "user", content: args.user },
       ],
-      // Ask for JSON output, but remain compatible with providers that ignore this.
-      response_format: { type: "json_object" },
     };
+    // Ask for JSON output when supported (OpenAI). Some OpenAI-compatible providers reject this field.
+    if (p.name === "openai") payload.response_format = { type: "json_object" };
 
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -169,12 +189,10 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
 
       const text = pickTextCompletion(r.data);
       if (!text) continue;
-      try {
-        return { ok: true, data: JSON.parse(text) as T };
-      } catch {
-        // provider returned non-JSON; try next
-        continue;
-      }
+      const parsed = tryParseJsonObject<T>(text);
+      if (parsed) return { ok: true, data: parsed };
+      // provider returned non-JSON; try next
+      continue;
     } catch {
       // try next provider
       continue;
