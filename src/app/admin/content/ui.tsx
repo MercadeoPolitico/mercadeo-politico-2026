@@ -31,6 +31,8 @@ export function AdminContentPanel() {
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [selected, setSelected] = useState<Draft | null>(null);
   const [polById, setPolById] = useState<Record<string, { name: string; office: string; region: string }>>({});
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [bulkAllowNoImage, setBulkAllowNoImage] = useState<boolean>(false);
 
   // Draft creation (generate + store)
   const [candidateId, setCandidateId] = useState("jose-angel-martinez");
@@ -60,6 +62,15 @@ export function AdminContentPanel() {
     const json = (await res.json()) as { ok: boolean; drafts: Draft[] };
     setDrafts(json.drafts ?? []);
     setLoadState("ready");
+    // Drop selections for rows no longer present.
+    const ids = new Set((json.drafts ?? []).map((d) => d.id));
+    setChecked((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (v && ids.has(k)) next[k] = true;
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -162,6 +173,43 @@ export function AdminContentPanel() {
       (meta && typeof meta?.image_metadata?.url === "string" && meta.image_metadata.url) ||
       null;
     return url ? String(url).trim() : null;
+  }
+
+  function titleFromText(text: string): string {
+    const lines = String(text || "").split("\n").map((l) => l.trim());
+    return (lines.find((l) => l.length > 0) ?? "").slice(0, 160);
+  }
+
+  function hostOf(u: string): string | null {
+    try {
+      return new URL(u).host;
+    } catch {
+      return null;
+    }
+  }
+
+  function authorFromDraft(d: Draft): string | null {
+    const meta = (d.metadata ?? null) as any;
+    const name = meta && typeof meta.source_name === "string" ? String(meta.source_name).trim() : "";
+    if (name) return name;
+    const url = meta && typeof meta.source_url === "string" ? String(meta.source_url).trim() : "";
+    return url ? hostOf(url) : null;
+  }
+
+  function allowNoImage(d: Draft): boolean {
+    const meta = (d.metadata ?? null) as any;
+    return meta && meta.allow_no_image === true;
+  }
+
+  function validateForPublish(d: Draft, opts?: { allow_no_image?: boolean }): { ok: true } | { ok: false; reason: string } {
+    const title = titleFromText(d.generated_text);
+    if (!title) return { ok: false, reason: "Falta título (primera línea del texto)." };
+    const author = authorFromDraft(d);
+    if (!author) return { ok: false, reason: "Falta autor/medio (source_name/source_url)." };
+    const hasImg = Boolean(imageUrlOf(d));
+    const allow = opts?.allow_no_image === true || allowNoImage(d);
+    if (!hasImg && !allow) return { ok: false, reason: "Falta imagen (o autoriza 'sin imagen')." };
+    return { ok: true };
   }
 
   async function generateImageForSelected() {
@@ -325,46 +373,105 @@ export function AdminContentPanel() {
     await refresh();
   }
 
-  const [publishPlatforms, setPublishPlatforms] = useState<Record<string, boolean>>({
-    facebook: true,
-    instagram: true,
-    x: true,
-    threads: false,
-    tiktok: false,
-    youtube: false,
-    linkedin: false,
-    whatsapp: false,
-    telegram: false,
-    reddit: false,
-  });
+  const selectedIds = useMemo(() => Object.keys(checked).filter((k) => checked[k]), [checked]);
+  const selectedDrafts = useMemo(() => drafts.filter((d) => selectedIds.includes(d.id)), [drafts, selectedIds]);
+  const bulkHasSelection = selectedIds.length > 0;
 
-  async function publishDraftToNetworks(draft: Draft) {
-    // Must be human-gated
-    if (draft.status !== "approved" && draft.status !== "edited") return;
+  function toggleChecked(id: string) {
+    setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
 
-    const platforms = Object.entries(publishPlatforms)
-      .filter(([, v]) => v)
-      .map(([k]) => k);
-    if (!platforms.length) return;
+  function clearSelection() {
+    setChecked({});
+  }
 
-    const ok = window.confirm(
-      "ADVERTENCIA: Esto crea publicaciones por red y las envía a automatización (n8n) para su publicación. " +
-        "Asegúrate de que las credenciales estén configuradas en n8n. ¿Deseas continuar?"
-    );
+  async function bulkDelete() {
+    if (!bulkHasSelection) return;
+    const ok = window.confirm(`Vas a ELIMINAR ${selectedIds.length} borradores. Esta acción no se puede deshacer. ¿Continuar?`);
     if (!ok) return;
+    for (const id of selectedIds) {
+      // eslint-disable-next-line no-await-in-loop
+      await fetch("/api/admin/drafts", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
+    }
+    clearSelection();
+    await refresh();
+  }
 
-    const res = await fetch("/api/admin/publications/publish-from-draft", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ draft_id: draft.id, platforms, immediate: true }),
-    });
+  async function bulkPublishCitizen() {
+    if (!bulkHasSelection) return;
+    const ok = window.confirm(`Publicar ${selectedIds.length} borradores en Centro Informativo (los inválidos se omiten). ¿Continuar?`);
+    if (!ok) return;
+    let okCount = 0;
+    let skipCount = 0;
+    for (const d of selectedDrafts) {
+      if (d.content_type !== "blog") {
+        skipCount++;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      if (d.status !== "approved" && d.status !== "edited") {
+        skipCount++;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      const v = validateForPublish(d, { allow_no_image: bulkAllowNoImage });
+      if (!v.ok) {
+        skipCount++;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetch("/api/admin/news/publish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draft_id: d.id, allow_no_image: bulkAllowNoImage }),
+      });
+      if (res.ok) okCount++;
+      else skipCount++;
+    }
+    window.alert(`Centro Informativo: publicados=${okCount} · omitidos=${skipCount}`);
+    await refresh();
+  }
 
-    if (!res.ok) return;
+  async function bulkSendToApprovedNetworks() {
+    if (!bulkHasSelection) return;
+    const ok = window.confirm(`Enviar ${selectedIds.length} borradores a redes (ruteo automático por autorizaciones). ¿Continuar?`);
+    if (!ok) return;
+    let okCount = 0;
+    let skipCount = 0;
+    for (const d of selectedDrafts) {
+      if (d.status !== "approved" && d.status !== "edited") {
+        skipCount++;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      const v = validateForPublish(d, { allow_no_image: bulkAllowNoImage });
+      if (!v.ok) {
+        skipCount++;
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      const res = await fetch("/api/admin/automation/publish-to-n8n", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ draft_id: d.id, allow_no_image: bulkAllowNoImage }),
+      });
+      const j = (await res.json().catch(() => null)) as any;
+      if (res.ok && j?.ok) okCount++;
+      else skipCount++;
+    }
+    window.alert(`Redes (aprobadas): enviados=${okCount} · omitidos=${skipCount}`);
     await refresh();
   }
 
   async function sendDraftToApprovedNetworks(draft: Draft) {
     if (draft.status !== "approved" && draft.status !== "edited") return;
+    const v = validateForPublish(draft);
+    if (!v.ok) {
+      window.alert(`No se puede enviar: ${v.reason}`);
+      return;
+    }
     const ok = window.confirm(
       "Esto enviará el borrador a n8n SOLO para redes aprobadas (autorizadas por el dueño). ¿Continuar?"
     );
@@ -373,7 +480,7 @@ export function AdminContentPanel() {
     const res = await fetch("/api/admin/automation/publish-to-n8n", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ draft_id: draft.id }),
+      body: JSON.stringify({ draft_id: draft.id, allow_no_image: allowNoImage(draft) }),
     });
     const j = (await res.json().catch(() => null)) as any;
     if (!res.ok || !j?.ok) {
@@ -537,10 +644,17 @@ export function AdminContentPanel() {
           {drafts.map((d) => (
             <button
               key={d.id}
-              className="glass-card p-4 text-left transition hover:bg-white/10"
+              className="glass-card relative p-4 text-left transition hover:bg-white/10"
               onClick={() => setSelected(d)}
               type="button"
             >
+              <label
+                className="absolute right-3 top-3 flex items-center gap-2 text-xs text-muted"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input type="checkbox" checked={Boolean(checked[d.id])} onChange={() => toggleChecked(d.id)} />
+                <span>Seleccionar</span>
+              </label>
               <p className="text-sm font-semibold">{d.content_type}</p>
               <p className="mt-1 text-xs text-muted">
                 {polById[d.candidate_id]?.name ?? d.candidate_id}
@@ -558,6 +672,35 @@ export function AdminContentPanel() {
             </button>
           ))}
         </div>
+
+        {bulkHasSelection ? (
+          <div className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-semibold">Seleccionados: {selectedIds.length}</p>
+              <div className="flex flex-wrap gap-2">
+                <label className="flex items-center gap-2 text-xs text-muted">
+                  <input type="checkbox" checked={bulkAllowNoImage} onChange={(e) => setBulkAllowNoImage(e.target.checked)} />
+                  Permitir sin imagen (solo esta acción)
+                </label>
+                <button className="glass-button" type="button" onClick={bulkPublishCitizen}>
+                  Publicar Centro Informativo
+                </button>
+                <button className="glass-button" type="button" onClick={bulkSendToApprovedNetworks}>
+                  Enviar a redes (auto)
+                </button>
+                <button className="glass-button" type="button" onClick={bulkDelete}>
+                  Eliminar
+                </button>
+                <button className="glass-button" type="button" onClick={clearSelection}>
+                  Limpiar
+                </button>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              Reglas: no publica si falta título, autor/medio o imagen (a menos que autorices “sin imagen”).
+            </p>
+          </div>
+        ) : null}
 
         {loadState === "ready" && drafts.length === 0 ? (
           <div className="mt-4 glass-card p-6">
@@ -610,18 +753,10 @@ export function AdminContentPanel() {
                 <button
                   className="glass-button"
                   type="button"
-                  onClick={() => publishDraftToNetworks(selected)}
-                  disabled={selected.status !== "approved" && selected.status !== "edited"}
-                >
-                  Publicar a redes (n8n)
-                </button>
-                <button
-                  className="glass-button"
-                  type="button"
                   onClick={() => sendDraftToApprovedNetworks(selected)}
                   disabled={selected.status !== "approved" && selected.status !== "edited"}
                 >
-                  Enviar a redes (solo aprobadas)
+                  Enviar a redes (auto)
                 </button>
               </div>
             </div>
@@ -644,6 +779,19 @@ export function AdminContentPanel() {
                 ) : null}
                 {imageState === "error" ? <p className="mt-2 text-xs text-amber-300">{imageErrorMsg}</p> : null}
                 <p className="mt-2 text-xs text-muted">No bloquea aprobación/publicación si no hay imagen.</p>
+                <label className="mt-3 flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={allowNoImage(selected)}
+                    onChange={async (e) => {
+                      const next = e.target.checked;
+                      const meta = (selected.metadata ?? {}) as Record<string, unknown>;
+                      await updateDraft({ id: selected.id, metadata: { ...meta, allow_no_image: next }, status: "edited" });
+                      await refresh();
+                    }}
+                  />
+                  Autorizar publicación sin imagen (este borrador)
+                </label>
               </div>
               {(() => {
                 const ref = getPublishedRef(selected);
@@ -675,24 +823,12 @@ export function AdminContentPanel() {
                 );
               })()}
 
-              <details className="rounded-xl border border-border bg-background p-4">
-                <summary className="cursor-pointer text-sm font-semibold">Destino de redes (admin)</summary>
+              <div className="rounded-xl border border-border bg-background p-4">
+                <p className="text-sm font-semibold">Envío a redes (automático)</p>
                 <p className="mt-2 text-xs text-muted">
-                  Esto controla a qué redes se envía el borrador cuando presionas “Publicar a redes (n8n)”. Las credenciales viven en n8n.
+                  El sistema rutea automáticamente usando redes aprobadas en Admin → n8n / Redes. No necesitas seleccionar plataformas aquí.
                 </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {Object.entries(publishPlatforms).map(([k, v]) => (
-                    <label key={k} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={v}
-                        onChange={(e) => setPublishPlatforms((prev) => ({ ...prev, [k]: e.target.checked }))}
-                      />
-                      <span>{k}</span>
-                    </label>
-                  ))}
-                </div>
-              </details>
+              </div>
               <label className="text-sm font-medium">Texto (editable)</label>
               <textarea
                 className="min-h-[180px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"

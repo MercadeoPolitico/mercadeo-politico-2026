@@ -20,6 +20,7 @@ type Destination = {
 };
 
 type Stats = { total: number; approved: number; pending: number; expired: number };
+type RssSource = { id: string; name: string; region_key: "meta" | "colombia"; base_url: string; rss_url: string; active: boolean; updated_at: string };
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -31,6 +32,7 @@ export function NetworksPanel() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, approved: 0, pending: 0, expired: 0 });
   const [msg, setMsg] = useState<string | null>(null);
+  const [rssSources, setRssSources] = useState<RssSource[]>([]);
 
   const [newFor, setNewFor] = useState<string>("");
   const [newName, setNewName] = useState("");
@@ -63,6 +65,14 @@ export function NetworksPanel() {
     setStats(j.stats ?? { total: 0, approved: 0, pending: 0, expired: 0 });
     setLoadState("ready");
     if (!newFor && Array.isArray(j.candidates) && j.candidates.length) setNewFor(String(j.candidates[0].id));
+
+    // RSS sources (admin-only visibility)
+    fetch("/api/admin/rss/list", { method: "GET" })
+      .then(async (rr) => {
+        const jj = (await rr.json().catch(() => null)) as any;
+        if (rr.ok && jj?.ok && Array.isArray(jj.sources)) setRssSources(jj.sources as RssSource[]);
+      })
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -181,6 +191,26 @@ export function NetworksPanel() {
     return <span className={cls}>{status}</span>;
   }
 
+  function scopeLabel(c: Candidate): { label: string; cls: string } {
+    const off = String(c.office || "").toLowerCase();
+    if (off.includes("senado")) return { label: "Alcance nacional (Colombia)", cls: "text-cyan-300" };
+    return { label: `Alcance regional (${c.region || "regional"})`, cls: "text-amber-300" };
+  }
+
+  async function toggleRss(src: RssSource) {
+    setMsg(null);
+    const r = await fetch("/api/admin/rss/toggle", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: src.id, active: !src.active }),
+    });
+    if (!r.ok) {
+      setMsg("No fue posible actualizar RSS.");
+      return;
+    }
+    await refresh();
+  }
+
   return (
     <div className="space-y-8">
       <div className="glass-card p-6">
@@ -216,6 +246,45 @@ export function NetworksPanel() {
         </div>
 
         {msg ? <p className="mt-4 text-sm text-amber-300">{msg}</p> : null}
+      </div>
+
+      <div className="glass-card p-6">
+        <p className="text-sm font-semibold">Fuentes RSS (señal adicional)</p>
+        <p className="mt-1 text-xs text-muted">
+          Estas fuentes alimentan el motor como señales estructuradas (no reemplazan otras fuentes). Puedes activar/desactivar por región.
+        </p>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          {(["meta", "colombia"] as const).map((rk) => {
+            const rows = rssSources.filter((s) => s.region_key === rk);
+            return (
+              <div key={rk} className="rounded-2xl border border-border bg-background/60 p-4">
+                <p className="text-sm font-semibold">{rk === "meta" ? "Meta (regional)" : "Colombia (nacional)"}</p>
+                <div className="mt-3 grid gap-2">
+                  {rows.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background p-3">
+                      <div>
+                        <p className="text-sm font-medium">{s.name}</p>
+                        <p className="mt-1 text-xs text-muted">
+                          <a className="underline" href={s.rss_url} target="_blank" rel="noreferrer">
+                            RSS
+                          </a>{" "}
+                          ·{" "}
+                          <a className="underline" href={s.base_url} target="_blank" rel="noreferrer">
+                            sitio
+                          </a>
+                        </p>
+                      </div>
+                      <button className="glass-button" type="button" onClick={() => toggleRss(s)}>
+                        {s.active ? "Desactivar" : "Activar"}
+                      </button>
+                    </div>
+                  ))}
+                  {rows.length === 0 ? <p className="text-sm text-muted">Sin fuentes.</p> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="glass-card p-6">
@@ -276,6 +345,7 @@ export function NetworksPanel() {
       <div className="space-y-5">
         {candidates.map((c) => {
           const rows = byCandidate[c.id] ?? [];
+          const scope = scopeLabel(c);
           return (
             <div key={c.id} className="glass-card p-6">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -285,6 +355,7 @@ export function NetworksPanel() {
                     {c.office} · {c.region}
                     {c.ballot_number ? ` · Tarjetón ${c.ballot_number}` : ""}
                   </p>
+                  <p className={`mt-1 text-xs ${scope.cls}`}>{scope.label}</p>
                 </div>
                 <p className="text-xs text-muted">Redes: {rows.length}</p>
               </div>

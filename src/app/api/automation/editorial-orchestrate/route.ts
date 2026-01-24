@@ -534,6 +534,13 @@ export async function POST(req: Request) {
   const adminProvidedNewsLinks = Array.isArray(b.news_links) ? (b.news_links.filter((x) => typeof x === "string") as string[]) : [];
   const adminEditorialNotes = typeof b.editorial_notes === "string" ? b.editorial_notes.trim() : "";
 
+  // Editorial tuning (backend-only; future-configurable via metadata)
+  const inclinationRaw = typeof b.editorial_inclination === "string" ? b.editorial_inclination.trim().toLowerCase() : "";
+  const editorial_inclination: "informativo" | "persuasivo_suave" | "correctivo" =
+    inclinationRaw === "persuasivo_suave" || inclinationRaw === "persuasivo" ? "persuasivo_suave" : inclinationRaw === "correctivo" ? "correctivo" : "informativo";
+  const styleRaw = typeof b.editorial_style === "string" ? b.editorial_style.trim().toLowerCase() : "";
+  const editorial_style: "noticiero_portada" | "sobrio" = styleRaw === "sobrio" ? "sobrio" : "noticiero_portada";
+
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
@@ -558,6 +565,8 @@ export async function POST(req: Request) {
   if (!polRow) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (polRow.auto_blog_enabled === false) return NextResponse.json({ ok: true, skipped: true, reason: "auto_blog_disabled" });
   const pol = polRow;
+
+  const candidate_scope: "national" | "regional" = String(pol.office || "").toLowerCase().includes("senado") ? "national" : "regional";
 
   console.info("[editorial-orchestrate] candidate_resolved", {
     requestId,
@@ -675,6 +684,11 @@ export async function POST(req: Request) {
     '{ "sentiment":"positive|negative|neutral", "seo_keywords": string[], "master_editorial": string, "platform_variants": { "blog": string, "facebook": string, "x": string, "reddit": string }, "image_keywords": string[] }',
     "",
     "Reglas globales (muy importantes):",
+    `- Estilo editorial: ${editorial_style === "noticiero_portada" ? "noticiero tipo periódico/portada (titular fuerte pero sobrio, lead claro, orden visual)" : "sobrio"}.`,
+    `- Inclinación: ${editorial_inclination}.`,
+    "  - informativo: neutral, explica hechos y contexto. Persuasión mínima (cívica).",
+    "  - persuasivo_suave: resalta 1–2 ejes del programa como solución/fortaleza, sin ataques ni propaganda explícita.",
+    "  - correctivo: cuando la noticia es negativa, enfoque de control institucional/soluciones; evita culpabilizar personas o lenguaje extremo.",
     "- Español (Colombia).",
     "- Si la noticia/titular está en inglés, traduce y redacta TODO el resultado final en español (Colombia).",
     "- Informativo, propositivo, no agresivo, no propagandístico.",
@@ -701,6 +715,7 @@ export async function POST(req: Request) {
     "Puedes usar medios nacionales si el tema afecta la región o si no hay buena cobertura local.",
     "",
     `Candidato: ${pol.name} (${pol.office})`,
+    `Alcance: ${candidate_scope === "national" ? "nacional (Colombia)" : `regional (${pol.region || "región"})`}`,
     pol.party ? `Partido: ${pol.party}` : "",
     `Región: ${pol.region}`,
     pol.ballot_number ? `Número tarjetón: ${pol.ballot_number}` : "",
@@ -1062,6 +1077,7 @@ export async function POST(req: Request) {
       OpenAI: oa?.ok ? { ok: true } : { ok: false, error: oa?.error ?? null },
     },
     candidate: { id: pol.id, slug: pol.slug, office: pol.office, region: pol.region, ballot_number: pol.ballot_number ?? null },
+    editorial: { style: editorial_style, inclination: editorial_inclination, candidate_scope },
     region_used: regional.region_used,
     preferred_sources: regional.preferred_sources,
     admin_inputs: {
@@ -1241,6 +1257,23 @@ export async function POST(req: Request) {
         } catch {
           // ignore (best-effort)
         }
+
+        let approvedDestinations: Array<{ id: string; name: string; type: string; url: string }> = [];
+        try {
+          const { data } = await admin
+            .from("politician_social_destinations")
+            .select("id,network_name,network_type,profile_or_page_url,active,authorization_status")
+            .eq("politician_id", pol.id)
+            .eq("active", true)
+            .eq("authorization_status", "approved")
+            .order("created_at", { ascending: false });
+          approvedDestinations =
+            (data ?? [])
+              .filter((d: any) => d && typeof d.profile_or_page_url === "string")
+              .map((d: any) => ({ id: String(d.id), name: String(d.network_name), type: String(d.network_type), url: String(d.profile_or_page_url) }));
+        } catch {
+          // ignore (best-effort)
+        }
         void submitToN8n({
           candidate_id: pol.id,
           content_type: "social",
@@ -1260,6 +1293,14 @@ export async function POST(req: Request) {
             variants: variantsJson,
             media: (metadata as any).media ?? null,
             social_links: socialLinks,
+            destinations: approvedDestinations,
+            candidate: {
+              id: pol.id,
+              name: pol.name,
+              office: pol.office,
+              region: pol.region,
+              ballot_number: pol.ballot_number ?? null,
+            },
           },
         });
       } else {

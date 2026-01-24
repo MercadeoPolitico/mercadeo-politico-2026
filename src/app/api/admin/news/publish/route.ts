@@ -30,6 +30,7 @@ export async function POST(req: Request) {
 
   const b = body.data as Record<string, unknown>;
   const draft_id = isNonEmptyString(b.draft_id) ? b.draft_id.trim() : "";
+  const allow_no_image = b.allow_no_image === true;
   if (!draft_id) return NextResponse.json({ error: "draft_id_required" }, { status: 400 });
 
   const { data: draft } = await supabase
@@ -52,6 +53,23 @@ export async function POST(req: Request) {
       ? (draft.metadata as Record<string, unknown>).source_url
       : null;
 
+  const source_name =
+    draft.metadata && typeof draft.metadata === "object" && "source_name" in (draft.metadata as Record<string, unknown>)
+      ? (draft.metadata as Record<string, unknown>).source_name
+      : null;
+
+  const derivedAuthor = (() => {
+    if (typeof source_name === "string" && source_name.trim()) return source_name.trim();
+    if (typeof source_url === "string" && source_url.trim()) {
+      try {
+        return new URL(source_url.trim()).host;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  })();
+
   const media_url = (() => {
     if (!draft.metadata || typeof draft.metadata !== "object") return null;
     const meta = draft.metadata as Record<string, unknown>;
@@ -59,6 +77,12 @@ export async function POST(req: Request) {
     const url = media && typeof media.image_url === "string" ? media.image_url.trim() : "";
     return url && /^https?:\/\//i.test(url) ? url : null;
   })();
+
+  // Safety checks (avoid publishing incomplete posts)
+  if (!title.trim()) return NextResponse.json({ error: "missing_title" }, { status: 400 });
+  if (!derivedAuthor) return NextResponse.json({ error: "missing_author" }, { status: 400 });
+  const allowNoImage = allow_no_image || (draft.metadata && typeof draft.metadata === "object" && (draft.metadata as any).allow_no_image === true);
+  if (!allowNoImage && !media_url) return NextResponse.json({ error: "missing_image" }, { status: 400 });
 
   const { data: inserted, error: insErr } = await supabase
     .from("citizen_news_posts")

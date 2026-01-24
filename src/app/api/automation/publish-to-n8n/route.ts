@@ -28,6 +28,19 @@ function allow(req: Request): boolean {
   return normalizeToken(headerToken) === normalizeToken(apiToken);
 }
 
+function titleFromText(text: string): string {
+  const lines = String(text || "").split("\n").map((l) => l.trim());
+  return (lines.find((l) => l.length > 0) ?? "").slice(0, 160);
+}
+
+function hostOf(u: string): string | null {
+  try {
+    return new URL(u).host;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: Request) {
   // Automation endpoints are server-to-server only.
   if (!allow(req)) {
@@ -43,6 +56,7 @@ export async function POST(req: Request) {
   if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   const b = body.data as Record<string, unknown>;
   const draft_id = typeof b.draft_id === "string" ? b.draft_id.trim() : "";
+  const allow_no_image = b.allow_no_image === true;
   if (!draft_id) return NextResponse.json({ error: "draft_id_required" }, { status: 400 });
 
   const { data: draft } = await admin
@@ -69,6 +83,25 @@ export async function POST(req: Request) {
   const baseText = String(draft.generated_text || "").trim();
   if (!baseText) return NextResponse.json({ ok: false, error: "draft_empty" }, { status: 400 });
 
+  // Publish constraints (server-side safety)
+  const title = titleFromText(baseText);
+  if (!title) return NextResponse.json({ ok: false, error: "missing_title" }, { status: 400 });
+  const meta = (draft.metadata as any) ?? {};
+  const sourceName = typeof meta.source_name === "string" ? meta.source_name.trim() : "";
+  const sourceUrl = typeof meta.source_url === "string" ? meta.source_url.trim() : "";
+  const derivedSource = !sourceName && sourceUrl ? hostOf(sourceUrl) ?? "" : sourceName;
+  if (!derivedSource) return NextResponse.json({ ok: false, error: "missing_author" }, { status: 400 });
+
+  const mediaUrl = meta?.media?.image_url && typeof meta.media.image_url === "string" ? meta.media.image_url.trim() : "";
+  const allowNoImage = allow_no_image || meta.allow_no_image === true;
+  if (!allowNoImage && !mediaUrl) return NextResponse.json({ ok: false, error: "missing_image" }, { status: 400 });
+
+  const { data: candidate } = await admin
+    .from("politicians")
+    .select("id,name,office,region,ballot_number")
+    .eq("id", draft.candidate_id)
+    .maybeSingle();
+
   const payload = {
     candidate_id: draft.candidate_id,
     content_type: "social" as const,
@@ -80,14 +113,20 @@ export async function POST(req: Request) {
     metadata: {
       origin: "admin_publish_to_approved_networks",
       draft_id: draft.id,
+      title,
+      author: derivedSource,
+      candidate: candidate
+        ? { id: candidate.id, name: candidate.name, office: candidate.office, region: candidate.region, ballot_number: candidate.ballot_number ?? null }
+        : { id: draft.candidate_id },
       destinations: approved.map((d: any) => ({
         id: d.id,
         name: d.network_name,
         type: d.network_type,
         url: d.profile_or_page_url,
       })),
-      media: (draft.metadata as any)?.media ?? null,
-      source_url: (draft.metadata as any)?.source_url ?? null,
+      media: mediaUrl ? { ...(meta.media ?? {}), image_url: mediaUrl } : null,
+      source_url: sourceUrl || null,
+      allow_no_image: allowNoImage,
     },
   };
 
