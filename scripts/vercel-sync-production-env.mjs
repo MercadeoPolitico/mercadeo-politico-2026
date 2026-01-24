@@ -48,8 +48,9 @@ async function vercelApi(token, path, { method = "GET", body } = {}) {
 }
 
 async function main() {
-  const token = process.env.VERCEL_TOKEN;
-  if (!token || !token.trim()) throw new Error("Missing VERCEL_TOKEN");
+  const envLocal = fs.existsSync(".env.local") ? parseDotenv(readText(".env.local")) : {};
+  const token = process.env.VERCEL_TOKEN || envLocal.VERCEL_TOKEN;
+  if (!token || !String(token).trim()) throw new Error("Missing VERCEL_TOKEN (set in shell env or .env.local)");
 
   const project = JSON.parse(readText(".vercel/project.json"));
   const projectId = project.projectId;
@@ -60,7 +61,7 @@ async function main() {
   const me = await vercelApi(token, "/v2/user");
   if (!me.ok) throw new Error(`Vercel token unauthorized (status ${me.status})`);
 
-  const envLocal = parseDotenv(readText(".env.local"));
+  // envLocal already read above
 
   // Only sync what the app actually needs at runtime in Production.
   const keys = [
@@ -73,6 +74,19 @@ async function main() {
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
     "OPENAI_MODEL",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_BASE_URL",
+    "OPENROUTER_MODEL",
+    "GROQ_API_KEY",
+    "GROQ_BASE_URL",
+    "GROQ_MODEL",
+    "CEREBRAS_API_KEY",
+    "CEREBRAS_BASE_URL",
+    "CEREBRAS_MODEL",
+    // Marleny AI (Actuation)
+    "MARLENY_AI_API_KEY",
+    "MARLENY_AI_ENDPOINT",
+    // Marleny gateway (legacy / optional)
     "MARLENY_API_KEY",
     "MARLENY_API_URL",
 

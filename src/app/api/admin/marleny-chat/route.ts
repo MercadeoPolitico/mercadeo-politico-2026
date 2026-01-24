@@ -83,6 +83,8 @@ async function callMsiChat(args: { candidateId: string; prompt: string }): Promi
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`,
+        "x-api-key": apiKey,
+        "x-marleny-api-key": apiKey,
       },
       body: JSON.stringify({
         system:

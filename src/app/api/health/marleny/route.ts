@@ -34,7 +34,12 @@ async function probeMarlenyAi(args: { endpoint: string; apiKey: string }): Promi
     const t = setTimeout(() => ctrl.abort(), 6000);
     const resp = await fetch(args.endpoint, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${args.apiKey}` },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${args.apiKey}`,
+        "x-api-key": args.apiKey,
+        "x-marleny-api-key": args.apiKey,
+      },
       body: JSON.stringify({
         system: "ping",
         user: "ping",

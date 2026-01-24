@@ -110,7 +110,10 @@ export async function callMarlenyAI(input: MarlenyAiCallInput): Promise<MarlenyA
       method: "POST",
       headers: {
         "content-type": "application/json",
+        // Support both common auth conventions (service may accept one of them).
         authorization: `Bearer ${key}`,
+        "x-api-key": key,
+        "x-marleny-api-key": key,
       },
       body: JSON.stringify(payload),
       cache: "no-store",
