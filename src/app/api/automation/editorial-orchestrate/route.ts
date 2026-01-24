@@ -652,34 +652,59 @@ export async function POST(req: Request) {
     );
 
     const ms = nowMs() - started;
-    if (!wrapped.ok) return { ok: false, engine: "MSI", ms, error: "timeout" };
-    const r = wrapped.value;
-    if (!r?.ok) {
-      const err = (r as any)?.error;
-      const mapped =
-        err === "disabled" || err === "not_configured" || err === "bad_request" || err === "upstream_error" ? err : "failed";
-      return { ok: false, engine: "MSI", ms, error: mapped };
+    const plainTopic = [
+      "Redacta SOLO el artículo del Centro Informativo (NO JSON).",
+      "Reglas:",
+      "- Español (Colombia).",
+      "- Ideal 450–650 palabras (mín. 350, máx. 800).",
+      "- Primera línea: TÍTULO reescrito (no copies literal el titular del medio).",
+      "- Estructura: Qué pasó / Por qué importa / Cómo encaja con 1–2 ejes del programa / Qué sigue.",
+      "- Incluye el nombre del candidato y su número de tarjetón cuando menciones su implicación.",
+      "- Cierra con: Fuente: <url> (si existe), Hashtags: (3+), Mensaje ciudadano: (reformulado).",
+      "- Incluye una línea 'SEO:' con 6–10 keywords (separadas por coma).",
+      "",
+      promptContext,
+    ].join("\n");
+
+    // If the first attempt fails (timeout/upstream), try one more time in plain-text mode.
+    if (!wrapped.ok || !wrapped.value || !(wrapped.value as any).ok) {
+      const err = !wrapped.ok ? wrapped.error : ((wrapped.value as any)?.error ?? "failed");
+      if (err === "disabled" || err === "not_configured") return { ok: false, engine: "MSI", ms, error: err };
+
+      const wrappedPlain = await withTimeout(
+        callMarlenyAI({
+          candidateId: pol.id,
+          contentType: "blog",
+          topic: plainTopic,
+          tone: "editorial sobrio, institucional, humano",
+        }),
+        32000,
+      );
+      if (!wrappedPlain.ok) return { ok: false, engine: "MSI", ms, error: "timeout" };
+      if (!wrappedPlain.value?.ok) return { ok: false, engine: "MSI", ms, error: "upstream_error" };
+
+      const blogRaw = String(wrappedPlain.value.text ?? "").trim();
+      if (!blogRaw) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+      const seo = extractSeoFromText(blogRaw);
+      const blog = stripSeoLine(blogRaw);
+      const filled = synthesizeVariants({ blog, candidate: { name: pol.name, ballot_number: pol.ballot_number }, seo_keywords: seo });
+      const data: EngineOutput = {
+        sentiment: "neutral",
+        seo_keywords: filled.seo_keywords,
+        master_editorial: filled.master_editorial,
+        platform_variants: filled.platform_variants,
+      };
+      if (!baselineValidText(data, pol.name)) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+      return { ok: true, engine: "MSI", ms, data, raw: blogRaw };
     }
-    const raw = String(r.text ?? "");
+
+    const r = wrapped.value as any;
+    const raw = String(r?.text ?? "");
     const parsed = tryExtractJsonObject(raw);
     let data = extractEngineOutput(parsed);
 
     // Fallback: if MSI couldn't/wouldn't return strict JSON, request a plain blog and synthesize structure.
     if (!data) {
-      const plainTopic = [
-        "Redacta SOLO el artículo del Centro Informativo (NO JSON).",
-        "Reglas:",
-        "- Español (Colombia).",
-        "- Ideal 450–650 palabras (mín. 350, máx. 800).",
-        "- Primera línea: TÍTULO reescrito (no copies literal el titular del medio).",
-        "- Estructura: Qué pasó / Por qué importa / Cómo encaja con 1–2 ejes del programa / Qué sigue.",
-        "- Incluye el nombre del candidato y su número de tarjetón cuando menciones su implicación.",
-        "- Cierra con: Fuente: <url> (si existe), Hashtags: (3+), Mensaje ciudadano: (reformulado).",
-        "- Incluye una línea 'SEO:' con 6–10 keywords (separadas por coma).",
-        "",
-        promptContext,
-      ].join("\n");
-
       const wrapped2 = await withTimeout(
         callMarlenyAI({
           candidateId: pol.id,
@@ -687,7 +712,7 @@ export async function POST(req: Request) {
           topic: plainTopic,
           tone: "editorial sobrio, institucional, humano",
         }),
-        25000,
+        32000,
       );
       if (!wrapped2.ok) return { ok: false, engine: "MSI", ms, error: "timeout" };
       if (!wrapped2.value?.ok) return { ok: false, engine: "MSI", ms, error: "bad_response" };
