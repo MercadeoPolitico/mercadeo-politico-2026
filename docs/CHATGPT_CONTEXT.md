@@ -27,7 +27,7 @@
   - **Nombre/ID Railway**: (definir en dashboard; no hardcode).
 - **n8n**
   - Uso: automatización externa vía webhooks (WAIT mode recomendado).
-  - **Instancia n8n**: (definir en tu infra; no hardcode).
+  - **Instancia n8n (Railway)**: `https://n8n-production-1504.up.railway.app`
 
 ---
 
@@ -57,6 +57,10 @@
 - `N8N_WEBHOOK_URL`
 - `N8N_WEBHOOK_TOKEN`
 - (docs antiguos mencionan `N8N_WEBHOOK_BASE_URL`; preferir el contrato del repo: `N8N_WEBHOOK_URL`)
+
+**Tokens de automatización (server-only)**:
+- `MP26_AUTOMATION_TOKEN` (principal, contrato con n8n)
+- `AUTOMATION_API_TOKEN` (legacy fallback)
 
 **Nota**: los valores viven en `.env.local` (local) y en Vercel (Production/Preview/Dev). No versionar `.env*`.
 
@@ -111,6 +115,7 @@
 
 Diagnóstico seguro (sin secrets):
 - `GET /api/health/supabase` devuelve presencia de envs + `runtime.supabase_project_ref`.
+- `GET /api/health/automation` devuelve si el token de automatización está configurado (solo metadata: longitud, modo).
 
 ---
 
@@ -173,6 +178,9 @@ n8n:
 - Orquestación editorial (n8n como maestro):
   - `GET /api/automation/candidates` (token `x-automation-token`)
   - `POST /api/automation/editorial-orchestrate` (crea `ai_drafts`, fase 1 sin autopublish)
+- Smoke tests (producción):
+  - Script: `scripts/smoke-prod.mjs`
+  - Valida health + `automation/candidates` + `automation/self-test` + `editorial-orchestrate?test=true`.
 - Docs: `docs/automation/n8n.md`
 - Workflow maestro (importable):
   - `docs/automation/n8n-master-editorial-orchestrator.json`
@@ -194,6 +202,11 @@ Vercel crons:
 3) **“Credenciales inválidas”**
    - Password/email incorrectos o reset no aplicado al email correcto.
    - Ejecutar `scripts/reset-super-admin-password.mjs` y leer OK/FAILED.
+
+4) **Automatización responde 401 (unauthorized)**
+   - Causa típica: token copiado con espacios/comillas o `\\n` literal al final.
+   - Verificar en runtime: `GET /api/health/automation`.
+   - Los endpoints `automation/*` ya normalizan token (trim/comillas/`\\n`).
 
 ---
 

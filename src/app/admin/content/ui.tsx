@@ -200,6 +200,44 @@ export function AdminContentPanel() {
     await refresh();
   }
 
+  const [publishPlatforms, setPublishPlatforms] = useState<Record<string, boolean>>({
+    facebook: true,
+    instagram: true,
+    x: true,
+    threads: false,
+    tiktok: false,
+    youtube: false,
+    linkedin: false,
+    whatsapp: false,
+    telegram: false,
+    reddit: false,
+  });
+
+  async function publishDraftToNetworks(draft: Draft) {
+    // Must be human-gated
+    if (draft.status !== "approved" && draft.status !== "edited") return;
+
+    const platforms = Object.entries(publishPlatforms)
+      .filter(([, v]) => v)
+      .map(([k]) => k);
+    if (!platforms.length) return;
+
+    const ok = window.confirm(
+      "ADVERTENCIA: Esto crea publicaciones por red y las envía a automatización (n8n) para su publicación. " +
+        "Asegúrate de que las credenciales estén configuradas en n8n. ¿Deseas continuar?"
+    );
+    if (!ok) return;
+
+    const res = await fetch("/api/admin/publications/publish-from-draft", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draft_id: draft.id, platforms, immediate: true }),
+    });
+
+    if (!res.ok) return;
+    await refresh();
+  }
+
   return (
     <div className="space-y-8">
       <div className="glass-card p-6">
@@ -397,10 +435,36 @@ export function AdminContentPanel() {
                 <button className="glass-button" type="button" onClick={() => sendToN8n(selected)} disabled={selected.status !== "approved"}>
                   Enviar a n8n (WAIT)
                 </button>
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={() => publishDraftToNetworks(selected)}
+                  disabled={selected.status !== "approved" && selected.status !== "edited"}
+                >
+                  Publicar a redes (n8n)
+                </button>
               </div>
             </div>
 
             <div className="mt-4 grid gap-3">
+              <details className="rounded-xl border border-border bg-background p-4">
+                <summary className="cursor-pointer text-sm font-semibold">Destino de redes (admin)</summary>
+                <p className="mt-2 text-xs text-muted">
+                  Esto controla a qué redes se envía el borrador cuando presionas “Publicar a redes (n8n)”. Las credenciales viven en n8n.
+                </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(publishPlatforms).map(([k, v]) => (
+                    <label key={k} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={v}
+                        onChange={(e) => setPublishPlatforms((prev) => ({ ...prev, [k]: e.target.checked }))}
+                      />
+                      <span>{k}</span>
+                    </label>
+                  ))}
+                </div>
+              </details>
               <label className="text-sm font-medium">Texto (editable)</label>
               <textarea
                 className="min-h-[180px] w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
