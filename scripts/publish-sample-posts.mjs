@@ -90,8 +90,27 @@ async function main() {
   const a = await postJson(orchUrl, token, { candidate_id: camara.id, max_items: 1 });
   const b = await postJson(orchUrl, token, { candidate_id: senado.id, max_items: 1 });
 
-  console.log("[publish-sample-posts] camara_ok", a.ok, "status", a.status, "request_id", a.json?.request_id ?? null);
-  console.log("[publish-sample-posts] senado_ok", b.ok, "status", b.status, "request_id", b.json?.request_id ?? null);
+  console.log(
+    "[publish-sample-posts] camara_ok",
+    a.ok,
+    "status",
+    a.status,
+    "request_id",
+    a.json?.request_id ?? null,
+    a.ok ? "" : `error=${a.json?.error ?? "unknown"}`,
+  );
+  console.log(
+    "[publish-sample-posts] senado_ok",
+    b.ok,
+    "status",
+    b.status,
+    "request_id",
+    b.json?.request_id ?? null,
+    b.ok ? "" : `error=${b.json?.error ?? "unknown"}`,
+  );
+  if (!b.ok && b.json?.engines) {
+    console.log("[publish-sample-posts] senado_engines", b.json.engines);
+  }
 }
 
 main().catch((e) => {
