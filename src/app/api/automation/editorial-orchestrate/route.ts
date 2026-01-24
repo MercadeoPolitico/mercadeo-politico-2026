@@ -168,6 +168,28 @@ function safeJsonParse(text: string): unknown | null {
   }
 }
 
+function tryExtractJsonObject(text: string): unknown | null {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const direct = safeJsonParse(raw);
+  if (direct) return direct;
+
+  // Strip markdown fences if present.
+  const unfenced = raw.replaceAll(/^```[a-z]*\s*/gim, "").replaceAll(/```$/gim, "").trim();
+  const unfencedParsed = safeJsonParse(unfenced);
+  if (unfencedParsed) return unfencedParsed;
+
+  // Best-effort: parse the largest {...} block.
+  const first = unfenced.indexOf("{");
+  const last = unfenced.lastIndexOf("}");
+  if (first >= 0 && last > first) {
+    const slice = unfenced.slice(first, last + 1);
+    const sliced = safeJsonParse(slice);
+    if (sliced) return sliced;
+  }
+  return null;
+}
+
 function extractEngineOutput(parsed: unknown): EngineOutput | null {
   if (!parsed || typeof parsed !== "object") return null;
   const p = parsed as Record<string, unknown>;
@@ -180,7 +202,12 @@ function extractEngineOutput(parsed: unknown): EngineOutput | null {
       ? {
           blog: typeof (pv as any).blog === "string" ? String((pv as any).blog).trim() : "",
           facebook: typeof (pv as any).facebook === "string" ? String((pv as any).facebook).trim() : "",
-          x: typeof (pv as any).x === "string" ? String((pv as any).x).trim() : "",
+          x:
+            typeof (pv as any).x === "string"
+              ? String((pv as any).x).trim()
+              : typeof (pv as any).twitter === "string"
+                ? String((pv as any).twitter).trim()
+                : "",
           reddit: typeof (pv as any).reddit === "string" ? String((pv as any).reddit).trim() : "",
         }
       : { blog: "", facebook: "", x: "", reddit: "" };
@@ -188,9 +215,9 @@ function extractEngineOutput(parsed: unknown): EngineOutput | null {
   const image_keywords = cleanKeywords(p.image_keywords);
 
   if (!isSentiment(sentiment)) return null;
-  if (seo_keywords.length < 3) return null;
-  if (!master_editorial) return null;
-  if (!platform_variants.blog || !platform_variants.facebook || !platform_variants.x) return null;
+  if (!platform_variants.blog) return null;
+  // We strongly prefer SEO keywords, but don't hard-fail engines that return short arrays.
+  // We'll backfill minimal keywords downstream if needed.
 
   return {
     sentiment,
@@ -198,6 +225,41 @@ function extractEngineOutput(parsed: unknown): EngineOutput | null {
     master_editorial,
     platform_variants,
     image_keywords: image_keywords.length ? image_keywords : undefined,
+  };
+}
+
+function synthesizeVariants(args: {
+  blog: string;
+  candidate: { name: string; ballot_number: string | number | null };
+  seo_keywords: string[];
+}): Pick<EngineOutput, "platform_variants" | "seo_keywords" | "master_editorial"> {
+  const blog = String(args.blog || "").trim();
+  const title = blog.split("\n").find((l) => l.trim())?.trim() ?? "Centro informativo ciudadano";
+  const ballot = args.candidate.ballot_number ? String(args.candidate.ballot_number) : "";
+  const name = args.candidate.name || "";
+
+  const seo = (args.seo_keywords ?? []).map((s) => String(s || "").trim()).filter(Boolean);
+  const seoBackfill = seo.length
+    ? seo.slice(0, 12)
+    : [name, ballot ? `Tarjetón ${ballot}` : null, "Colombia", "seguridad", "ciudadanía"].filter(Boolean).map(String);
+
+  const hashTags = seoBackfill
+    .slice(0, 5)
+    .map((k) => `#${k.replaceAll(/[^a-z0-9áéíóúñ]+/gi, "").slice(0, 28)}`)
+    .filter((x) => x.length > 1)
+    .slice(0, 3)
+    .join(" ");
+
+  const fb = `${title}\n\n${blog.slice(0, 820).trim()}\n\nLee más en /centro-informativo\n\n${hashTags}`.slice(0, 900);
+  const x = `${title}\n\n${blog.slice(0, 210).trim()}\n\n/centro-informativo\n\n${hashTags}`.slice(0, 280);
+  const reddit = `${title}\n\nResumen cívico:\n${blog.split(/\n{2,}/g).slice(0, 3).join("\n\n").slice(0, 900)}\n\nFuente/Contexto: /centro-informativo`;
+
+  const master = blog.split(/\n{2,}/g).slice(0, 3).join("\n\n").slice(0, 900);
+
+  return {
+    seo_keywords: seoBackfill,
+    master_editorial: master,
+    platform_variants: { blog, facebook: fb, x, reddit },
   };
 }
 
@@ -579,10 +641,20 @@ export async function POST(req: Request) {
       return { ok: false, engine: "MSI", ms, error: mapped };
     }
     const raw = String(r.text ?? "");
-    const parsed = safeJsonParse(raw);
+    const parsed = tryExtractJsonObject(raw);
     const data = extractEngineOutput(parsed);
     if (!data) return { ok: false, engine: "MSI", ms, error: "bad_response" };
     if (!baselineValidText(data, pol.name)) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+    // Backfill missing fields/variants defensively.
+    const filled = synthesizeVariants({ blog: data.platform_variants.blog, candidate: { name: pol.name, ballot_number: pol.ballot_number }, seo_keywords: data.seo_keywords });
+    (data as any).seo_keywords = filled.seo_keywords;
+    (data as any).master_editorial = data.master_editorial?.trim() ? data.master_editorial : filled.master_editorial;
+    (data as any).platform_variants = {
+      blog: data.platform_variants.blog,
+      facebook: data.platform_variants.facebook?.trim() ? data.platform_variants.facebook : filled.platform_variants.facebook,
+      x: data.platform_variants.x?.trim() ? data.platform_variants.x : filled.platform_variants.x,
+      reddit: data.platform_variants.reddit?.trim() ? data.platform_variants.reddit : filled.platform_variants.reddit,
+    };
     return { ok: true, engine: "MSI", ms, data, raw };
   }
 
@@ -612,6 +684,15 @@ export async function POST(req: Request) {
     const data = extractEngineOutput(r.data);
     if (!data) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
     if (!baselineValidText(data, pol.name)) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
+    const filled = synthesizeVariants({ blog: data.platform_variants.blog, candidate: { name: pol.name, ballot_number: pol.ballot_number }, seo_keywords: data.seo_keywords });
+    (data as any).seo_keywords = filled.seo_keywords;
+    (data as any).master_editorial = data.master_editorial?.trim() ? data.master_editorial : filled.master_editorial;
+    (data as any).platform_variants = {
+      blog: data.platform_variants.blog,
+      facebook: data.platform_variants.facebook?.trim() ? data.platform_variants.facebook : filled.platform_variants.facebook,
+      x: data.platform_variants.x?.trim() ? data.platform_variants.x : filled.platform_variants.x,
+      reddit: data.platform_variants.reddit?.trim() ? data.platform_variants.reddit : filled.platform_variants.reddit,
+    };
     return { ok: true, engine: "OpenAI", ms, data, raw: JSON.stringify(r.data) };
   }
 
@@ -702,7 +783,7 @@ export async function POST(req: Request) {
 
     let adjusted: EngineOutput | null = null;
     if (wrapped.ok && wrapped.value?.ok) {
-      const parsed = safeJsonParse(String(wrapped.value.text ?? ""));
+      const parsed = tryExtractJsonObject(String(wrapped.value.text ?? ""));
       const data = extractEngineOutput(parsed);
       if (data && baselineValidText(data, pol.name)) adjusted = data;
     }
