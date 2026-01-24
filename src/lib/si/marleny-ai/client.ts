@@ -46,8 +46,14 @@ function buildPrompt(input: MarlenyAiCallInput): { system: string; user: string 
 
   const toneLine = input.tone ? `Tono: ${input.tone.trim()}` : "Tono: sobrio y humano";
 
+  // If caller already demands strict JSON (e.g., editorial orchestrator), avoid adding
+  // a conflicting “blog/proposal” format instruction that can derail the model.
+  const wantsStrictJson = /RESPONDE\s+SOLO\s+JSON/i.test(input.topic) || /"sentiment"\s*:/i.test(input.topic);
+
   const format =
-    input.contentType === "proposal"
+    wantsStrictJson
+      ? "IMPORTANTE: Respeta exactamente el formato JSON solicitado en el tema/instrucción. NO agregues texto fuera del JSON."
+      : input.contentType === "proposal"
       ? "Formato: 4–6 bloques cortos con título y 2–3 líneas por bloque."
       : input.contentType === "blog"
         ? "Formato: (1) título sugerido, (2) resumen en 5–7 líneas, (3) esquema con 6–10 bullets."
@@ -121,16 +127,28 @@ export async function callMarlenyAI(input: MarlenyAiCallInput): Promise<MarlenyA
 
     if (!resp.ok) return { ok: false, error: resp.status === 400 ? "bad_request" : "upstream_error" };
 
-    const data = (await resp.json()) as unknown;
-    const text =
-      typeof data === "object" && data !== null && "text" in (data as Record<string, unknown>)
-        ? (data as Record<string, unknown>).text
-        : null;
+    const rawText = await resp.text().catch(() => "");
+    if (!rawText.trim()) return { ok: false, error: "upstream_error" };
 
-    if (typeof text !== "string" || text.trim().length === 0) return { ok: false, error: "upstream_error" };
+    // Try JSON first, but tolerate plain-text responses.
+    let extracted: string | null = null;
+    try {
+      const data = JSON.parse(rawText) as any;
+      extracted =
+        (typeof data?.text === "string" && data.text) ||
+        (typeof data?.reply === "string" && data.reply) ||
+        (typeof data?.message === "string" && data.message) ||
+        (typeof data?.content === "string" && data.content) ||
+        (typeof data?.data?.text === "string" && data.data.text) ||
+        (typeof data?.choices?.[0]?.message?.content === "string" && data.choices[0].message.content) ||
+        null;
+    } catch {
+      extracted = rawText;
+    }
 
-    const clipped = text.trim().slice(0, maxOut);
-    return { ok: true, text: clipped };
+    const text = String(extracted ?? "").trim();
+    if (!text) return { ok: false, error: "upstream_error" };
+    return { ok: true, text: text.slice(0, maxOut) };
   } catch {
     return { ok: false, error: "upstream_error" };
   }
