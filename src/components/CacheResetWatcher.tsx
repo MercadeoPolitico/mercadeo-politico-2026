@@ -1,8 +1,8 @@
-\"use client\";
+"use client";
 
-import { useEffect } from \"react\";
+import { useEffect } from "react";
 
-const LS_KEY = \"mp26_cache_version\";
+const LS_KEY = "mp26_cache_version";
 
 export function CacheResetWatcher() {
   useEffect(() => {
@@ -10,12 +10,12 @@ export function CacheResetWatcher() {
 
     async function run() {
       try {
-        const res = await fetch(\"/api/cache/version\", { cache: \"no-store\" });
+        const res = await fetch("/api/cache/version", { cache: "no-store" });
         const json = (await res.json().catch(() => null)) as { ok?: unknown; version?: unknown } | null;
-        const v = typeof json?.version === \"string\" ? json.version.trim() : \"\";
+        const v = typeof json?.version === "string" ? json.version.trim() : "";
         if (!v || cancelled) return;
 
-        const last = window.localStorage.getItem(LS_KEY) ?? \"\";
+        const last = window.localStorage.getItem(LS_KEY) ?? "";
         if (last && last === v) return;
 
         // First visit: store and do nothing. (Avoid surprise reloads on first load.)
