@@ -355,6 +355,26 @@ function wordCount(text: string): number {
     .filter(Boolean).length;
 }
 
+function extractSeoFromText(text: string): string[] {
+  const t = String(text || "");
+  const lines = t.split("\n").map((l) => l.trim());
+  const seoLine = lines.find((l) => /^seo\s*:/i.test(l)) ?? "";
+  if (seoLine) {
+    const rest = seoLine.replace(/^seo\s*:\s*/i, "").trim();
+    const parts = rest
+      .split(/[,\u2022]/g)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length) return parts.slice(0, 12);
+  }
+  return [];
+}
+
+function stripSeoLine(text: string): string {
+  const lines = String(text || "").split("\n");
+  return lines.filter((l) => !/^seo\s*:/i.test(l.trim())).join("\n").trim();
+}
+
 function ensureSeoLine(blog: string, seo: string[]): string {
   const base = String(blog || "").trim();
   if (!base) return base;
@@ -642,8 +662,54 @@ export async function POST(req: Request) {
     }
     const raw = String(r.text ?? "");
     const parsed = tryExtractJsonObject(raw);
-    const data = extractEngineOutput(parsed);
-    if (!data) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+    let data = extractEngineOutput(parsed);
+
+    // Fallback: if MSI couldn't/wouldn't return strict JSON, request a plain blog and synthesize structure.
+    if (!data) {
+      const plainTopic = [
+        "Redacta SOLO el artículo del Centro Informativo (NO JSON).",
+        "Reglas:",
+        "- Español (Colombia).",
+        "- Ideal 450–650 palabras (mín. 350, máx. 800).",
+        "- Primera línea: TÍTULO reescrito (no copies literal el titular del medio).",
+        "- Estructura: Qué pasó / Por qué importa / Cómo encaja con 1–2 ejes del programa / Qué sigue.",
+        "- Incluye el nombre del candidato y su número de tarjetón cuando menciones su implicación.",
+        "- Cierra con: Fuente: <url> (si existe), Hashtags: (3+), Mensaje ciudadano: (reformulado).",
+        "- Incluye una línea 'SEO:' con 6–10 keywords (separadas por coma).",
+        "",
+        promptContext,
+      ].join("\n");
+
+      const wrapped2 = await withTimeout(
+        callMarlenyAI({
+          candidateId: pol.id,
+          contentType: "blog",
+          topic: plainTopic,
+          tone: "editorial sobrio, institucional, humano",
+        }),
+        25000,
+      );
+      if (!wrapped2.ok) return { ok: false, engine: "MSI", ms, error: "timeout" };
+      if (!wrapped2.value?.ok) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+
+      const blogRaw = String(wrapped2.value.text ?? "").trim();
+      if (!blogRaw) return { ok: false, engine: "MSI", ms, error: "bad_response" };
+
+      const seo = extractSeoFromText(blogRaw);
+      const blog = stripSeoLine(blogRaw);
+      const filled = synthesizeVariants({
+        blog,
+        candidate: { name: pol.name, ballot_number: pol.ballot_number },
+        seo_keywords: seo,
+      });
+      data = {
+        sentiment: "neutral",
+        seo_keywords: filled.seo_keywords,
+        master_editorial: filled.master_editorial,
+        platform_variants: filled.platform_variants,
+      };
+    }
+
     if (!baselineValidText(data, pol.name)) return { ok: false, engine: "MSI", ms, error: "bad_response" };
     // Backfill missing fields/variants defensively.
     const filled = synthesizeVariants({ blog: data.platform_variants.blog, candidate: { name: pol.name, ballot_number: pol.ballot_number }, seo_keywords: data.seo_keywords });
