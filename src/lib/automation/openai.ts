@@ -2,6 +2,67 @@ import "server-only";
 
 export type OpenAiResult<T> = { ok: true; data: T } | { ok: false; error: "disabled" | "not_configured" | "bad_response" | "upstream_error" };
 
+type Provider = {
+  name: "openai" | "openrouter" | "groq" | "cerebras";
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+};
+
+function normalizeBaseUrl(raw: string): string {
+  const base = (raw || "").trim().replace(/\/+$/, "");
+  return base.endsWith("/v1") ? base.slice(0, -3) : base;
+}
+
+function providers(): Provider[] {
+  const list: Provider[] = [];
+
+  const openAiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  if (openAiKey) {
+    list.push({
+      name: "openai",
+      baseUrl: normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com"),
+      apiKey: openAiKey,
+      model: (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim(),
+    });
+  }
+
+  const openRouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openRouterModel = (process.env.OPENROUTER_MODEL ?? "").trim();
+  if (openRouterKey && openRouterModel) {
+    list.push({
+      name: "openrouter",
+      baseUrl: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api"),
+      apiKey: openRouterKey,
+      model: openRouterModel,
+    });
+  }
+
+  const groqKey = (process.env.GROQ_API_KEY ?? "").trim();
+  const groqModel = (process.env.GROQ_MODEL ?? "").trim();
+  if (groqKey && groqModel) {
+    list.push({
+      name: "groq",
+      baseUrl: normalizeBaseUrl(process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai"),
+      apiKey: groqKey,
+      model: groqModel,
+    });
+  }
+
+  const cerebrasKey = (process.env.CEREBRAS_API_KEY ?? "").trim();
+  const cerebrasModel = (process.env.CEREBRAS_MODEL ?? "").trim();
+  if (cerebrasKey && cerebrasModel) {
+    list.push({
+      name: "cerebras",
+      baseUrl: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL?.trim() || "https://api.cerebras.ai"),
+      apiKey: cerebrasKey,
+      model: cerebrasModel,
+    });
+  }
+
+  return list;
+}
+
 function isEnabled(): boolean {
   // Continuity-first:
   // - If OPENAI_ENABLED="false" => disabled.
@@ -10,30 +71,19 @@ function isEnabled(): boolean {
   const flag = process.env.OPENAI_ENABLED;
   if (flag === "false") return false;
   if (flag === "true") return true;
-  return Boolean(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim().length);
+  return providers().length > 0;
 }
 
 function hasConfig(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY);
+  return providers().length > 0;
 }
 
-function baseUrl(): string {
-  // Allow override (self-hosted gateway), default OpenAI API.
-  const raw = (process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com").replace(/\/+$/, "");
-  // Many users accidentally set OPENAI_BASE_URL to ".../v1". Normalize to host root.
-  return raw.endsWith("/v1") ? raw.slice(0, -3) : raw;
-}
-
-function model(): string {
-  return (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
-}
-
-async function postJson(path: string, body: unknown): Promise<unknown> {
-  const resp = await fetch(`${baseUrl()}${path}`, {
+async function postJson(p: Provider, path: string, body: unknown): Promise<unknown> {
+  const resp = await fetch(`${p.baseUrl}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${process.env.OPENAI_API_KEY!}`,
+      authorization: `Bearer ${p.apiKey}`,
     },
     body: JSON.stringify(body),
     cache: "no-store",
@@ -57,28 +107,38 @@ export async function openAiJson<T>(args: { task: string; system: string; user: 
   if (!isEnabled()) return { ok: false, error: "disabled" };
   if (!hasConfig()) return { ok: false, error: "not_configured" };
 
-  const payload = {
-    model: model(),
-    temperature: 0.2,
-    messages: [
-      { role: "system", content: args.system },
-      { role: "user", content: args.user },
-    ],
-    // Ask for JSON output, but remain compatible with providers that ignore this.
-    response_format: { type: "json_object" },
-  };
+  const ps = providers();
+  if (!ps.length) return { ok: false, error: "not_configured" };
 
-  try {
-    const data = await postJson("/v1/chat/completions", payload);
-    const text = pickTextCompletion(data);
-    if (!text) return { ok: false, error: "bad_response" };
+  for (const p of ps) {
+    const payload = {
+      model: p.model,
+      temperature: 0.2,
+      messages: [
+        { role: "system", content: args.system },
+        { role: "user", content: args.user },
+      ],
+      // Ask for JSON output, but remain compatible with providers that ignore this.
+      response_format: { type: "json_object" },
+    };
+
     try {
-      return { ok: true, data: JSON.parse(text) as T };
+      // eslint-disable-next-line no-await-in-loop
+      const data = await postJson(p, "/v1/chat/completions", payload);
+      const text = pickTextCompletion(data);
+      if (!text) continue;
+      try {
+        return { ok: true, data: JSON.parse(text) as T };
+      } catch {
+        // provider returned non-JSON; try next
+        continue;
+      }
     } catch {
-      return { ok: false, error: "bad_response" };
+      // try next provider
+      continue;
     }
-  } catch {
-    return { ok: false, error: "upstream_error" };
   }
+
+  return { ok: false, error: "upstream_error" };
 }
 

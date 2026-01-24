@@ -22,9 +22,10 @@ function isChatMsgArray(v: unknown): v is ChatMsg[] {
 }
 
 type EngineName = "MSI" | "OpenAI";
+type EngineError = "timeout" | "not_configured" | "upstream_error" | "bad_response";
 type EngineResult =
   | { ok: true; engine: EngineName; ms: number; reply: string }
-  | { ok: false; engine: EngineName; ms: number; error: "timeout" | "not_configured" | "upstream_error" | "bad_response" };
+  | { ok: false; engine: EngineName; ms: number; error: EngineError };
 
 function nowMs(): number {
   return Date.now();
@@ -107,48 +108,101 @@ async function callMsiChat(args: { candidateId: string; prompt: string }): Promi
 
 async function callOpenAiChat(args: { prompt: string }): Promise<EngineResult> {
   const started = nowMs();
-  const apiKey = process.env.OPENAI_API_KEY?.trim() || "";
-  if (!apiKey) return { ok: false, engine: "OpenAI", ms: nowMs() - started, error: "not_configured" };
 
-  const base = normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com");
-  const model = (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim();
+  const ps: Array<{ base: string; apiKey: string; model: string }> = [];
+  const openAiKey = (process.env.OPENAI_API_KEY ?? "").trim();
+  if (openAiKey) {
+    ps.push({
+      base: normalizeBaseUrl(process.env.OPENAI_BASE_URL?.trim() || "https://api.openai.com"),
+      apiKey: openAiKey,
+      model: (process.env.OPENAI_MODEL?.trim() || "gpt-4o-mini").trim(),
+    });
+  }
 
-  const wrapped = await withTimeout(
-    fetch(`${base}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        messages: [
-          {
-            role: "system",
-            content:
-              "Synthetic Intelligence. Responde como asistente para admins. " +
-              "Sé sobrio, útil, verificable. Prohibido: desinformación, ataques personales, urgencia falsa. " +
-              "Responde en texto plano, con bullets cuando aplique.",
-          },
-          { role: "user", content: args.prompt },
-        ],
+  const openRouterKey = (process.env.OPENROUTER_API_KEY ?? "").trim();
+  const openRouterModel = (process.env.OPENROUTER_MODEL ?? "").trim();
+  if (openRouterKey && openRouterModel) {
+    ps.push({
+      base: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL?.trim() || "https://openrouter.ai/api"),
+      apiKey: openRouterKey,
+      model: openRouterModel,
+    });
+  }
+
+  const groqKey = (process.env.GROQ_API_KEY ?? "").trim();
+  const groqModel = (process.env.GROQ_MODEL ?? "").trim();
+  if (groqKey && groqModel) {
+    ps.push({
+      base: normalizeBaseUrl(process.env.GROQ_BASE_URL?.trim() || "https://api.groq.com/openai"),
+      apiKey: groqKey,
+      model: groqModel,
+    });
+  }
+
+  const cerebrasKey = (process.env.CEREBRAS_API_KEY ?? "").trim();
+  const cerebrasModel = (process.env.CEREBRAS_MODEL ?? "").trim();
+  if (cerebrasKey && cerebrasModel) {
+    ps.push({
+      base: normalizeBaseUrl(process.env.CEREBRAS_BASE_URL?.trim() || "https://api.cerebras.ai"),
+      apiKey: cerebrasKey,
+      model: cerebrasModel,
+    });
+  }
+
+  if (!ps.length) return { ok: false, engine: "OpenAI", ms: nowMs() - started, error: "not_configured" };
+
+  let lastError: EngineError = "upstream_error";
+
+  for (const p of ps) {
+    // eslint-disable-next-line no-await-in-loop
+    const wrapped = await withTimeout(
+      fetch(`${p.base}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${p.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: p.model,
+          temperature: 0.2,
+          messages: [
+            {
+              role: "system",
+              content:
+                "Synthetic Intelligence. Responde como asistente para admins. " +
+                "Sé sobrio, útil, verificable. Prohibido: desinformación, ataques personales, urgencia falsa. " +
+                "Responde en texto plano, con bullets cuando aplique.",
+            },
+            { role: "user", content: args.prompt },
+          ],
+        }),
+        cache: "no-store",
       }),
-      cache: "no-store",
-    }),
-    15000,
-  );
+      15000,
+    );
 
-  const ms = nowMs() - started;
-  if (!wrapped.ok) return { ok: false, engine: "OpenAI", ms, error: "timeout" };
-  const resp = wrapped.value;
-  if (!resp?.ok) return { ok: false, engine: "OpenAI", ms, error: "upstream_error" };
+    if (!wrapped.ok) {
+      lastError = "timeout";
+      continue;
+    }
+    const resp = wrapped.value;
+    if (!resp?.ok) {
+      lastError = "upstream_error";
+      continue;
+    }
 
-  const json = (await resp.json().catch(() => null)) as any;
-  const content = json?.choices?.[0]?.message?.content;
-  const reply = nonEmptyReply(content);
-  if (!reply) return { ok: false, engine: "OpenAI", ms, error: "bad_response" };
-  return { ok: true, engine: "OpenAI", ms, reply };
+    // eslint-disable-next-line no-await-in-loop
+    const json = (await resp.json().catch(() => null)) as any;
+    const content = json?.choices?.[0]?.message?.content;
+    const reply = nonEmptyReply(content);
+    if (!reply) {
+      lastError = "bad_response";
+      continue;
+    }
+    return { ok: true, engine: "OpenAI", ms: nowMs() - started, reply };
+  }
+
+  return { ok: false, engine: "OpenAI", ms: nowMs() - started, error: lastError };
 }
 
 function newsQueryFor(office: string, region: string): string {
