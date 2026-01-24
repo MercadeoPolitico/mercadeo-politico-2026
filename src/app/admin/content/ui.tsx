@@ -30,6 +30,7 @@ export function AdminContentPanel() {
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [selected, setSelected] = useState<Draft | null>(null);
+  const [polById, setPolById] = useState<Record<string, { name: string; office: string; region: string }>>({});
 
   // Draft creation (generate + store)
   const [candidateId, setCandidateId] = useState("jose-angel-martinez");
@@ -59,6 +60,28 @@ export function AdminContentPanel() {
 
   useEffect(() => {
     let cancelled = false;
+    // Load politicians for nicer labels (name/region), best-effort.
+    fetch("/api/admin/politicians/list", { method: "GET" })
+      .then(async (res) => {
+        if (cancelled) return;
+        if (!res.ok) return;
+        const json = (await res.json().catch(() => null)) as any;
+        const rows = Array.isArray(json?.politicians) ? (json.politicians as any[]) : [];
+        const map: Record<string, { name: string; office: string; region: string }> = {};
+        for (const r of rows) {
+          if (!r || typeof r !== "object") continue;
+          const id = typeof (r as any).id === "string" ? String((r as any).id) : "";
+          if (!id) continue;
+          map[id] = {
+            name: typeof (r as any).name === "string" ? String((r as any).name) : id,
+            office: typeof (r as any).office === "string" ? String((r as any).office) : "",
+            region: typeof (r as any).region === "string" ? String((r as any).region) : "",
+          };
+        }
+        setPolById(map);
+      })
+      .catch(() => {});
+
     fetch("/api/admin/drafts", { method: "GET" })
       .then(async (res) => {
         if (cancelled) return;
@@ -92,7 +115,7 @@ export function AdminContentPanel() {
       tone: tone.trim() ? tone.trim() : undefined,
     };
 
-    const res = await fetch("/api/automation/generate", {
+    const res = await fetch("/api/admin/automation/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -214,7 +237,7 @@ export function AdminContentPanel() {
     // Only allow for approved drafts (human-gated)
     if (draft.status !== "approved") return;
 
-    const res = await fetch("/api/automation/submit", {
+    const res = await fetch("/api/admin/automation/submit", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -441,12 +464,24 @@ export function AdminContentPanel() {
               type="button"
             >
               <p className="text-sm font-semibold">{d.content_type}</p>
-              <p className="mt-1 text-xs text-muted">{d.candidate_id}</p>
+              <p className="mt-1 text-xs text-muted">
+                {polById[d.candidate_id]?.name ?? d.candidate_id}
+                {polById[d.candidate_id]?.region ? ` · ${polById[d.candidate_id]!.region}` : ""}
+              </p>
               <p className="mt-2 line-clamp-2 text-sm text-muted">{d.topic}</p>
-              <p className="mt-2 text-xs text-muted">Estado: {d.status}</p>
+              <p className="mt-2 text-xs text-muted">
+                Estado: <span className="text-foreground">{d.status}</span> ·{" "}
+                {d.created_at ? new Date(d.created_at).toLocaleString("es-CO") : ""}
+              </p>
             </button>
           ))}
         </div>
+
+        {loadState === "ready" && drafts.length === 0 ? (
+          <div className="mt-4 glass-card p-6">
+            <p className="text-sm text-muted">Aún no se han generado borradores. Cuando n8n ejecute, aparecerán aquí automáticamente.</p>
+          </div>
+        ) : null}
 
         {selected ? (
           <div className="mt-6 rounded-2xl border border-border bg-background/60 p-5">

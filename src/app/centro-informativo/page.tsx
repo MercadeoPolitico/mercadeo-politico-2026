@@ -20,6 +20,9 @@ type Post = {
 
 export default async function CitizenInfoCenterPage() {
   const supabase = await createSupabaseServerClient();
+  // Editorial policy:
+  // Centro Informativo shows curated, approved civic publications (public-facing).
+  // Drafts (`ai_drafts`) remain internal for editorial review in Admin → Contenido.
   const { data } = supabase
     ? await supabase
         .from("citizen_news_posts")

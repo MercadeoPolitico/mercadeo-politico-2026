@@ -3,6 +3,16 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
+function isBrowserOrigin(req: Request): boolean {
+  return Boolean(
+    req.headers.get("sec-fetch-site") ||
+      req.headers.get("sec-fetch-mode") ||
+      req.headers.get("sec-fetch-dest") ||
+      req.headers.get("origin") ||
+      req.headers.get("referer"),
+  );
+}
+
 function normalizeToken(v: unknown): string {
   const s = String(v ?? "").trim();
   if (!s) return "";
@@ -32,6 +42,16 @@ function logSupabaseError(args: { requestId: string; step: string; error: any })
 }
 
 export async function GET(req: Request) {
+  if (isBrowserOrigin(req)) {
+    console.warn("[automation-self-test] rejected_browser_origin", {
+      path: "/api/automation/self-test",
+      hasOrigin: Boolean(req.headers.get("origin")),
+      hasReferer: Boolean(req.headers.get("referer")),
+      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
+    });
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
+
   if (!allow(req)) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
   const requestId = (() => {

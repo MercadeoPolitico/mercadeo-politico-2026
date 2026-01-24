@@ -378,7 +378,7 @@ export function PoliticianWorkspaceClient({
       return;
     }
 
-    const resp = await fetch("/api/automation/editorial-orchestrate", {
+    const resp = await fetch("/api/admin/automation/editorial-orchestrate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ candidate_id: politician.id, max_items: 1 }),

@@ -8,6 +8,16 @@ import { openAiJson } from "@/lib/automation/openai";
 
 export const runtime = "nodejs";
 
+function isBrowserOrigin(req: Request): boolean {
+  return Boolean(
+    req.headers.get("sec-fetch-site") ||
+      req.headers.get("sec-fetch-mode") ||
+      req.headers.get("sec-fetch-dest") ||
+      req.headers.get("origin") ||
+      req.headers.get("referer"),
+  );
+}
+
 function logSupabaseError(args: { requestId: string; step: string; error: any }) {
   const e = args.error as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
   console.error("[editorial-orchestrate] supabase_error", {
@@ -155,14 +165,23 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<{ ok: true; value: T
 }
 
 export async function POST(req: Request) {
+  // Automation endpoint: server-to-server only (n8n/cron/internal services).
+  // Admin UI must call /api/admin/automation/editorial-orchestrate.
+  if (isBrowserOrigin(req)) {
+    console.warn("[editorial-orchestrate] rejected_browser_origin", {
+      path: "/api/automation/editorial-orchestrate",
+      hasOrigin: Boolean(req.headers.get("origin")),
+      hasReferer: Boolean(req.headers.get("referer")),
+      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
+    });
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const url = new URL(req.url);
   const testMode = url.searchParams.get("test") === "true";
 
-  const adminOk = await isAdminSession();
-  if (!adminOk && !allowAutomation(req)) {
-    // Disabled-by-default for public; n8n must send x-automation-token.
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  // Token-only: no browser, no session.
+  if (!allowAutomation(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const requestId = (() => {
     try {
@@ -189,17 +208,13 @@ export async function POST(req: Request) {
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
   // Safe logging (no secrets)
-  if (!adminOk) {
-    console.info("[editorial-orchestrate] request", {
-      requestId,
-      candidate_id,
-      max_items,
-      testMode,
-      actor: "automation",
-    });
-  } else {
-    console.info("[editorial-orchestrate] request", { requestId, candidate_id, max_items, testMode, actor: "admin" });
-  }
+  console.info("[editorial-orchestrate] request", {
+    requestId,
+    candidate_id,
+    max_items,
+    testMode,
+    actor: "automation",
+  });
 
   const { data: polRow, error: polErr } = await admin
     .from("politicians")

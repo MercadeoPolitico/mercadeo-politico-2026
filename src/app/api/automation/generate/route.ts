@@ -19,6 +19,25 @@ export const runtime = "nodejs";
  * - Disabled-by-default unless AUTOMATION_API_TOKEN is set and matches header
  */
 
+function isBrowserOrigin(req: Request): boolean {
+  // Browser fetches typically include sec-fetch-* and Origin/Referer.
+  // n8n/server-to-server calls normally do not.
+  return Boolean(
+    req.headers.get("sec-fetch-site") ||
+      req.headers.get("sec-fetch-mode") ||
+      req.headers.get("sec-fetch-dest") ||
+      req.headers.get("origin") ||
+      req.headers.get("referer"),
+  );
+}
+
+function normalizeToken(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1).trim();
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
+}
+
 function normalizeBaseUrl(raw: string): string {
   const base = (raw || "https://api.openai.com").trim().replace(/\/+$/, "");
   return base.endsWith("/v1") ? base.slice(0, -3) : base;
@@ -68,17 +87,22 @@ async function callOpenAiOnce(args: {
 }
 
 export async function POST(req: Request) {
-  const apiToken = process.env.AUTOMATION_API_TOKEN;
-  const headerToken = req.headers.get("x-automation-token") ?? "";
-
-  // Access control:
-  // - If admin session is present: allow (internal UI; no secrets exposed to browser)
-  // - Else: require AUTOMATION_API_TOKEN (off-by-default for public)
-  const adminOk = await isAdminSession();
-  if (!adminOk) {
-    if (!apiToken) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Automation endpoints are server-to-server only.
+  // Admin UIs must use /api/admin/automation/* wrappers.
+  if (isBrowserOrigin(req)) {
+    console.warn("[automation/generate] rejected_browser_origin", {
+      path: "/api/automation/generate",
+      hasOrigin: Boolean(req.headers.get("origin")),
+      hasReferer: Boolean(req.headers.get("referer")),
+      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
+    });
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+
+  const apiToken = normalizeToken(process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN);
+  const headerToken = normalizeToken(req.headers.get("x-automation-token") ?? "");
+  if (!apiToken) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });

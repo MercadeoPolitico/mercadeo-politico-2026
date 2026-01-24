@@ -81,7 +81,7 @@ export function AdminAiPanel() {
       tone: tone.trim() ? tone.trim() : undefined,
     };
 
-    const res = await fetch("/api/automation/generate", {
+    const res = await fetch("/api/admin/automation/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),

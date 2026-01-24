@@ -6,6 +6,23 @@ import { isAdminSession } from "@/lib/auth/adminSession";
 
 export const runtime = "nodejs";
 
+function isBrowserOrigin(req: Request): boolean {
+  return Boolean(
+    req.headers.get("sec-fetch-site") ||
+      req.headers.get("sec-fetch-mode") ||
+      req.headers.get("sec-fetch-dest") ||
+      req.headers.get("origin") ||
+      req.headers.get("referer"),
+  );
+}
+
+function normalizeToken(v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1).trim();
+  return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
+}
+
 /**
  * Controlled n8n forwarding endpoint (Paso H.3)
  *
@@ -16,14 +33,22 @@ export const runtime = "nodejs";
  * - Forwarding itself is disabled by default unless N8N_FORWARD_ENABLED="true"
  */
 export async function POST(req: Request) {
-  const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
-  const headerToken = req.headers.get("x-automation-token") ?? "";
-
-  const adminOk = await isAdminSession();
-  if (!adminOk) {
-    if (!apiToken) return NextResponse.json({ error: "not_found" }, { status: 404 });
-    if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Automation endpoints are server-to-server only.
+  // Admin UIs must use /api/admin/automation/* wrappers.
+  if (isBrowserOrigin(req)) {
+    console.warn("[automation/submit] rejected_browser_origin", {
+      path: "/api/automation/submit",
+      hasOrigin: Boolean(req.headers.get("origin")),
+      hasReferer: Boolean(req.headers.get("referer")),
+      hasSecFetch: Boolean(req.headers.get("sec-fetch-site") || req.headers.get("sec-fetch-mode") || req.headers.get("sec-fetch-dest")),
+    });
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+
+  const apiToken = normalizeToken(process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN);
+  const headerToken = normalizeToken(req.headers.get("x-automation-token") ?? "");
+  if (!apiToken) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  if (headerToken !== apiToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
