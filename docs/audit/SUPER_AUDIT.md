@@ -181,6 +181,11 @@ Implementación ✅:
 Nota:
 - Esto cierra el webhook para llamadas no autorizadas sin requerir acciones del Admin Panel ni acceso del Admin a n8n.
 
+Automatización (sin UI):
+- Script idempotente para asegurar workflow listo/activo y path correcto:
+  - `scripts/ensure-n8n-workflow-ready.mjs`
+  - Usa `X-N8N-API-KEY: <N8N_API_KEY>` para crear/activar/ajustar el workflow y su `path`.
+
 ---
 
 ## 13) Auto-blog/autopublish: control global en Admin → Contenido

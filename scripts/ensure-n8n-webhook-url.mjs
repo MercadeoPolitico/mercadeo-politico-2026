@@ -41,10 +41,20 @@ function encodeValue(v) {
 }
 
 function normalizeWebhookUrl(u) {
-  const base = String(u || "").trim().replace(/\/+$/, "");
-  if (!base) return "";
-  if (base.includes("/webhook/")) return base;
-  return `${base}/webhook/mp26-editorial-orchestrator`;
+  const s0 = String(u || "").trim();
+  if (!s0) return "";
+  const s = s0.replace(/\/+$/, "");
+  if (!s) return "";
+  if (s.includes("/webhook/") || s.includes("/webhook-test/")) return s;
+  try {
+    const url = new URL(s);
+    const path = (url.pathname || "/").replace(/\/+$/, "") || "/";
+    // Only auto-append when the input is effectively just an origin/base URL.
+    if (path === "/") return `${url.origin}/webhook/mp26-editorial-orchestrator`;
+    return s;
+  } catch {
+    return s;
+  }
 }
 
 function main() {

@@ -4,12 +4,23 @@ import type { SubmitToN8nRequest } from "./types";
 export type N8nSubmitResult = { ok: true } | { ok: false; error: "disabled" | "not_configured" | "upstream_error" };
 
 function normalizeWebhookUrl(raw: string | null | undefined): string | null {
-  const s = String(raw ?? "").trim().replace(/\/+$/, "");
+  const s0 = String(raw ?? "").trim();
+  if (!s0) return null;
+  const s = s0.replace(/\/+$/, "");
   if (!s) return null;
-  // Backward-compatible: allow setting only the n8n base URL.
-  // If the configured URL doesn't include a webhook path, assume the main publish webhook path.
-  if (!s.includes("/webhook/") && !s.includes("/webhook-test/")) return `${s}/webhook/mp26-editorial-orchestrator`;
-  return s;
+  // Backward-compatible but safe:
+  // - If the value is a full webhook URL, keep it.
+  // - Only auto-append the default path when the value looks like an origin/base URL (no path).
+  try {
+    const u = new URL(s);
+    const path = (u.pathname || "/").replace(/\/+$/, "") || "/";
+    if (path === "/" && !s.includes("/webhook/") && !s.includes("/webhook-test/")) {
+      return `${u.origin}/webhook/mp26-editorial-orchestrator`;
+    }
+    return s;
+  } catch {
+    return s;
+  }
 }
 
 function isEnabled(): boolean {

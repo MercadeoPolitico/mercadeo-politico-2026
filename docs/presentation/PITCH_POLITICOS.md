@@ -49,6 +49,7 @@ Principios:
 - El Admin Panel es la **torre de control** (no se “opera n8n” manualmente).
 - La app **no expone secretos** en UI.
 - La autorización de publicación **la concede el dueño** mediante enlace.
+- n8n se mantiene como motor, pero la operación queda **automatizada** (sin requerir UI para el Admin).
 
 ---
 

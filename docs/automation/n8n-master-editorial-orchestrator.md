@@ -74,10 +74,10 @@ Si el webhook devuelve **404** incluso con URL correcta, el workflow no está ac
 
 Opción recomendada (sin entrar a n8n como Admin):
 1) Crear una vez un API key en n8n (Settings → n8n API) y guardarlo como `N8N_API_KEY` (secreto, server-only).
-2) Ejecutar el sync desde este repo:
+2) Ejecutar el ensure idempotente desde este repo:
 
 ```bash
-node scripts/sync-n8n-workflow.mjs
+node scripts/ensure-n8n-workflow-ready.mjs
 ```
 
 ---
