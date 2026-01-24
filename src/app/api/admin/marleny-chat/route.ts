@@ -228,6 +228,12 @@ function normalizeRegionForNews(region: string): { region: string; cityHint: str
   return { region: r, cityHint: null };
 }
 
+function isLikelyColombianNewsUrl(url: string): boolean {
+  const u = String(url || "").toLowerCase();
+  // Strong hint: Colombian domains. (GDELT can still return intl sources even for CO queries.)
+  return u.includes(".co/") || u.includes(".com.co/") || u.endsWith(".co");
+}
+
 async function pickTopNewsFor(office: string, region: string) {
   const norm = normalizeRegionForNews(region);
   const regionTrim = norm.region;
@@ -246,7 +252,11 @@ async function pickTopNewsFor(office: string, region: string) {
   for (const q of queries) {
     // eslint-disable-next-line no-await-in-loop
     const a = await fetchTopGdeltArticle(q);
-    if (a) return { article: a, query: q };
+    if (!a) continue;
+    // For Cámara/territorial candidates, do not surface obviously international sources.
+    const isSenado = office.toLowerCase().includes("senado");
+    if (!isSenado && a.url && !isLikelyColombianNewsUrl(a.url)) continue;
+    return { article: a, query: q };
   }
   return { article: null as any, query: queries[0] ?? "Colombia seguridad" };
 }
@@ -333,19 +343,15 @@ export async function POST(req: Request) {
   if (!winner) {
     // Continuity fallback (non-AI): still give a useful answer instead of "nada".
     // This keeps the admin governance surface operational even if both engines are down.
-    const msiHasEndpoint = Boolean(
-      pickEnv("MARLENY_AI_ENDPOINT", "MARLENY_ENDPOINT") || pickEnv("MARLENY_API_URL", "MARLENY_URL") || pickEnv("MARLENY_BASE_URL", "MARLENY_HOST")
-    );
-    const msiHasKey = Boolean(pickEnv("MARLENY_AI_API_KEY", "MARLENY_API_KEY"));
-    const msiConfigured = msiHasEndpoint && msiHasKey;
-    const openAiConfigured = Boolean(process.env.OPENAI_API_KEY && String(process.env.OPENAI_API_KEY).trim().length);
+    const actuationStatus = results.MSI ? (results.MSI.ok ? "OK" : results.MSI.error) : "not_attempted";
+    const volumeStatus = results.OpenAI ? (results.OpenAI.ok ? "OK" : results.OpenAI.error) : "not_attempted";
 
     const picked = await pickTopNewsFor(pol.office, pol.region);
     const article = picked.article as any;
     const reply = article?.title && article?.url
       ? [
           `No pude usar Synthetic Intelligence en este momento (motores con fallas o temporalmente inactivos).`,
-          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : `FALTA (${msiHasEndpoint ? "" : "endpoint "}${msiHasKey ? "" : "key"})`.trim()} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
+          `Diagnóstico (safe): Actuation=${actuationStatus} · Volume=${volumeStatus}`,
           "",
           `Noticia sugerida para ${pol.name} (${pol.office}, ${pol.region}):`,
           `- Titular: ${article.title}`,
@@ -355,7 +361,7 @@ export async function POST(req: Request) {
         ].join("\n")
       : [
           `No pude usar Synthetic Intelligence en este momento (motores con fallas o temporalmente inactivos).`,
-          `Diagnóstico (safe): Actuation=${msiConfigured ? "OK" : `FALTA (${msiHasEndpoint ? "" : "endpoint "}${msiHasKey ? "" : "key"})`.trim()} · Volume=${openAiConfigured ? "OK" : "FALTA"}`,
+          `Diagnóstico (safe): Actuation=${actuationStatus} · Volume=${volumeStatus}`,
           "",
           `Además, no encontré una noticia destacada en este momento para las consultas: ${picked.query}`,
           "Intenta de nuevo en 5–10 minutos o pega un enlace de noticia aquí para que lo use como input.",
