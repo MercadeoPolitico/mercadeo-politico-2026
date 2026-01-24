@@ -5,7 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
-type ProviderName = "MSI" | "OpenAI";
+type ProviderName = "MSI" | "OpenAI" | "Local";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -38,6 +38,109 @@ function firstUrlIn(text: string): string | null {
 function safeFailure(reason: string): string {
   const r = String(reason || "unknown_error").trim();
   return r.length > 180 ? r.slice(0, 180) : r;
+}
+
+function hashSeed(input: string): number {
+  // Simple deterministic hash (not cryptographic).
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(a: number): () => number {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function localAbstractSvg(args: { seed: string }): string {
+  const seed = hashSeed(args.seed);
+  const rnd = mulberry32(seed);
+  const w = 1024;
+  const h = 1024;
+
+  // Patriotic-inspired palette (subtle).
+  const colors = [
+    { c: "#facc15", a: 0.22 }, // amarillo
+    { c: "#2563eb", a: 0.18 }, // azul
+    { c: "#ef4444", a: 0.14 }, // rojo
+    { c: "#22c55e", a: 0.12 }, // verde
+    { c: "#06b6d4", a: 0.10 }, // cyan
+  ];
+
+  const blobs = Array.from({ length: 8 }).map((_, i) => {
+    const x = Math.floor(rnd() * w);
+    const y = Math.floor(rnd() * h);
+    const r = Math.floor(clamp(180 + rnd() * 420, 160, 620));
+    const p = colors[i % colors.length];
+    const a = clamp(p.a + rnd() * 0.08, 0.08, 0.32);
+    return { x, y, r, color: p.c, alpha: a };
+  });
+
+  const glass = `
+    <rect x="120" y="120" width="784" height="784" rx="72"
+      fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.22)" stroke-width="2"/>
+    <rect x="140" y="140" width="744" height="744" rx="64"
+      fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+  `;
+
+  const blurId = "b";
+  const blobEls = blobs
+    .map(
+      (b) =>
+        `<circle cx="${b.x}" cy="${b.y}" r="${b.r}" fill="${b.color}" fill-opacity="${b.alpha.toFixed(
+          3,
+        )}" filter="url(#${blurId})"/>`,
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs>
+    <filter id="${blurId}" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="90"/>
+    </filter>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b2f54"/>
+      <stop offset="1" stop-color="#081c33"/>
+    </linearGradient>
+  </defs>
+  <rect width="${w}" height="${h}" fill="url(#g)"/>
+  ${blobEls}
+  ${glass}
+</svg>`;
+}
+
+async function storeSvgInSupabase(args: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  candidateId: string;
+  draftId: string;
+  svg: string;
+}): Promise<string | null> {
+  const admin = args.admin;
+  if (!admin) return null;
+
+  const buf = Buffer.from(args.svg, "utf8");
+  const path = `${args.candidateId}/draft-images/${args.draftId}.svg`;
+  const up = await admin.storage.from("politician-media").upload(path, buf, {
+    contentType: "image/svg+xml",
+    upsert: true,
+    cacheControl: "3600",
+  });
+  if (up.error) return null;
+  const { data } = admin.storage.from("politician-media").getPublicUrl(path);
+  const url = data?.publicUrl;
+  return typeof url === "string" && url.startsWith("http") ? url : null;
 }
 
 async function tryMsiImage(args: {
@@ -226,7 +329,17 @@ export async function POST(req: Request) {
     nextMeta.image_url = winner.image_url;
     nextMeta.image_metadata = { provider: winner.provider, ...winner.meta, generated_at: nowIso(), keywords };
   } else {
-    nextMeta.image_last_error = safeFailure((oa && !oa.ok && oa.reason) || (!msi.ok && msi.reason) || "upstream_error");
+    // LAST RESORT (no AI): generate a local abstract SVG (no text) and attach it.
+    const svg = localAbstractSvg({ seed: `${draft.id}:${draft.candidate_id}:${draft.topic}:${keywords.join(",")}` });
+    const stored = await storeSvgInSupabase({ admin, candidateId: draft.candidate_id, draftId: draft.id, svg });
+    const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+    const finalUrl = stored || dataUrl;
+
+    attempts.push({ provider: "Local", ok: true });
+    nextMeta.image_ready = true;
+    nextMeta.image_url = finalUrl;
+    nextMeta.image_metadata = { provider: "Local", generated_at: nowIso(), keywords, request_id: requestId };
+    nextMeta.image_last_error = safeFailure((oa && !oa.ok && oa.reason) || (!msi.ok && msi.reason) || "ai_unavailable_local_fallback");
   }
 
   const { error: upErr } = await admin
@@ -241,11 +354,8 @@ export async function POST(req: Request) {
   if (upErr) return NextResponse.json({ error: "db_error" }, { status: 500 });
 
   if (!winner) {
-    console.warn("[draft-image] failed", { requestId, draft_id, attempts });
-    return NextResponse.json(
-      { ok: false, error: "image_generation_failed", request_id: requestId, reason: nextMeta.image_last_error, attempts },
-      { status: 502 },
-    );
+    console.warn("[draft-image] ai_failed_local_fallback", { requestId, draft_id, attempts });
+    return NextResponse.json({ ok: true, request_id: requestId, image_url: String(nextMeta.image_url), provider: "Local", fallback: true });
   }
 
   console.info("[draft-image] success", { requestId, draft_id, provider: winner.provider });
