@@ -4,6 +4,7 @@ import { PublicPageShell } from "@/components/PublicPageShell";
 import { Section } from "@/components/Section";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
+import { RotatingSeoMicrocopy } from "@/components/RotatingSeoMicrocopy";
 
 export default function Home() {
   const candidates = getCandidates();
@@ -199,47 +200,12 @@ export default function Home() {
             <Link className="glass-button" href="/about">
               Ver principios editoriales
             </Link>
-            <Link className="glass-button" href="https://marketbrain.tech/landing">
-              Powered by MarketBrain Technology™
-            </Link>
+          </div>
+          <div className="mt-4 rounded-2xl border border-white/14 bg-white/6 px-4 py-3 backdrop-blur">
+            <RotatingSeoMicrocopy />
           </div>
         </div>
       </Section>
-
-      <footer className="pb-12">
-        <Section>
-          <div className="glass-card p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <span
-                  aria-hidden
-                  className="h-10 w-10 rounded-full border border-white/20 bg-[linear-gradient(to_bottom,#facc15_0%,#facc15_52%,#2563eb_52%,#2563eb_76%,#ef4444_76%,#ef4444_100%)] shadow-[0_0_0_1px_rgba(255,255,255,.08)_inset]"
-                />
-                <div className="text-sm">
-                  <p className="font-semibold text-foreground">
-                    Powered by MarketBrain Technology™ · Marleny AI Holdings LLC (US Wyoming Registered Company)
-                  </p>
-                  <p className="mt-1 text-xs text-muted">Marleny Synthetic Intelligence · By JCG. USARMY VETERAN</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link className="glass-button" href="/centro-informativo">
-                  Centro informativo
-                </Link>
-                <Link className="glass-button" href="/candidates">
-                  Candidatos
-                </Link>
-                <Link className="glass-button" href="/about">
-                  Principios
-                </Link>
-                <Link className="glass-button" href="/admin/login">
-                  Acceso interno
-                </Link>
-              </div>
-            </div>
-          </div>
-        </Section>
-      </footer>
     </PublicPageShell>
   );
 }

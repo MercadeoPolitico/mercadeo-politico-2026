@@ -499,8 +499,57 @@ function isBadOgImageUrl(u: string): boolean {
     "share.jpg",
   ];
   if (badBits.some((b) => s.includes(b))) return true;
+  // Avoid document/PDF renders (common: Wikimedia PDF -> JPG, scanned bulletins/manuals).
+  const docBits = [
+    ".pdf",
+    "pdf.jpg",
+    "pdf.png",
+    "/page1-",
+    "/page2-",
+    "/page3-",
+    "boletin",
+    "boletín",
+    "gaceta",
+    "manual",
+    "juridic",
+    "jurídic",
+    "resolucion",
+    "resolución",
+    "decreto",
+    "acta",
+    "oficio",
+    "documento",
+    "carta",
+  ];
+  if (docBits.some((b) => s.includes(b))) return true;
   if (s.endsWith(".svg")) return true;
   return false;
+}
+
+function stripPublicMetaLines(input: string): string {
+  const raw = normalizeLineBreaks(String(input || ""));
+  if (!raw) return "";
+  const lines = raw.split("\n");
+  const kept: string[] = [];
+  for (const l of lines) {
+    const t = String(l || "").trim();
+    if (!t) {
+      kept.push("");
+      continue;
+    }
+    const low = t.toLowerCase();
+    if (low.startsWith("seo:")) continue;
+    if (low.startsWith("imagen:")) continue;
+    if (low.startsWith("crédito imagen:") || low.startsWith("credito imagen:")) continue;
+    if (low.startsWith("fuente imagen:")) continue;
+    // Keep legal notes, but drop "credit to outlet" repetition.
+    if (low.startsWith("contenido generado y analizado por")) continue;
+    kept.push(t);
+  }
+  return kept
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function fallbackSvgDataUrl(seed: string): string {
@@ -1398,8 +1447,19 @@ export async function POST(req: Request) {
         ballotNumber: pol.ballot_number ?? null,
         region: pol.region ?? null,
       });
-      const excerpt = blogWithCredits.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
+      const publicMain = stripPublicMetaLines(blogWithCredits);
+      // Guardrail: do not publish posts that are essentially only metadata/credits.
+      if (wordCount(publicMain) < 120) {
+        console.warn("[editorial-orchestrate] skip_auto_publish_low_content", { requestId, candidate_id: pol.id, wc: wordCount(publicMain) });
+        return NextResponse.json({ ok: true, id: inserted.id, auto_published: false, reason: "low_content", request_id: requestId });
+      }
+
+      const excerpt = publicMain.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
       const slug = slugify(`${pol.slug}-${created_at}-${titleLine}`);
+      const mediaUrl =
+        (metadata as any)?.media?.image_url && typeof (metadata as any).media.image_url === "string" ? String((metadata as any).media.image_url) : "";
+      const mediaOk =
+        mediaUrl && !isBadOgImageUrl(mediaUrl) && String((metadata as any)?.media?.source ?? "") !== "fallback_svg" ? mediaUrl : "";
 
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")
@@ -1410,7 +1470,7 @@ export async function POST(req: Request) {
           subtitle,
           excerpt,
           body: blogWithCredits,
-          media_urls: (metadata as any)?.media?.image_url ? [(metadata as any).media.image_url] : null,
+          media_urls: mediaOk ? [mediaOk] : null,
           source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
           status: "published",
           published_at: created_at,

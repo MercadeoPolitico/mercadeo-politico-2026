@@ -40,6 +40,40 @@ function isAllowedLicenseShort(s: string | null): boolean {
   );
 }
 
+function isLikelyDocumentImageTitleOrUrl(input: string): boolean {
+  const s = String(input || "").toLowerCase();
+  if (!s) return false;
+  // Common "document scan" patterns from Wikimedia uploads (PDF renders, manuals, bulletins, decrees, etc).
+  const bad = [
+    ".pdf",
+    "pdf.jpg",
+    "pdf.png",
+    "/page1-",
+    "/page2-",
+    "/page3-",
+    "boletin",
+    "boletín",
+    "gaceta",
+    "diario oficial",
+    "resolucion",
+    "resolución",
+    "decreto",
+    "acta",
+    "oficio",
+    "manual",
+    "juridic",
+    "jurídic",
+    "sentencia",
+    "ley_",
+    "ley-",
+    "documento",
+    "carta",
+    "circular",
+    "formulario",
+  ];
+  return bad.some((b) => s.includes(b));
+}
+
 function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>): WikimediaImage | null {
   const filtered = cands.filter((c) => !avoidUrls.has(c.image_url));
   const pool = filtered.length ? filtered : cands;
@@ -91,6 +125,7 @@ export async function pickWikimediaImage(args: {
     const image_url = safeText(info?.url);
     const thumb_url = safeText(info?.thumburl);
     if (!title || !image_url) continue;
+    if (isLikelyDocumentImageTitleOrUrl(`${title} ${image_url}`)) continue;
 
     const page_url = `https://commons.wikimedia.org/wiki/${encodeURIComponent(title.replaceAll(" ", "_"))}`;
 

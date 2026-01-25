@@ -226,27 +226,50 @@ body::before {
 
 /* Brand seal glow (footer) */
 @keyframes marketbrainSealGlow {
-  0%,
+  0% {
+    transform: translateY(0) scale(1);
+    filter:
+      drop-shadow(0 0 14px rgba(56, 189, 248, 0.35))
+      drop-shadow(0 0 22px rgba(255, 255, 255, 0.22))
+      drop-shadow(0 0 18px rgba(34, 197, 94, 0.22));
+    opacity: 0.92;
+  }
+  18% {
+    transform: translateY(-0.5px) scale(1.05);
+    filter:
+      drop-shadow(0 0 22px rgba(56, 189, 248, 0.55))
+      drop-shadow(0 0 32px rgba(255, 255, 255, 0.34))
+      drop-shadow(0 0 26px rgba(34, 197, 94, 0.40));
+    opacity: 1;
+  }
+  36% {
+    transform: translateY(0) scale(1.01);
+    filter:
+      drop-shadow(0 0 18px rgba(56, 189, 248, 0.44))
+      drop-shadow(0 0 26px rgba(255, 255, 255, 0.26))
+      drop-shadow(0 0 22px rgba(34, 197, 94, 0.30));
+    opacity: 0.98;
+  }
+  62% {
+    transform: translateY(-0.5px) scale(1.04);
+    filter:
+      drop-shadow(0 0 24px rgba(56, 189, 248, 0.58))
+      drop-shadow(0 0 34px rgba(255, 255, 255, 0.38))
+      drop-shadow(0 0 30px rgba(34, 197, 94, 0.42));
+    opacity: 1;
+  }
   100% {
     transform: translateY(0) scale(1);
     filter:
-      drop-shadow(0 0 12px rgba(56, 189, 248, 0.28))
-      drop-shadow(0 0 22px rgba(250, 204, 21, 0.22))
-      drop-shadow(0 0 10px rgba(239, 68, 68, 0.12));
+      drop-shadow(0 0 14px rgba(56, 189, 248, 0.35))
+      drop-shadow(0 0 22px rgba(255, 255, 255, 0.22))
+      drop-shadow(0 0 18px rgba(34, 197, 94, 0.22));
     opacity: 0.92;
-  }
-  50% {
-    transform: translateY(-1px) scale(1.03);
-    filter:
-      drop-shadow(0 0 20px rgba(56, 189, 248, 0.48))
-      drop-shadow(0 0 34px rgba(250, 204, 21, 0.34))
-      drop-shadow(0 0 18px rgba(239, 68, 68, 0.18));
-    opacity: 1;
   }
 }
 
 .marketbrain-seal-glow {
-  animation: marketbrainSealGlow 3.2s ease-in-out infinite;
+  animation: marketbrainSealGlow 2.9s ease-in-out infinite;
   will-change: transform, filter, opacity;
 }
 
