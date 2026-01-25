@@ -95,6 +95,38 @@ Notas:
 - Estos links **NO** guardan credenciales. Solo indican “esta red existe y está activa”.
 - La automatización envía a n8n la lista de `social_links` activos junto con las variantes generadas (facebook/x/reddit).
 
+---
+
+## WhatsApp (recomendado): alta 1‑a‑1 por enlace + cero spam
+
+En WhatsApp **no hacemos envíos masivos** desde la plataforma. En su lugar usamos un flujo **uno‑a‑uno** y gobernado:
+- El Admin registra el destino (WhatsApp) para un candidato.
+- El sistema genera un **enlace de autorización** copiable.
+- El dueño del WhatsApp (número/cuenta) abre el enlace y autoriza.
+- El Admin Panel muestra estado (`pending | approved | revoked`) y trazabilidad (quién/cuándo).
+
+### Cómo hacerlo (paso a paso, Admin)
+1) Ve a `Admin → n8n / Redes` (`/admin/networks`).
+2) En **Destinos sociales**, agrega un destino:
+   - **Candidato**
+   - **Red**: WhatsApp
+   - **URL/Referencia**: usa un link válido (ej. wa.me, shortlink, o referencia acordada del número/canal).
+3) Copia el **enlace de autorización** que te muestra el panel.
+4) Envíalo por WhatsApp **solo** al dueño del número/canal (uno por uno).
+5) Cuando el dueño apruebe, verifica que el estado quede en **verde/approved**.
+6) Repite el proceso para el siguiente candidato/destino.
+
+### Por qué NO WhatsApp masivo (y por qué tampoco “spam” en otras redes)
+Esto es por **cumplimiento y supervivencia del canal**:
+- **Consentimiento (privacidad)**: para mensajería directa necesitas **opt‑in real** (consentimiento verificable). En Colombia aplica Habeas Data (Ley 1581) y principios similares a GDPR: mínimo uso de datos, finalidad, revocación.
+- **Políticas anti‑spam de WhatsApp**: WhatsApp penaliza patrones de envío masivo (bloqueos, baja de “quality rating”, restricciones del número, baneos). La gente puede reportar/bloquear y eso degrada el canal.
+- **Plantillas y reglas** (WhatsApp Business API): cuando se escala, se requieren **plantillas aprobadas**, ventanas de conversación, y controles estrictos. No queremos operar ese riesgo desde el Admin Panel.
+- **Otras redes hacen lo mismo**: Facebook/Instagram/X/Reddit/Telegram penalizan automatización “agresiva” (rate limits, shadowban, suspensión de app/cuenta). Nuestro objetivo es comunicación **ética y sostenible**, no volumen.
+
+Recomendación práctica:
+- Publica 1‑a‑1 solo a contactos con consentimiento.
+- Mantén frecuencia baja, contenido útil, y siempre ofrece salida (“si no deseas recibir, me dices y no volvemos a escribirte”).
+
 ### 2) Conectar credenciales en n8n (publicación real)
 
 n8n corre en Railway y es el “conector”:

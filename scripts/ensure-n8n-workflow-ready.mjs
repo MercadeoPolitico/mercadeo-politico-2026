@@ -9,7 +9,8 @@
  * - N8N_WEBHOOK_URL (used to derive expected webhook path)
  *
  * Notes:
- * - This uses n8n Public API endpoints (/api/v1/*).
+ * - This uses n8n Public API endpoints (/api/v1/*). Some deployments run under a base path
+ *   (e.g. `/n8n`), so we auto-detect the correct prefix.
  * - If your n8n instance returns 401 even with the API key, you must enable the Public API in n8n.
  */
 import fs from "node:fs";
@@ -57,6 +58,17 @@ function expectedWebhookPathFromUrl(webhookUrl) {
   return m[1];
 }
 
+async function discoverApiPrefix(base, headers) {
+  // Try common prefixes. Railway deployments sometimes expose n8n under /n8n.
+  const candidates = ["", "/n8n"];
+  for (const pref of candidates) {
+    // eslint-disable-next-line no-await-in-loop
+    const r = await httpJson(`${base}${pref}/api/v1/workflows`, { headers });
+    if (r.ok) return pref;
+  }
+  return null;
+}
+
 async function httpJson(url, { method = "GET", headers = {}, body } = {}) {
   const resp = await fetch(url, {
     method,
@@ -77,14 +89,16 @@ function workflowHasWebhookPath(workflow, expectedPath) {
   const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
   const wh = nodes.find((n) => n?.type === "n8n-nodes-base.webhook");
   const current = String(wh?.parameters?.path ?? "").trim();
-  return { ok: Boolean(current && expectedPath && current === expectedPath), current };
+  const method = String(wh?.parameters?.httpMethod ?? "").trim().toUpperCase();
+  return { ok: Boolean(current && expectedPath && current === expectedPath), current, method };
 }
 
-function withUpdatedWebhookPath(workflow, expectedPath) {
+function withUpdatedWebhookConfig(workflow, expectedPath) {
   const nodes = Array.isArray(workflow?.nodes) ? workflow.nodes : [];
   const nextNodes = nodes.map((n) => {
     if (n?.type !== "n8n-nodes-base.webhook") return n;
-    return { ...n, parameters: { ...(n.parameters ?? {}), path: expectedPath } };
+    // Ensure POST, since our backend sends JSON payload via POST.
+    return { ...n, parameters: { ...(n.parameters ?? {}), path: expectedPath, httpMethod: "POST" } };
   });
   return { ...workflow, nodes: nextNodes };
 }
@@ -113,8 +127,20 @@ async function main() {
   const base = baseUrlFromWebhookUrl(webhookUrl);
   const headers = { "X-N8N-API-KEY": apiKey, "content-type": "application/json" };
 
+  const apiPrefix = await discoverApiPrefix(base, headers);
+  if (apiPrefix === null) {
+    console.log(
+      JSON.stringify(
+        { status: "error", details: { step: "discover_api_prefix", status: 401, message: "unauthorized" } },
+        null,
+        2,
+      ),
+    );
+    process.exit(1);
+  }
+
   // 1) List workflows
-  const list = await httpJson(`${base}/api/v1/workflows`, { headers });
+  const list = await httpJson(`${base}${apiPrefix}/api/v1/workflows`, { headers });
   if (!list.ok) {
     console.log(
       JSON.stringify(
@@ -136,8 +162,8 @@ async function main() {
 
   // 2) Create if missing
   if (!existing?.id) {
-    const createdWorkflow = withUpdatedWebhookPath(desired, expectedPath);
-    const created = await httpJson(`${base}/api/v1/workflows`, {
+    const createdWorkflow = withUpdatedWebhookConfig(desired, expectedPath);
+    const created = await httpJson(`${base}${apiPrefix}/api/v1/workflows`, {
       method: "POST",
       headers,
       body: { ...createdWorkflow, active: true },
@@ -148,7 +174,7 @@ async function main() {
   }
 
   // 3) Fetch full workflow, then update path/active if needed
-  const fetched = await httpJson(`${base}/api/v1/workflows/${existing.id}`, { headers });
+  const fetched = await httpJson(`${base}${apiPrefix}/api/v1/workflows/${existing.id}`, { headers });
   if (!fetched.ok) {
     console.log(JSON.stringify({ status: "error", details: { step: "fetch", http_status: fetched.status } }, null, 2));
     process.exit(1);
@@ -157,15 +183,16 @@ async function main() {
   const current = fetched.json?.data ?? fetched.json ?? {};
   const active = Boolean(current.active);
   const pathCheck = workflowHasWebhookPath(current, expectedPath);
+  const methodOk = pathCheck.method === "POST";
 
-  const needsUpdate = !pathCheck.ok || !active;
+  const needsUpdate = !pathCheck.ok || !methodOk || !active;
   if (!needsUpdate) {
     console.log(JSON.stringify({ status: "ready", details: { workflow_id: existing.id } }, null, 2));
     process.exit(0);
   }
 
-  const merged = withUpdatedWebhookPath({ ...current, ...desired, id: existing.id }, expectedPath);
-  const updated = await httpJson(`${base}/api/v1/workflows/${existing.id}`, {
+  const merged = withUpdatedWebhookConfig({ ...current, ...desired, id: existing.id }, expectedPath);
+  const updated = await httpJson(`${base}${apiPrefix}/api/v1/workflows/${existing.id}`, {
     method: "PUT",
     headers,
     body: { ...merged, active: true },
@@ -177,7 +204,13 @@ async function main() {
   }
 
   const status = active ? "updated" : "activated";
-  console.log(JSON.stringify({ status, details: { workflow_id: existing.id, fixed_path: !pathCheck.ok } }, null, 2));
+  console.log(
+    JSON.stringify(
+      { status, details: { workflow_id: existing.id, fixed_path: !pathCheck.ok, fixed_method: !methodOk, apiPrefix } },
+      null,
+      2,
+    ),
+  );
   process.exit(0);
 }
 
