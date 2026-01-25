@@ -52,7 +52,7 @@ async function main() {
   const sb = createClient(url, key, { auth: { persistSession: false } });
 
   const { data: pols } = await sb.from("politicians").select("id,name,ballot_number").order("id", { ascending: true });
-  const politicians = (pols ?? []) as any[];
+  const politicians = Array.isArray(pols) ? pols : [];
   assert(politicians.length, "no_politicians");
 
   for (const p of politicians) {
