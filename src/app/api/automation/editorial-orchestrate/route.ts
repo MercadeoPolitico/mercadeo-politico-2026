@@ -483,6 +483,99 @@ function buildSubtitle(args: { candidateName: string; office: string; axis: stri
   return `${name} · ${office} · ${axis}…`.slice(0, 140);
 }
 
+function stripMarkdownLike(input: string): string {
+  return String(input || "")
+    .replaceAll(/[*_`>#-]/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
+function pickProposalAxes(args: { proposals: string; hints: string[] }): string[] {
+  const raw = String(args.proposals || "");
+  if (!raw.trim()) return [];
+  const hints = Array.from(new Set((args.hints ?? []).map((h) => String(h || "").toLowerCase()).filter((h) => h.length >= 4))).slice(0, 18);
+
+  const lines = raw
+    .split(/\r?\n/g)
+    .map((l) => stripMarkdownLike(l))
+    .map((l) => l.replaceAll(/\s+/g, " ").trim())
+    .filter((l) => l.length >= 10 && l.length <= 110)
+    .slice(0, 220);
+
+  const scored = lines
+    .map((l) => {
+      const low = l.toLowerCase();
+      const hit = hints.filter((h) => low.includes(h)).length;
+      const civic = ["seguridad", "territorial", "control", "corrup", "empleo", "educ", "legal", "justic", "tecnolog", "polic", "vereda", "barrio"].filter((k) =>
+        low.includes(k),
+      ).length;
+      const score = hit * 3 + civic;
+      return { l, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const picked: string[] = [];
+  for (const s of scored) {
+    if (picked.length >= 2) break;
+    if (!picked.some((p) => p.toLowerCase() === s.l.toLowerCase())) picked.push(s.l);
+  }
+  return picked;
+}
+
+function ensureCandidateAlignmentInBlog(args: {
+  text: string;
+  candidateName: string;
+  ballotNumber: string | number | null;
+  office: string;
+  proposals: string;
+  axisHint: string | null;
+  newsHint: string;
+}): string {
+  const base = normalizeLineBreaks(args.text || "");
+  if (!base) return base;
+  const name = normalizeSpaces(args.candidateName);
+  const ballot = args.ballotNumber ? String(args.ballotNumber).trim() : "";
+  const mustToken = ballot ? `tarjetón ${ballot}` : name;
+  const hasCandidate = name && base.toLowerCase().includes(name.toLowerCase());
+  const hasBallot = ballot ? base.toLowerCase().includes(`tarjetón ${ballot}`) : true;
+
+  const axes = (() => {
+    const hints = [
+      ...(args.axisHint ? [args.axisHint] : []),
+      ...String(args.newsHint || "")
+        .split(/\s+/g)
+        .map((x) => x.replaceAll(/[^\p{L}\p{N}]+/gu, "").trim())
+        .filter(Boolean)
+        .slice(0, 10),
+    ];
+    const picked = pickProposalAxes({ proposals: args.proposals, hints });
+    return picked.length ? picked : args.axisHint ? [args.axisHint] : [];
+  })();
+
+  const badge = ballot ? `**${name} · Tarjetón ${ballot}**` : `**${name}**`;
+  const axisSentence = axes.length
+    ? `En su programa, destaca: ${axes.map((a) => `“${a}”`).join(" y ")}.`
+    : "En su programa, plantea medidas concretas para fortalecer la seguridad con legalidad y control institucional.";
+
+  const paragraph =
+    `${badge} propone un enfoque institucional y verificable para responder a retos como el de esta noticia. ` +
+    `${axisSentence} ` +
+    `Esto permite traducir lecciones (locales o internacionales) en acciones aplicables a Colombia, con prioridad en ${String(args.office || "").toLowerCase().includes("senado") ? "la agenda nacional" : "el territorio"}.\n`;
+
+  // Insert after "Cómo encaja..." if present; otherwise insert before "Fuente:" or at end.
+  const lines = base.split("\n");
+  const idxHow = lines.findIndex((l) => l.toLowerCase().includes("cómo encaja") || l.toLowerCase().includes("como encaja"));
+  const idxSource = lines.findIndex((l) => l.toLowerCase().startsWith("fuente:"));
+  const insertAt = idxHow >= 0 ? idxHow + 1 : idxSource >= 0 ? idxSource : Math.max(2, lines.length - 1);
+
+  // Avoid duplicating if already present.
+  if (hasCandidate && hasBallot) return base;
+  if (base.toLowerCase().includes(mustToken.toLowerCase())) return base;
+
+  const next = [...lines.slice(0, insertAt), "", paragraph.trim(), "", ...lines.slice(insertAt)].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return next;
+}
+
 function isBadOgImageUrl(u: string): boolean {
   const s = String(u || "").toLowerCase();
   if (!s) return true;
@@ -1439,7 +1532,17 @@ export async function POST(req: Request) {
     const withImg = [rebuilt.trim(), "", imgLine, creditLine].filter(Boolean).join("\n");
     // Append public footer (signature + disclaimers), and RSS credit when applicable.
     const sourceNameForCredit = rssChosen ? rssChosen.source_name : null;
-    return appendPublicFooter({ text: withImg, based_on_source_name: sourceNameForCredit });
+    const withFooter = appendPublicFooter({ text: withImg, based_on_source_name: sourceNameForCredit });
+    // Hard requirement: always tie the news back to 1–2 proposal axes and include candidate + ballot in bold.
+    return ensureCandidateAlignmentInBlog({
+      text: withFooter,
+      candidateName: pol.name,
+      ballotNumber: pol.ballot_number ?? null,
+      office: pol.office,
+      proposals: String(pol.proposals || ""),
+      axisHint: axis,
+      newsHint: rssChosen?.title ?? article?.title ?? "",
+    });
   })();
 
   // Persist: generated_text is the BLOG variant (Centro Informativo Ciudadano).

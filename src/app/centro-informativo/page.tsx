@@ -94,6 +94,25 @@ function splitPublicText(input: string): { main: string; meta: string[]; legal: 
   };
 }
 
+function renderInlineBold(text: string): Array<string | JSX.Element> {
+  const t = String(text || "");
+  if (!t.includes("**")) return [t];
+  const out: Array<string | JSX.Element> = [];
+  const re = /\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t))) {
+    const start = m.index;
+    const end = re.lastIndex;
+    if (start > last) out.push(t.slice(last, start));
+    const inner = String(m[1] ?? "").trim();
+    if (inner) out.push(<strong key={`${start}-${end}`} className="text-foreground">{inner}</strong>);
+    last = end;
+  }
+  if (last < t.length) out.push(t.slice(last));
+  return out;
+}
+
 export default async function CitizenInfoCenterPage() {
   const supabase = await createSupabaseServerClient();
   // Editorial policy:
@@ -165,7 +184,9 @@ export default async function CitizenInfoCenterPage() {
                         ) : null}
                       </div>
 
-                      {excerptParts.main ? <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-sm text-muted">{excerptParts.main}</p> : null}
+                      {excerptParts.main ? (
+                        <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-sm text-muted">{renderInlineBold(excerptParts.main)}</p>
+                      ) : null}
 
                       {mainText ? (
                         <details className="mt-4 rounded-xl border border-border bg-background/50 p-4">
@@ -177,7 +198,7 @@ export default async function CitizenInfoCenterPage() {
                               .filter(Boolean)
                               .map((para, idx) => (
                                 <p key={idx} className="whitespace-pre-wrap">
-                                  {para}
+                                  {renderInlineBold(para)}
                                 </p>
                               ))}
                           </div>
