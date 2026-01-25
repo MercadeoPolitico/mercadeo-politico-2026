@@ -12,6 +12,7 @@ import { pickWikimediaImage } from "@/lib/media/wikimedia";
 import { fetchOpenGraphMedia } from "@/lib/media/opengraph";
 import { pickTopRssItem, type RssSource, type RssItem } from "@/lib/news/rss";
 import { ensureSocialVariants } from "@/lib/automation/socialVariants";
+import { createHash, randomUUID } from "node:crypto";
 
 export const runtime = "nodejs";
 
@@ -557,37 +558,11 @@ function stripPublicMetaLines(input: string): string {
     .trim();
 }
 
-function fallbackSvgDataUrl(seed: string): string {
-  const s = String(seed || "mp26").slice(0, 80);
-  const hash = Array.from(s).reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) >>> 0, 2166136261);
-  const r = (hash % 255) | 0;
-  const g = ((hash >> 8) % 255) | 0;
-  const b = ((hash >> 16) % 255) | 0;
-  const c1 = `rgb(${Math.max(40, r)},${Math.max(60, g)},${Math.max(80, b)})`;
-  const c2 = `rgb(${Math.max(180, 255 - r)},${Math.max(120, 255 - g)},${Math.max(80, 255 - b)})`;
-  const c3 = "rgb(255, 204, 0)"; // Colombia yellow vibe (abstract)
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800">
-  <defs>
-    <radialGradient id="g1" cx="25%" cy="30%" r="75%">
-      <stop offset="0%" stop-color="${c3}" stop-opacity="0.55"/>
-      <stop offset="55%" stop-color="${c1}" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="rgb(10, 20, 35)" stop-opacity="1"/>
-    </radialGradient>
-    <radialGradient id="g2" cx="80%" cy="65%" r="70%">
-      <stop offset="0%" stop-color="${c2}" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="rgb(10, 20, 35)" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="blur" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="28"/>
-    </filter>
-  </defs>
-  <rect width="1400" height="800" fill="rgb(10,20,35)"/>
-  <rect width="1400" height="800" fill="url(#g1)"/>
-  <circle cx="1100" cy="540" r="360" fill="url(#g2)" filter="url(#blur)"/>
-  <circle cx="360" cy="600" r="260" fill="${c1}" opacity="0.18" filter="url(#blur)"/>
-</svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+function fallbackPublicImageUrl(seed: string): string {
+  // Use a real hosted asset (not a data URL) so DB constraints that require http(s) URLs are satisfied.
+  const s = String(seed || "mp26").slice(0, 120);
+  const v = createHash("sha256").update(s).digest("hex").slice(0, 10);
+  return `${getSiteUrlString()}/fallback/news.svg?v=${v}`;
 }
 
 async function fetchActiveRssSources(args: {
@@ -761,7 +736,7 @@ export async function POST(req: Request) {
 
   const requestId = (() => {
     try {
-      return crypto.randomUUID();
+      return randomUUID();
     } catch {
       return `req_${Date.now()}`;
     }
@@ -1354,7 +1329,7 @@ export async function POST(req: Request) {
     .join(" ");
 
   const pickedImage = ogImage ? null : await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
-  const finalImageUrl = ogImage ?? pickedImage?.thumb_url ?? pickedImage?.image_url ?? fallbackSvgDataUrl(`${pol.id}-${imageQuery}-${Date.now()}`);
+  const finalImageUrl = ogImage ?? pickedImage?.thumb_url ?? pickedImage?.image_url ?? fallbackPublicImageUrl(`${pol.id}-${imageQuery}-${Date.now()}`);
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -1575,7 +1550,7 @@ export async function POST(req: Request) {
       const mediaUrl =
         (metadata as any)?.media?.image_url && typeof (metadata as any).media.image_url === "string" ? String((metadata as any).media.image_url) : "";
       // Publish an image whenever possible. If we couldn't find a real image, the fallback SVG is still better than blank.
-      const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : fallbackSvgDataUrl(`${pol.id}|${created_at}|fallback`);
+      const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : fallbackPublicImageUrl(`${pol.id}|${created_at}|fallback`);
 
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")

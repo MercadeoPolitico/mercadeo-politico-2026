@@ -47,12 +47,19 @@ async function main() {
   const sb = createClient(url, key, { auth: { persistSession: false } });
 
   // 1) Ensure auto_publish is ON for all politicians (requested default ON).
-  await sb.from("politicians").update({ auto_publish_enabled: true }).neq("id", "");
+  {
+    const { error } = await sb.from("politicians").update({ auto_publish_enabled: true }).neq("id", "");
+    if (error) throw new Error(`politicians_update_failed:${error.message || "unknown"}`);
+  }
 
   // 2) Purge current Centro Informativo posts.
   const before = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true });
   const beforeCount = before.count ?? null;
-  await sb.from("citizen_news_posts").delete().neq("id", "");
+  {
+    // citizen_news_posts.id is uuid; comparing to "" can fail. Use a safe always-true predicate.
+    const { error } = await sb.from("citizen_news_posts").delete().neq("status", "__never__");
+    if (error) throw new Error(`purge_failed:${error.message || "unknown"}`);
+  }
 
   const after = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true });
   const afterCount = after.count ?? null;
