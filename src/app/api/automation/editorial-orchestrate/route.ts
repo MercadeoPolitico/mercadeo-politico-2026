@@ -657,6 +657,49 @@ async function recentUsedNewsUrls(args: {
   return Array.from(new Set(urls.map((u) => u.trim()).filter(Boolean))).slice(0, 240);
 }
 
+async function recentUsedMediaUrls(args: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  candidate_id: string;
+}): Promise<string[]> {
+  const admin = args.admin;
+  if (!admin) return [];
+  const urls: string[] = [];
+  try {
+    // Published posts (candidate)
+    const { data: posts } = await admin
+      .from("citizen_news_posts")
+      .select("media_urls")
+      .eq("candidate_id", args.candidate_id)
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(120);
+    for (const r of posts ?? []) {
+      const arr = Array.isArray((r as any)?.media_urls) ? ((r as any).media_urls as unknown[]) : [];
+      for (const u of arr) if (typeof u === "string" && u.trim()) urls.push(u.trim());
+    }
+
+    // Drafts metadata (survives even if posts are purged)
+    const { data: drafts } = await admin
+      .from("ai_drafts")
+      .select("generated_text,metadata")
+      .eq("candidate_id", args.candidate_id)
+      .eq("content_type", "blog")
+      .order("created_at", { ascending: false })
+      .limit(160);
+    for (const d of drafts ?? []) {
+      const m = (d as any)?.metadata ?? null;
+      const mu = m?.media && typeof m.media.image_url === "string" ? String(m.media.image_url).trim() : "";
+      if (mu) urls.push(mu);
+      const gt = typeof (d as any)?.generated_text === "string" ? String((d as any).generated_text) : "";
+      const mm = gt.match(/Imagen:\s*(https?:\/\/\S+)/i)?.[1] ?? "";
+      if (mm) urls.push(String(mm).trim());
+    }
+  } catch {
+    // ignore
+  }
+  return Array.from(new Set(urls.map((u) => u.trim()).filter(Boolean))).slice(0, 300);
+}
+
 function chooseNewsSignal(args: {
   gdelt: import("@/lib/news/gdelt").GdeltArticle | null;
   rss: RssItem | null;
@@ -1264,6 +1307,10 @@ export async function POST(req: Request) {
       if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
     }
 
+    // Avoid repeating images even if posts are purged.
+    const recentDraftMedia = await recentUsedMediaUrls({ admin, candidate_id: pol.id });
+    for (const u of recentDraftMedia) if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
+
     // Avoid repeating images across recent posts (candidate + global).
     const { data: recentCandidatePosts } = await admin
       .from("citizen_news_posts")
@@ -1528,7 +1575,7 @@ export async function POST(req: Request) {
       const mediaUrl =
         (metadata as any)?.media?.image_url && typeof (metadata as any).media.image_url === "string" ? String((metadata as any).media.image_url) : "";
       // Publish an image whenever possible. If we couldn't find a real image, the fallback SVG is still better than blank.
-      const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : "";
+      const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : fallbackSvgDataUrl(`${pol.id}|${created_at}|fallback`);
 
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")
@@ -1539,7 +1586,7 @@ export async function POST(req: Request) {
           subtitle,
           excerpt,
           body: blogWithCredits,
-          media_urls: mediaOk ? [mediaOk] : null,
+          media_urls: [mediaOk],
           source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
           status: "published",
           published_at: created_at,
