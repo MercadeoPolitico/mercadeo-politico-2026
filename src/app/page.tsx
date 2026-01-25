@@ -200,6 +200,9 @@ export default function Home() {
             <Link className="glass-button" href="/about">
               Ver principios editoriales
             </Link>
+            <Link className="glass-button" href="/admin/login">
+              Acceso interno
+            </Link>
           </div>
           <div className="mt-4 rounded-2xl border border-white/14 bg-white/6 px-4 py-3 backdrop-blur">
             <RotatingSeoMicrocopy />
