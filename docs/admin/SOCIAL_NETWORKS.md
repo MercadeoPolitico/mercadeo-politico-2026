@@ -12,6 +12,9 @@ Opciones de conectividad (conviven):
   - Tokens quedan **cifrados** en Supabase (`social_oauth_connections`) y n8n publica vía un “bridge” a Next.js cuando `credential_ref` empieza por `oauth:`.
   - Runbook: `docs/runbooks/OAUTH_CONNECT_META_X_REDDIT.md`.
 
+Estado de “proveedores disponibles”:
+- En `/admin/networks`, el dropdown de OAuth muestra **solo** los proveedores configurados (ej. Meta, X). Si mañana agregas otro, aparecerá automáticamente cuando se configure en el servidor.
+
 ### Estado (infra) — n8n en Railway (importante para operación)
 - Si n8n muestra `502` con Railway Edge, revisa permisos del volumen `/data` (ver `railway/n8n/Dockerfile`).
 - Para automatizar el workflow sin entrar a la UI:

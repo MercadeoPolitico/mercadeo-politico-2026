@@ -37,6 +37,10 @@ Una plataforma de comunicación política **ética, automatizada y gobernada** p
 - El dueño aprueba/rechaza.
 - El sistema registra quién autorizó y cuándo.
 
+**Plus (one‑click OAuth)**:
+- Para redes soportadas (Meta + X), el Admin puede generar un enlace de conexión OAuth.
+- El dueño conecta desde su celular y queda listo para publicar con control y trazabilidad.
+
 ---
 
 ## Arquitectura (sin secretos)

@@ -49,6 +49,31 @@ async function metaPages(accessToken: string) {
   })).filter((x: any) => x.id);
 }
 
+async function metaPageInstagramAccount(args: { pageId: string; accessToken: string }) {
+  const u = new URL(`https://graph.facebook.com/v19.0/${encodeURIComponent(args.pageId)}`);
+  u.searchParams.set("fields", "instagram_business_account,connected_instagram_account");
+  u.searchParams.set("access_token", args.accessToken);
+  const r = await fetch(u.toString(), { method: "GET", cache: "no-store" });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) return { ig_user_id: null as string | null };
+  const ig =
+    (j?.instagram_business_account?.id ? String(j.instagram_business_account.id) : null) ??
+    (j?.connected_instagram_account?.id ? String(j.connected_instagram_account.id) : null);
+  return { ig_user_id: ig && ig.trim() ? ig.trim() : null };
+}
+
+async function metaInstagramProfile(args: { igUserId: string; accessToken: string }) {
+  const u = new URL(`https://graph.facebook.com/v19.0/${encodeURIComponent(args.igUserId)}`);
+  u.searchParams.set("fields", "username,name");
+  u.searchParams.set("access_token", args.accessToken);
+  const r = await fetch(u.toString(), { method: "GET", cache: "no-store" });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) return { username: null as string | null, name: null as string | null };
+  const username = typeof j?.username === "string" ? j.username.trim() : "";
+  const name = typeof j?.name === "string" ? j.name.trim() : "";
+  return { username: username || null, name: name || null };
+}
+
 async function exchangeRedditCode(code: string, redirectUri: string, clientId: string, clientSecret: string) {
   const body = new URLSearchParams();
   body.set("grant_type", "authorization_code");
@@ -208,6 +233,64 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ prov
         };
         if (existingDest?.id) await admin.from("politician_social_destinations").update(destPayload).eq("id", existingDest.id);
         else await admin.from("politician_social_destinations").insert(destPayload);
+
+        // Also register Instagram Business (if page is connected).
+        try {
+          const { ig_user_id } = await metaPageInstagramAccount({ pageId: p.id, accessToken: tokenToStore });
+          if (ig_user_id) {
+            const igProfile = await metaInstagramProfile({ igUserId: ig_user_id, accessToken: tokenToStore });
+            const igUsername = igProfile.username;
+            const igName = igProfile.name ?? igUsername ?? ig_user_id;
+
+            await admin.from("social_oauth_connections").upsert(
+              {
+                provider: "meta",
+                candidate_id: String(st.candidate_id),
+                external_id: ig_user_id,
+                external_username: igUsername || null,
+                display_name: igName || null,
+                access_token_enc: encryptSecret(tokenToStore),
+                refresh_token_enc: null,
+                expires_at: expiresAt,
+                scopes: "instagram_basic instagram_content_publish",
+                status: "active",
+                updated_at: nowIso,
+              },
+              { onConflict: "provider,candidate_id,external_id" },
+            );
+
+            const igUrl = igUsername ? `https://instagram.com/${igUsername}` : `https://instagram.com`;
+            const { data: existingIgDest } = await admin
+              .from("politician_social_destinations")
+              .select("id")
+              .eq("politician_id", String(st.candidate_id))
+              .eq("profile_or_page_url", igUrl)
+              .maybeSingle();
+
+            const igDestPayload = {
+              politician_id: String(st.candidate_id),
+              network_name: `Instagram Business (OAuth): ${igUsername ? `@${igUsername}` : ig_user_id}`,
+              network_key: "instagram",
+              scope: "profile",
+              target_id: ig_user_id,
+              credential_ref: "oauth:meta",
+              network_type: "official",
+              profile_or_page_url: igUrl,
+              owner_name: null,
+              owner_contact_phone: null,
+              owner_contact_email: null,
+              active: true,
+              authorization_status: "approved",
+              authorized_at: nowIso,
+              revoked_at: null,
+              updated_at: nowIso,
+            };
+            if (existingIgDest?.id) await admin.from("politician_social_destinations").update(igDestPayload).eq("id", existingIgDest.id);
+            else await admin.from("politician_social_destinations").insert(igDestPayload);
+          }
+        } catch {
+          // ignore IG discovery (best-effort)
+        }
       }
 
       return NextResponse.redirect(doneUrl({ ok: true, provider, candidateId: String(st.candidate_id), count: upserts }));

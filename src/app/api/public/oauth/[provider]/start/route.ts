@@ -26,9 +26,17 @@ function metaAuthorizeUrl(params: { clientId: string; redirectUri: string; state
   u.searchParams.set("redirect_uri", params.redirectUri);
   u.searchParams.set("state", params.state);
   u.searchParams.set("response_type", "code");
-  // Minimal scope for Pages publishing will often require App Review.
-  // We request read scopes first; posting scope depends on app approval.
-  u.searchParams.set("scope", ["pages_show_list"].join(","));
+  // Meta ecosystem (Pages + Instagram Business). Some scopes may require App Review.
+  u.searchParams.set(
+    "scope",
+    [
+      "pages_show_list",
+      "pages_read_engagement",
+      "pages_manage_posts",
+      "instagram_basic",
+      "instagram_content_publish",
+    ].join(","),
+  );
   return u.toString();
 }
 

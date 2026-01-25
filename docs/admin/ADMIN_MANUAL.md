@@ -75,6 +75,21 @@ Acciones:
 
 > Nota: el admin **no ve** ni elige “credential_ref”; el sistema resuelve credenciales internamente por red.
 
+### A.1) Conexión OAuth por enlace (Meta / X)
+En la misma página (`/admin/networks`), abajo existe un bloque:
+- **“Conectar redes por enlace (OAuth)”**
+
+Flujo:
+1) El Admin selecciona **red** (solo aparecen las configuradas en el servidor) y **candidato**.
+2) Click **“Generar enlace OAuth (copiar)”**.
+3) Envía el link por WhatsApp al dueño.
+4) El dueño acepta permisos en su app oficial.
+5) El sistema guarda tokens **cifrados** y registra automáticamente destinos “approved” para publicación.
+
+Notas:
+- Meta conecta **Pages** y, si aplica, detecta y registra **Instagram Business** (si está vinculado a la Page).
+- Threads depende de configuración/permiso del API; se puede activar más adelante según el proveedor.
+
 ### B) Fuentes RSS (gestionables por admin)
 En la misma pestaña puedes:
 - **Agregar** RSS (name, region, rss_url, active)

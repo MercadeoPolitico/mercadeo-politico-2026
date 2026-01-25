@@ -114,6 +114,56 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, status: "published", response: j });
     }
 
+    if (network === "instagram") {
+      const igUserId = targetId;
+      if (!igUserId) return NextResponse.json({ ok: false, error: "missing_account_id" }, { status: 409 });
+      if (!imageUrl) return NextResponse.json({ ok: false, error: "instagram_requires_image" }, { status: 409 });
+      const version = String(process.env.MP26_META_GRAPH_VERSION || "v20.0");
+
+      // 1) Create media container
+      const createUrl = new URL(`https://graph.facebook.com/${version}/${igUserId}/media`);
+      createUrl.searchParams.set("image_url", imageUrl);
+      createUrl.searchParams.set("caption", trimmed);
+      createUrl.searchParams.set("access_token", accessToken);
+      const c = await fetch(createUrl.toString(), { method: "POST", cache: "no-store" });
+      const cj = await c.json().catch(() => null);
+      const creationId = cj?.id ? String(cj.id) : "";
+      if (!c.ok || !creationId) return NextResponse.json({ ok: false, error: "upstream_error", response: cj }, { status: 502 });
+
+      // 2) Publish
+      const pubUrl = new URL(`https://graph.facebook.com/${version}/${igUserId}/media_publish`);
+      pubUrl.searchParams.set("creation_id", creationId);
+      pubUrl.searchParams.set("access_token", accessToken);
+      const p = await fetch(pubUrl.toString(), { method: "POST", cache: "no-store" });
+      const pj = await p.json().catch(() => null);
+      if (!p.ok) return NextResponse.json({ ok: false, error: "upstream_error", response: pj }, { status: 502 });
+      return NextResponse.json({ ok: true, status: "published", response: pj });
+    }
+
+    if (network === "threads") {
+      const threadsUserId = targetId;
+      if (!threadsUserId) return NextResponse.json({ ok: false, error: "missing_account_id" }, { status: 409 });
+      const base = String(process.env.MP26_THREADS_GRAPH_BASE || "https://graph.threads.net/v1.0").replace(/\/+$/, "");
+
+      // Threads: create then publish (text-only)
+      const createUrl = new URL(`${base}/${threadsUserId}/threads`);
+      createUrl.searchParams.set("media_type", "TEXT");
+      createUrl.searchParams.set("text", trimmed.slice(0, 500));
+      createUrl.searchParams.set("access_token", accessToken);
+      const c = await fetch(createUrl.toString(), { method: "POST", cache: "no-store" });
+      const cj = await c.json().catch(() => null);
+      const creationId = cj?.id ? String(cj.id) : "";
+      if (!c.ok || !creationId) return NextResponse.json({ ok: false, error: "upstream_error", response: cj }, { status: 502 });
+
+      const pubUrl = new URL(`${base}/${threadsUserId}/threads_publish`);
+      pubUrl.searchParams.set("creation_id", creationId);
+      pubUrl.searchParams.set("access_token", accessToken);
+      const p = await fetch(pubUrl.toString(), { method: "POST", cache: "no-store" });
+      const pj = await p.json().catch(() => null);
+      if (!p.ok) return NextResponse.json({ ok: false, error: "upstream_error", response: pj }, { status: 502 });
+      return NextResponse.json({ ok: true, status: "published", response: pj });
+    }
+
     if (network === "x") {
       const r = await fetch("https://api.x.com/2/tweets", {
         method: "POST",

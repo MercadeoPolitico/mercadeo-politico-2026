@@ -105,6 +105,21 @@ export function NetworksPanel() {
   const [oauthLink, setOauthLink] = useState<string>("");
   const [oauthStatus, setOauthStatus] = useState<{ loaded: boolean; providers?: any; has_encryption_key?: boolean; counts?: any }>({ loaded: false });
 
+  const oauthProvidersAvailable = useMemo(() => {
+    const providers = oauthStatus.providers ?? {};
+    const encOk = oauthStatus.has_encryption_key === true;
+    if (!encOk) return [] as typeof OAUTH_PROVIDERS;
+    return OAUTH_PROVIDERS.filter((p) => providers?.[p.key]?.configured === true);
+  }, [oauthStatus.has_encryption_key, oauthStatus.providers]);
+
+  useEffect(() => {
+    // Keep selection valid if available providers change after load.
+    if (!oauthProvidersAvailable.length) return;
+    if (oauthProvidersAvailable.some((p) => p.key === oauthProvider)) return;
+    setOauthProvider(oauthProvidersAvailable[0]!.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oauthProvidersAvailable.map((p) => p.key).join("|")]);
+
   const byCandidate = useMemo(() => {
     const map: Record<string, Destination[]> = {};
     for (const d of destinations) {
@@ -598,7 +613,7 @@ export function NetworksPanel() {
             <div className="grid gap-2">
               <label className="text-xs font-semibold text-muted">Red</label>
               <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={oauthProvider} onChange={(e) => setOauthProvider(e.target.value as OAuthProviderKey)}>
-                {OAUTH_PROVIDERS.map((p) => (
+                {oauthProvidersAvailable.map((p) => (
                   <option key={p.key} value={p.key}>
                     {p.label}
                   </option>
@@ -608,7 +623,7 @@ export function NetworksPanel() {
                 Estado:{" "}
                 {oauthStatus.loaded ? (
                   <>
-                    {oauthStatus.providers?.[oauthProvider]?.configured ? (
+                    {oauthProvidersAvailable.length ? (
                       <span className="text-emerald-300">configurado</span>
                     ) : (
                       <span className="text-amber-300">no configurado</span>
@@ -620,6 +635,11 @@ export function NetworksPanel() {
                   <span className="text-muted">cargando…</span>
                 )}
               </p>
+              {!oauthProvidersAvailable.length && oauthStatus.loaded ? (
+                <p className="text-xs text-muted">
+                  No hay proveedores OAuth disponibles en este entorno. Se mostrarán automáticamente cuando estén configurados en el servidor.
+                </p>
+              ) : null}
             </div>
 
             <div className="grid gap-2">
@@ -645,7 +665,7 @@ export function NetworksPanel() {
                     setMsg("Enlace OAuth generado. Cópialo y envíalo por WhatsApp al dueño.");
                   }
                 }}
-                disabled={!oauthCandidateId}
+                disabled={!oauthCandidateId || !oauthProvidersAvailable.length}
               >
                 Generar enlace OAuth (copiar)
               </button>
