@@ -56,7 +56,7 @@ export function AdminAutoPublishToggle() {
       <div className="leading-tight">
         <p className="text-[11px] font-semibold tracking-wide text-foreground/90">Auto‑publicación</p>
         <p className="text-[11px] text-muted">
-          {enabled ? "Genera y publica (web + redes aprobadas)" : "Automatización apagada"} · cada ~{everyHours}h
+          {enabled ? "ON: crea + publica (web + redes aprobadas)" : "OFF: no publica automático"} · cada ~{everyHours}h
         </p>
       </div>
 
@@ -65,24 +65,30 @@ export function AdminAutoPublishToggle() {
         role="switch"
         aria-checked={enabled}
         className={[
-          "relative inline-flex h-6 w-12 shrink-0 items-center rounded-full border transition",
+          "relative inline-flex h-6 w-[84px] shrink-0 items-center rounded-full border transition",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-          enabled ? "border-emerald-200/50 bg-emerald-400/35" : "border-white/15 bg-white/10",
+          enabled ? "border-emerald-200/50 bg-emerald-400/30" : "border-white/15 bg-white/10",
         ].join(" ")}
         onClick={() => void setNext(!enabled)}
         disabled={state === "saving"}
-        title="Control global del cron auto-blog + auto-publicación"
+        title="Control global de auto-blog + auto-publicación"
       >
+        <span className="sr-only">{label}</span>
+
+        <span className="absolute inset-0 flex items-center justify-between px-2 text-[10px] font-semibold tracking-wide">
+          <span className={enabled ? "text-emerald-200/90" : "text-muted"}>ON</span>
+          <span className={!enabled ? "text-slate-200/80" : "text-muted"}>OFF</span>
+        </span>
+
         <span
           aria-hidden
           className={[
             "absolute left-1 inline-flex h-4 w-4 items-center justify-center rounded-full transition",
             enabled
-              ? "translate-x-6 bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.75)] marketbrain-neon-pulse"
+              ? "translate-x-[56px] bg-emerald-300 shadow-[0_0_22px_rgba(52,211,153,0.85)] marketbrain-neon-pulse"
               : "translate-x-0 bg-slate-400/60 shadow-[0_0_0_rgba(0,0,0,0)]",
           ].join(" ")}
         />
-        <span className="sr-only">{label}</span>
       </button>
     </div>
   );
