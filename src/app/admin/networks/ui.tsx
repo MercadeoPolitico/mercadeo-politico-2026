@@ -55,6 +55,7 @@ const OAUTH_PROVIDERS = [
   { key: "reddit", label: "Reddit" },
 ] as const;
 type OAuthProviderKey = (typeof OAUTH_PROVIDERS)[number]["key"];
+type OAuthProviderOption = (typeof OAUTH_PROVIDERS)[number];
 
 function guessNetworkKey(name: string, url: string): NetworkKey | "" {
   const hay = `${name} ${url}`.toLowerCase();
@@ -105,10 +106,10 @@ export function NetworksPanel() {
   const [oauthLink, setOauthLink] = useState<string>("");
   const [oauthStatus, setOauthStatus] = useState<{ loaded: boolean; providers?: any; has_encryption_key?: boolean; counts?: any }>({ loaded: false });
 
-  const oauthProvidersAvailable = useMemo(() => {
+  const oauthProvidersAvailable = useMemo<OAuthProviderOption[]>(() => {
     const providers = oauthStatus.providers ?? {};
     const encOk = oauthStatus.has_encryption_key === true;
-    if (!encOk) return [] as typeof OAUTH_PROVIDERS;
+    if (!encOk) return [];
     return OAUTH_PROVIDERS.filter((p) => providers?.[p.key]?.configured === true);
   }, [oauthStatus.has_encryption_key, oauthStatus.providers]);
 
