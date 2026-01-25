@@ -22,6 +22,7 @@ usando:
 Define variables de entorno en n8n (o credenciales) para no hardcodear:
 - `MP26_BASE_URL` (ej. tu dominio en Vercel)
 - `MP26_AUTOMATION_TOKEN` (igual a `AUTOMATION_API_TOKEN`)
+- `MP26_APP_BASE_URL` (igual a `MP26_BASE_URL`, usado por el “OAuth bridge” cuando `credential_ref` empieza por `oauth:`)
 
 ---
 
@@ -35,6 +36,9 @@ Token header requerido: `x-automation-token: <AUTOMATION_API_TOKEN>`
   - body: `{ "candidate_id": "...", "max_items": 1 }`
   - crea borrador en `ai_drafts` con `source="n8n"` y `status="pending_review"`
   - respeta `auto_blog_enabled` (si OFF → `skipped`)
+- `POST /api/automation/social/publish`
+  - **Uso**: publicación vía “OAuth bridge” cuando un destino trae `credential_ref="oauth:..."`.
+  - body: `{ destination, draft, media }` (los mismos objetos que ya maneja el workflow).
 
 ---
 

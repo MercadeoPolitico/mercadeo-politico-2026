@@ -49,6 +49,13 @@ type NetworkKey = (typeof NETWORK_KEYS)[number];
 const SCOPES = ["profile", "page", "channel"] as const;
 type Scope = (typeof SCOPES)[number];
 
+const OAUTH_PROVIDERS = [
+  { key: "meta", label: "Meta (Facebook/Instagram)" },
+  { key: "x", label: "X (Twitter)" },
+  { key: "reddit", label: "Reddit" },
+] as const;
+type OAuthProviderKey = (typeof OAUTH_PROVIDERS)[number]["key"];
+
 function guessNetworkKey(name: string, url: string): NetworkKey | "" {
   const hay = `${name} ${url}`.toLowerCase();
   if (hay.includes("facebook") || hay.includes("fb.com") || hay.includes("facebook.com")) return "facebook";
@@ -93,6 +100,11 @@ export function NetworksPanel() {
   const [newEmail, setNewEmail] = useState("");
   const [routing, setRouting] = useState<Record<string, { network_key: NetworkKey | ""; scope: Scope; target_id: string }>>({});
 
+  const [oauthProvider, setOauthProvider] = useState<OAuthProviderKey>("meta");
+  const [oauthCandidateId, setOauthCandidateId] = useState<string>("");
+  const [oauthLink, setOauthLink] = useState<string>("");
+  const [oauthStatus, setOauthStatus] = useState<{ loaded: boolean; providers?: any; has_encryption_key?: boolean; counts?: any }>({ loaded: false });
+
   const byCandidate = useMemo(() => {
     const map: Record<string, Destination[]> = {};
     for (const d of destinations) {
@@ -116,6 +128,7 @@ export function NetworksPanel() {
     setStats(j.stats ?? { total: 0, approved: 0, pending: 0, expired: 0 });
     setLoadState("ready");
     if (!newFor && Array.isArray(j.candidates) && j.candidates.length) setNewFor(String(j.candidates[0].id));
+    if (!oauthCandidateId && Array.isArray(j.candidates) && j.candidates.length) setOauthCandidateId(String(j.candidates[0].id));
 
     // RSS sources (admin-only visibility)
     fetch("/api/admin/rss/list?with_health=1", { method: "GET" })
@@ -124,6 +137,15 @@ export function NetworksPanel() {
         if (rr.ok && jj?.ok && Array.isArray(jj.sources)) setRssSources(jj.sources as RssSource[]);
       })
       .catch(() => {});
+
+    // OAuth status (safe)
+    fetch("/api/admin/oauth/status", { method: "GET" })
+      .then(async (rr) => {
+        const jj = (await rr.json().catch(() => null)) as any;
+        if (rr.ok && jj?.ok) setOauthStatus({ loaded: true, providers: jj.providers, has_encryption_key: jj.has_encryption_key, counts: jj.counts });
+        else setOauthStatus({ loaded: true });
+      })
+      .catch(() => setOauthStatus({ loaded: true }));
   }
 
   useEffect(() => {
@@ -563,6 +585,83 @@ export function NetworksPanel() {
             </button>
           </div>
         </div>
+      </div>
+
+      <div className="glass-card p-6">
+        <p className="text-sm font-semibold">Conectar redes por enlace (OAuth)</p>
+        <p className="mt-1 text-xs text-muted">
+          Este flujo es opcional y no reemplaza la autorización por enlace. Sirve para que el dueño conecte su cuenta oficial (Meta/X/Reddit) desde el celular.
+        </p>
+        <details className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
+          <summary className="cursor-pointer text-sm font-semibold">Generar enlace de conexión</summary>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold text-muted">Red</label>
+              <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={oauthProvider} onChange={(e) => setOauthProvider(e.target.value as OAuthProviderKey)}>
+                {OAUTH_PROVIDERS.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted">
+                Estado:{" "}
+                {oauthStatus.loaded ? (
+                  <>
+                    {oauthStatus.providers?.[oauthProvider]?.configured ? (
+                      <span className="text-emerald-300">configurado</span>
+                    ) : (
+                      <span className="text-amber-300">no configurado</span>
+                    )}
+                    {" · "}
+                    {oauthStatus.has_encryption_key ? <span className="text-emerald-300">cifrado OK</span> : <span className="text-amber-300">falta cifrado</span>}
+                  </>
+                ) : (
+                  <span className="text-muted">cargando…</span>
+                )}
+              </p>
+            </div>
+
+            <div className="grid gap-2">
+              <label className="text-xs font-semibold text-muted">Candidato</label>
+              <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={oauthCandidateId} onChange={(e) => setOauthCandidateId(e.target.value)}>
+                {candidates.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} · {c.office} · {c.region}
+                  </option>
+                ))}
+              </select>
+              <button
+                className="glass-button mt-2"
+                type="button"
+                onClick={async () => {
+                  const base = window.location.origin.replace(/\/+$/, "");
+                  const link = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
+                  setOauthLink(link);
+                  try {
+                    await navigator.clipboard.writeText(link);
+                    setMsg("Enlace OAuth generado y copiado. Envíalo por WhatsApp al dueño para conectar su cuenta.");
+                  } catch {
+                    setMsg("Enlace OAuth generado. Cópialo y envíalo por WhatsApp al dueño.");
+                  }
+                }}
+                disabled={!oauthCandidateId}
+              >
+                Generar enlace OAuth (copiar)
+              </button>
+            </div>
+          </div>
+
+          {oauthLink ? (
+            <div className="mt-4 rounded-xl border border-border bg-background p-3">
+              <p className="text-xs font-semibold text-muted">Enlace de conexión (envíalo por WhatsApp)</p>
+              <p className="mt-1 break-all text-xs text-muted">{oauthLink}</p>
+              <p className="mt-2 text-[11px] text-muted">
+                Nota: si el proveedor aún no está configurado, el enlace mostrará “no disponible” sin afectar el resto del sistema.
+              </p>
+            </div>
+          ) : null}
+        </details>
       </div>
 
       {loadState === "error" ? (

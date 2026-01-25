@@ -3,7 +3,14 @@
 Este proyecto separa **control editorial** (Admin Panel) de **conectividad** (n8n):
 
 - **Admin Panel**: decides *qué* se publica, para *qué candidato*, y en *qué redes* está activo (por candidato).
-- **n8n (Railway)**: mantiene las **credenciales OAuth/tokens** y ejecuta la publicación real (Facebook/X/Reddit/etc).
+- **n8n (Railway)**: ejecuta la publicación real (Facebook/X/Reddit/etc) y orquesta conectores.
+
+Opciones de conectividad (conviven):
+- **Credenciales en n8n (clásico)**: tokens/credenciales quedan en n8n como env/credentials.
+- **OAuth por enlace (Vercel, recomendado para “one-click”)**:
+  - El Admin genera un link en `/admin/networks` → el dueño conecta desde móvil.
+  - Tokens quedan **cifrados** en Supabase (`social_oauth_connections`) y n8n publica vía un “bridge” a Next.js cuando `credential_ref` empieza por `oauth:`.
+  - Runbook: `docs/runbooks/OAUTH_CONNECT_META_X_REDDIT.md`.
 
 ### Estado (infra) — n8n en Railway (importante para operación)
 - Si n8n muestra `502` con Railway Edge, revisa permisos del volumen `/data` (ver `railway/n8n/Dockerfile`).
