@@ -23,6 +23,21 @@
 
 ---
 
+### 2.1) “AUTO ON pero publica en ráfagas / patrón de spam”
+**Síntomas**
+- Varias publicaciones salen al mismo minuto o en ventanas muy cortas.
+
+**Causa**
+- Muchos candidatos quedan “due” al mismo tiempo.
+
+**Fix**
+- El backend ya aplica mitigación:
+  - jitter determinístico por candidato: `app_settings.auto_blog_jitter_minutes` (default 37)
+  - límite por corrida (`max_per_run` calculado)
+- Si quieres más dispersión, sube `auto_blog_jitter_minutes` (ej. 55–75).
+
+---
+
 ### 3) “Enlace de autorización no funciona”
 **Causas comunes**
 - Token expirado (5h).

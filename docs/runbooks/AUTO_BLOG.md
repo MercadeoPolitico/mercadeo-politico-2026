@@ -16,6 +16,11 @@ Comportamiento:
 Configuración (en base de datos):
 - `app_settings.auto_blog_global_enabled` = `"true" | "false"` (default: `"true"`)
 - `app_settings.auto_blog_every_hours` = `"4"` (default: 4)
+- `app_settings.auto_blog_jitter_minutes` = `"0".."180"` (default: 37)
+
+Nota anti‑spam:
+- El sistema aplica **jitter determinístico** por candidato (minutos) y un **límite de ejecuciones por corrida**,
+  para evitar que muchos candidatos publiquen exactamente al mismo minuto.
 
 ---
 

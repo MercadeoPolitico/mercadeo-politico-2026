@@ -1435,11 +1435,42 @@ export async function POST(req: Request) {
           // ignore (best-effort)
         }
 
-        let approvedDestinations: Array<{ id: string; name: string; type: string; url: string }> = [];
+        type NetworkKey = "facebook" | "instagram" | "threads" | "x" | "telegram" | "reddit";
+        type DestinationScope = "page" | "profile" | "channel";
+
+        function normalizeNetworkKeyFrom(name: unknown, url: unknown): NetworkKey | null {
+          const hay = `${String(name ?? "")} ${String(url ?? "")}`.toLowerCase();
+          if (hay.includes("facebook") || hay.includes("fb.com") || hay.includes("facebook.com")) return "facebook";
+          if (hay.includes("instagram") || hay.includes("instagr.am") || hay.includes("instagram.com")) return "instagram";
+          if (hay.includes("threads") || hay.includes("threads.net")) return "threads";
+          if (hay.includes("twitter") || hay.includes("x.com") || hay.includes("t.co")) return "x";
+          if (hay.includes("telegram") || hay.includes("t.me")) return "telegram";
+          if (hay.includes("reddit") || hay.includes("reddit.com")) return "reddit";
+          return null;
+        }
+
+        function normalizeScopeFrom(v: unknown, nk: NetworkKey | null): DestinationScope {
+          const s = String(v ?? "").trim().toLowerCase();
+          if (s === "page" || s === "profile" || s === "channel") return s;
+          if (nk === "telegram") return "channel";
+          if (nk === "facebook") return "page";
+          return "profile";
+        }
+
+        function defaultCredentialRefFor(nk: NetworkKey | null): string {
+          if (!nk) return "default";
+          if (nk === "facebook" || nk === "instagram" || nk === "threads") return "meta_default";
+          if (nk === "x") return "x_default";
+          if (nk === "telegram") return "telegram_default";
+          if (nk === "reddit") return "reddit_default";
+          return "default";
+        }
+
+        let approvedDestinations: any[] = [];
         try {
           const { data } = await admin
             .from("politician_social_destinations")
-            .select("id,network_name,network_type,profile_or_page_url,active,authorization_status")
+            .select("id,network_name,network_key,scope,target_id,credential_ref,network_type,profile_or_page_url,active,authorization_status")
             .eq("politician_id", pol.id)
             .eq("active", true)
             .eq("authorization_status", "approved")
@@ -1447,7 +1478,31 @@ export async function POST(req: Request) {
           approvedDestinations =
             (data ?? [])
               .filter((d: any) => d && typeof d.profile_or_page_url === "string")
-              .map((d: any) => ({ id: String(d.id), name: String(d.network_name), type: String(d.network_type), url: String(d.profile_or_page_url) }));
+              .map((d: any) => {
+                const nk = (typeof d.network_key === "string" && d.network_key.trim() ? d.network_key.trim().toLowerCase() : "") as any;
+                const network = (nk || normalizeNetworkKeyFrom(d.network_name, d.profile_or_page_url) || "facebook") as NetworkKey;
+                const scope = normalizeScopeFrom(d.scope, network);
+                const cred = typeof d.credential_ref === "string" && d.credential_ref.trim() ? d.credential_ref.trim() : defaultCredentialRefFor(network);
+                const target_id = typeof d.target_id === "string" ? d.target_id.trim() : "";
+                const base: any = {
+                  network,
+                  scope,
+                  credential_ref: cred,
+                  candidate_id: pol.id,
+                  region: String(pol.office || "").toLowerCase().includes("senado") ? "colombia" : String(pol.region || "").toLowerCase().includes("meta") ? "meta" : "colombia",
+                  destination_id: String(d.id),
+                  network_name: String(d.network_name),
+                  network_type: String(d.network_type),
+                  profile_or_page_url: String(d.profile_or_page_url),
+                };
+                if (scope === "page") base.page_id = target_id || null;
+                if (scope === "profile") base.account_id = target_id || null;
+                if (scope === "channel") base.channel_id = target_id || null;
+                // Legacy compatibility keys (some nodes still read name/url)
+                base.name = String(d.network_name);
+                base.url = String(d.profile_or_page_url);
+                return base;
+              });
         } catch {
           // ignore (best-effort)
         }
