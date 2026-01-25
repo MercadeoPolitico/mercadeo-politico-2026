@@ -1538,11 +1538,11 @@ export async function POST(req: Request) {
         ballotNumber: pol.ballot_number ?? null,
         region: pol.region ?? null,
       });
-      const publicMain = stripPublicMetaLines(blogWithCredits);
-      // Guardrail: do not publish posts that are essentially only metadata/credits.
+      let publicMain = stripPublicMetaLines(blogWithCredits);
+      // Guardrail (soft): if content seems too short, fall back to the full body (do not block publishing).
       if (wordCount(publicMain) < 120) {
-        console.warn("[editorial-orchestrate] skip_auto_publish_low_content", { requestId, candidate_id: pol.id, wc: wordCount(publicMain) });
-        return NextResponse.json({ ok: true, id: inserted.id, auto_published: false, reason: "low_content", request_id: requestId });
+        console.warn("[editorial-orchestrate] low_content_publish_fallback", { requestId, candidate_id: pol.id, wc: wordCount(publicMain) });
+        publicMain = normalizeLineBreaks(blogWithCredits);
       }
 
       const excerpt = publicMain.split("\n").filter(Boolean).slice(0, 6).join("\n").slice(0, 420);
