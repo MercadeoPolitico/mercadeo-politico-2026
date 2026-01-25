@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CandidateCard } from "@/components/CandidateCard";
 import { Section } from "@/components/Section";
+import { PublicPageShell } from "@/components/PublicPageShell";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 
 export const metadata = {
@@ -15,7 +16,7 @@ export default function CandidatesPage() {
   const house = candidates.filter((c) => c.role === "Cámara de Representantes");
 
   return (
-    <div className="space-y-10">
+    <PublicPageShell className="space-y-10">
       <Section
         title="Candidatos"
         subtitle="Información básica y enlaces oficiales (cuando existan) para visibilidad digital."
@@ -66,7 +67,7 @@ export default function CandidatesPage() {
           </Link>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-border bg-surface p-6 text-sm text-muted">
+        <div className="mt-6 glass-card p-6 text-sm text-muted">
           <h2 className="text-base font-semibold text-foreground">Compromiso de comunicación</h2>
           <ul className="mt-3 space-y-2">
             <li>- Transparencia sobre autoría y objetivos del contenido.</li>
@@ -75,7 +76,7 @@ export default function CandidatesPage() {
           </ul>
         </div>
       </Section>
-    </div>
+    </PublicPageShell>
   );
 }
 

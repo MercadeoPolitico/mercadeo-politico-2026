@@ -201,3 +201,33 @@ Implementación ✅:
 Migración:
 - `supabase/migrations/20260124001100_politicians_last_auto_blog_at.sql`
 
+---
+
+## 14) UI pública (solo visual) — glassmorphism institucional
+Objetivo ✅:
+- Modernizar **solo** landing y páginas públicas (sin tocar lógica, APIs ni Admin Panel).
+
+Implementación (visual-only):
+- Backdrop público reutilizable: `src/components/PublicPageShell.tsx`
+- Capas de fondo (sin dependencias): `src/styles/globals.css` (clases `public-*-layer`)
+- Páginas públicas actualizadas:
+  - `/` (landing)
+  - `/about`
+  - `/candidates` + perfiles
+  - `/centro-informativo`
+  - `/autorizar`
+  - `/politico/*` (portal móvil)
+
+Nota:
+- No se cambiaron rutas, exports ni comportamiento de datos; solo estilos/clases y copy.
+
+---
+
+## 15) Runbooks — reconexión y operación continua
+Nuevo:
+- `docs/runbooks/RECONNECT.md`:
+  - Recomendación: usar Chrome para logins de CLI
+  - Docker logout/login (incluye ejemplo con usuario)
+  - Login/logout (Vercel/Railway) y login (Supabase)
+  - Checklist de n8n (502 vs 401) y variables requeridas
+

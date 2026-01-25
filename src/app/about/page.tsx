@@ -1,4 +1,5 @@
 import { Section } from "@/components/Section";
+import { PublicPageShell } from "@/components/PublicPageShell";
 
 export const metadata = {
   title: "Acerca de",
@@ -8,7 +9,7 @@ export const metadata = {
 
 export default function AboutPage() {
   return (
-    <div className="space-y-10">
+    <PublicPageShell className="space-y-10">
       <Section
         title="Principios y confianza"
         subtitle="Comunicación serena para una seguridad proactiva: verificable, respetuosa y enfocada en el territorio."
@@ -40,7 +41,7 @@ export default function AboutPage() {
           </ul>
         </div>
       </Section>
-    </div>
+    </PublicPageShell>
   );
 }
 

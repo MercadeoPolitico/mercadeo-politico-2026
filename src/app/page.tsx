@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CandidateCard } from "@/components/CandidateCard";
+import { PublicPageShell } from "@/components/PublicPageShell";
 import { Section } from "@/components/Section";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
@@ -7,18 +8,7 @@ import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink"
 export default function Home() {
   const candidates = getCandidates();
   return (
-    <div className="relative space-y-14 overflow-hidden">
-      {/* Patriotic ambient backdrop (glass-forward, brighter, Colombian accents) */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -left-24 -top-24 h-[640px] w-[640px] rounded-full bg-amber-300/28 blur-[110px]" />
-        <div className="absolute left-1/2 top-[-220px] h-[720px] w-[720px] -translate-x-1/2 rounded-full bg-sky-300/28 blur-[110px]" />
-        <div className="absolute -right-24 top-24 h-[640px] w-[640px] rounded-full bg-red-400/24 blur-[120px]" />
-        <div className="absolute -bottom-44 left-24 h-[760px] w-[760px] rounded-full bg-emerald-300/22 blur-[150px]" />
-        <div className="absolute left-1/3 top-1/2 h-[720px] w-[720px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/20 blur-[160px]" />
-        <div className="absolute right-[10%] top-[58%] h-[560px] w-[560px] -translate-y-1/2 rounded-full bg-sky-200/14 blur-[160px]" />
-        <div className="absolute inset-0 bg-gradient-to-b from-white/10 via-white/0 to-white/10" />
-      </div>
-
+    <PublicPageShell className="space-y-14">
       <Section>
         <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
           <div className="space-y-5">
@@ -26,35 +16,29 @@ export default function Home() {
               <span className="rounded-full border border-white/20 bg-white/12 px-3 py-1 text-xs font-medium text-foreground/95 backdrop-blur-xl">
                 Colombia 2026
               </span>
-              <span className="rounded-full border border-amber-300/35 bg-amber-300/18 px-3 py-1 text-xs font-medium text-amber-50">
-                Seguridad proactiva
-              </span>
-              <span className="rounded-full border border-sky-200/35 bg-sky-200/14 px-3 py-1 text-xs font-medium text-sky-50">
-                Orden · Territorio · Confianza
-              </span>
-              <span className="rounded-full border border-emerald-200/30 bg-emerald-200/12 px-3 py-1 text-xs font-medium text-emerald-50">
-                Vida · Comunidad · Legalidad
+              <span className="rounded-full border border-amber-300/30 bg-amber-300/14 px-3 py-1 text-xs font-medium text-amber-50">
+                Información cívica
               </span>
             </div>
 
-            <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-5xl">
-              Serenidad para decidir.
-              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-sky-200 to-red-300">
-                Seguridad que se anticipa.
-              </span>
+            <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-5xl md:leading-[1.05]">
+              Colombia decide mejor cuando hay{" "}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-200 to-sky-200">
+                seguridad
+              </span>{" "}
+              que se anticipa.
             </h1>
 
-            <p className="text-pretty text-lg text-muted">
-              Información clara para votar con criterio: propuestas, contexto territorial y mensajes institucionales. Sin desinformación. Sin
-              show. Sin presión.
+            <p className="text-pretty text-lg leading-relaxed text-muted">
+              Infórmate con contexto territorial, propuestas oficiales e instituciones. Sin desinformación. Sin show. Sin presión.
             </p>
 
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <Link
-                className="inline-flex items-center justify-center rounded-full bg-amber-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 shadow-[0_0_0_1px_rgba(255,255,255,.08),0_18px_40px_rgba(245,158,11,.18)]"
+                className="cta-primary"
                 href="/centro-informativo"
               >
-                Centro informativo ciudadano
+                Infórmate para decidir por Colombia <span aria-hidden>→</span>
               </Link>
               <Link
                 className="inline-flex items-center justify-center rounded-full border border-white/20 bg-white/5 px-6 py-3 text-sm font-semibold text-foreground backdrop-blur-md transition hover:bg-white/10"
@@ -65,19 +49,16 @@ export default function Home() {
               <Link className="glass-button" href="/about">
                 Principios editoriales
               </Link>
-              <Link className="glass-button" href="/admin/login">
-                Admin login
-              </Link>
             </div>
 
             <p className="text-xs text-muted">
-              Enfoque: prevención, presencia territorial y soluciones institucionales. El contenido público se publica con revisión editorial.
+              Centro informativo ciudadano
             </p>
           </div>
 
-          <div className="glass-card glass-soft-edges relative p-10">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(250,204,21,.16),transparent_58%),radial-gradient(circle_at_82%_14%,rgba(56,189,248,.18),transparent_60%),radial-gradient(circle_at_78%_78%,rgba(34,197,94,.14),transparent_64%),radial-gradient(circle_at_26%_78%,rgba(239,68,68,.14),transparent_64%)]" />
-            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-200/70 via-sky-100/60 to-emerald-200/70" />
+          <div className="glass-hero relative overflow-hidden p-10">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_16%,rgba(250,204,21,.14),transparent_58%),radial-gradient(circle_at_82%_14%,rgba(56,189,248,.16),transparent_60%),radial-gradient(circle_at_78%_78%,rgba(34,197,94,.10),transparent_64%),radial-gradient(circle_at_26%_78%,rgba(239,68,68,.10),transparent_64%)]" />
+            <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-200/60 via-white/40 to-sky-200/60" />
             <div className="relative flex items-start gap-5">
               <div className="mt-1 shrink-0">
                 <span className="relative inline-flex h-12 w-12 items-center justify-center">
@@ -89,29 +70,23 @@ export default function Home() {
                 </span>
               </div>
               <div className="space-y-2">
-                <p className="text-sm font-semibold">Guía de lectura</p>
-                <p className="text-sm text-muted">
-                  Encontrarás propuestas, enlaces oficiales y el <strong className="text-foreground">Centro informativo ciudadano</strong> con
-                  contexto y fuentes cuando existan.
+                <p className="text-sm font-semibold">Centro informativo ciudadano</p>
+                <p className="text-sm leading-relaxed text-muted">
+                  Actualidad, contexto y propuestas oficiales cuando existan. Publicación con revisión humana y trazabilidad.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-muted">Transparencia</span>
-                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-muted">Orden</span>
-                  <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs text-muted">Territorio</span>
-                </div>
               </div>
             </div>
 
             <div className="relative mt-7 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-3xl border border-white/22 bg-white/14 p-4">
+              <div className="rounded-3xl border border-white/18 bg-white/10 p-5">
                 <p className="text-sm font-semibold">Prevención</p>
                 <p className="mt-1 text-xs text-muted">Acción temprana para reducir riesgos antes de que escalen.</p>
               </div>
-              <div className="rounded-3xl border border-white/22 bg-white/14 p-4">
+              <div className="rounded-3xl border border-white/18 bg-white/10 p-5">
                 <p className="text-sm font-semibold">Presencia</p>
                 <p className="mt-1 text-xs text-muted">Cercanía institucional y control territorial con legalidad.</p>
               </div>
-              <div className="rounded-3xl border border-white/22 bg-white/14 p-4">
+              <div className="rounded-3xl border border-white/18 bg-white/10 p-5">
                 <p className="text-sm font-semibold">Confianza</p>
                 <p className="mt-1 text-xs text-muted">Mensajes sobrios, verificables y sin manipulación.</p>
               </div>
@@ -254,6 +229,9 @@ export default function Home() {
                 <Link className="glass-button" href="/candidates">
                   Candidatos
                 </Link>
+                <Link className="glass-button" href="/about">
+                  Principios
+                </Link>
                 <Link className="glass-button" href="/admin/login">
                   Acceso interno
                 </Link>
@@ -262,6 +240,6 @@ export default function Home() {
           </div>
         </Section>
       </footer>
-    </div>
+    </PublicPageShell>
   );
 }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createHash } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createPoliticoSessionCookieValue, POLITICO_COOKIE_NAME } from "@/lib/politico/session";
+import { PublicPageShell } from "@/components/PublicPageShell";
 
 export const runtime = "nodejs";
 
@@ -20,20 +21,20 @@ export default async function PoliticoAccessPage({
 
   if (!raw) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Acceso requerido</h1>
         <p className="text-sm text-muted">Usa el enlace exclusivo entregado por el equipo de campaña.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
   const admin = createSupabaseAdminClient();
   if (!admin) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">No disponible</h1>
         <p className="text-sm text-muted">El sistema no está configurado para acceso móvil en este entorno.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -46,19 +47,19 @@ export default async function PoliticoAccessPage({
 
   if (!tokenRow) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Enlace inválido</h1>
         <p className="text-sm text-muted">Solicita un nuevo enlace al equipo de campaña.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
   if (tokenRow.expires_at && Date.now() > Date.parse(tokenRow.expires_at)) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Enlace expirado</h1>
         <p className="text-sm text-muted">Solicita un nuevo enlace al equipo de campaña.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -70,10 +71,10 @@ export default async function PoliticoAccessPage({
 
   if (!politician) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">No disponible</h1>
         <p className="text-sm text-muted">No se encontró el político asociado.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -87,10 +88,10 @@ export default async function PoliticoAccessPage({
 
   if (!cookieValue) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">No disponible</h1>
         <p className="text-sm text-muted">Falta configurar el secreto de sesión del portal.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 

@@ -5,6 +5,14 @@ Este proyecto separa **control editorial** (Admin Panel) de **conectividad** (n8
 - **Admin Panel**: decides *qué* se publica, para *qué candidato*, y en *qué redes* está activo (por candidato).
 - **n8n (Railway)**: mantiene las **credenciales OAuth/tokens** y ejecuta la publicación real (Facebook/X/Reddit/etc).
 
+### Estado (infra) — n8n en Railway (importante para operación)
+- Si n8n muestra `502` con Railway Edge, revisa permisos del volumen `/data` (ver `railway/n8n/Dockerfile`).
+- Para automatizar el workflow sin entrar a la UI:
+  - `N8N_PUBLIC_API_DISABLED=false`
+  - `N8N_API_KEY` (Settings → n8n API)
+  - Script idempotente: `npm run n8n:ensure`
+  - Smoke: `npm run smoke:n8n`
+
 ### Bloque canónico: ruteo automático en n8n usando `metadata.destinations`
 
 **Objetivo**: el Admin NO elige plataformas al publicar. El backend envía un payload con:

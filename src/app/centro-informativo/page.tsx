@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Section } from "@/components/Section";
+import { PublicPageShell } from "@/components/PublicPageShell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const metadata = {
@@ -46,7 +47,7 @@ export default async function CitizenInfoCenterPage() {
   const posts = (data ?? []) as Post[];
 
   return (
-    <div className="space-y-10">
+    <PublicPageShell className="space-y-10">
       <Section
         title="Centro informativo ciudadano"
         subtitle="Actualidad y análisis cívico. Sin métricas, sin datos personales, sin desinformación."
@@ -124,7 +125,7 @@ export default async function CitizenInfoCenterPage() {
           </Link>
         </div>
       </Section>
-    </div>
+    </PublicPageShell>
   );
 }
 

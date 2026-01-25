@@ -95,3 +95,14 @@ Principios:
 - Se evita desinformación (enfoque cívico y verificable).
 - Firma/descargos editoriales en el contenido generado (según configuración).
 
+---
+
+## Diseño público (lo que ve la ciudadanía)
+- **Look institucional moderno** (glassmorphism sobrio) para generar confianza.
+- Jerarquía visual “respirable”: títulos firmes, texto claro, espacios amplios.
+- Colores base: azul profundo institucional + acentos sutiles de bandera (amarillo/azul/rojo).
+
+Importante:
+- Es **solo visual**: no cambia endpoints, lógica ni flujos internos.
+- El Admin Panel se mantiene como torre de control sin depender del diseño público.
+

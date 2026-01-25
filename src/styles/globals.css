@@ -69,6 +69,86 @@ body::before {
 }
 
 @layer components {
+  .public-backdrop-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      /* warm institutional glow (flag-inspired, low saturation) */
+      radial-gradient(55% 45% at 14% 18%, rgba(250, 204, 21, 0.20), transparent 62%),
+      radial-gradient(52% 45% at 86% 22%, rgba(56, 189, 248, 0.20), transparent 64%),
+      radial-gradient(58% 50% at 82% 86%, rgba(239, 68, 68, 0.14), transparent 64%),
+      radial-gradient(60% 58% at 20% 86%, rgba(59, 130, 246, 0.14), transparent 64%),
+      /* diagonal light streaks (reference-like) */
+      linear-gradient(
+        120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.08) 18%,
+        rgba(255, 255, 255, 0.02) 32%,
+        rgba(255, 255, 255, 0) 54%
+      ),
+      linear-gradient(
+        122deg,
+        rgba(255, 255, 255, 0) 32%,
+        rgba(255, 255, 255, 0.07) 44%,
+        rgba(255, 255, 255, 0) 62%
+      ),
+      /* base depth */
+      radial-gradient(120% 100% at 50% 0%, rgba(11, 47, 84, 0) 0%, rgba(4, 14, 28, 0.68) 62%, rgba(4, 10, 20, 0.86) 100%);
+  }
+
+  .public-stars-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image:
+      radial-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+      radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+    background-size: 46px 46px, 72px 72px;
+    background-position: 10px 18px, 24px 36px;
+    filter: blur(0.2px);
+    mix-blend-mode: screen;
+  }
+
+  .public-vignette-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(120% 120% at 50% 40%, rgba(0, 0, 0, 0) 0%, rgba(4, 10, 20, 0.34) 62%, rgba(4, 10, 20, 0.72) 100%);
+    opacity: 0.9;
+  }
+
+  .cta-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold transition;
+    @apply bg-amber-400/90 text-slate-950;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.10) inset,
+      0 22px 55px rgba(250, 204, 21, 0.18);
+  }
+  .cta-primary:hover {
+    @apply bg-amber-300;
+    transform: translateY(-1px);
+  }
+  .cta-primary:active {
+    transform: translateY(0);
+  }
+
+  .glass-hero {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    border-radius: 2.25rem;
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      0 42px 120px rgba(0, 0, 0, 0.30);
+  }
+
   .glass-card {
     position: relative;
     overflow: hidden;

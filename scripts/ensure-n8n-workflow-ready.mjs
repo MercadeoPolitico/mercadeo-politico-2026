@@ -45,6 +45,22 @@ function getEnv(name) {
   return "";
 }
 
+function envBool(name) {
+  const v = getEnv(name).toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+function basicAuthHeader() {
+  // n8n Public API can still be protected by Basic Auth at the app layer.
+  // If enabled, we must send both Basic Auth and X-N8N-API-KEY.
+  if (!envBool("N8N_BASIC_AUTH_ACTIVE")) return null;
+  const user = getEnv("N8N_BASIC_AUTH_USER");
+  const pass = getEnv("N8N_BASIC_AUTH_PASSWORD");
+  if (!user || !pass) return null;
+  const token = Buffer.from(`${user}:${pass}`, "utf8").toString("base64");
+  return `Basic ${token}`;
+}
+
 function baseUrlFromWebhookUrl(webhookUrl) {
   const u = new URL(webhookUrl);
   return u.origin;
@@ -109,11 +125,13 @@ async function main() {
 
   if (!apiKey) {
     console.log(JSON.stringify({ status: "error", details: { error: "missing_env", missing: "N8N_API_KEY" } }, null, 2));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   if (!webhookUrl) {
     console.log(JSON.stringify({ status: "error", details: { error: "missing_env", missing: "N8N_WEBHOOK_URL" } }, null, 2));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const expectedPath = expectedWebhookPathFromUrl(webhookUrl);
@@ -121,22 +139,38 @@ async function main() {
     console.log(
       JSON.stringify({ status: "error", details: { error: "invalid_webhook_url", reason: "missing_/webhook/<path>" } }, null, 2),
     );
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const base = baseUrlFromWebhookUrl(webhookUrl);
-  const headers = { "X-N8N-API-KEY": apiKey, "content-type": "application/json" };
+  const basic = basicAuthHeader();
+  const headers = {
+    "X-N8N-API-KEY": apiKey,
+    "content-type": "application/json",
+    ...(basic ? { authorization: basic } : {}),
+  };
 
   const apiPrefix = await discoverApiPrefix(base, headers);
   if (apiPrefix === null) {
     console.log(
       JSON.stringify(
-        { status: "error", details: { step: "discover_api_prefix", status: 401, message: "unauthorized" } },
+        {
+          status: "error",
+          details: {
+            step: "discover_api_prefix",
+            status: 401,
+            message: "unauthorized",
+            hint:
+              "Enable n8n Public API and use a valid N8N_API_KEY. If Basic Auth is enabled, set N8N_BASIC_AUTH_ACTIVE=true and provide N8N_BASIC_AUTH_USER/PASSWORD.",
+          },
+        },
         null,
         2,
       ),
     );
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   // 1) List workflows
@@ -152,7 +186,8 @@ async function main() {
         2,
       ),
     );
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const items = Array.isArray(list.json?.data) ? list.json.data : Array.isArray(list.json) ? list.json : [];
@@ -170,14 +205,16 @@ async function main() {
     });
     const status = created.ok ? "imported" : "error";
     console.log(JSON.stringify({ status, details: { step: "create", http_status: created.status } }, null, 2));
-    process.exit(created.ok ? 0 : 1);
+    process.exitCode = created.ok ? 0 : 1;
+    return;
   }
 
   // 3) Fetch full workflow, then update path/active if needed
   const fetched = await httpJson(`${base}${apiPrefix}/api/v1/workflows/${existing.id}`, { headers });
   if (!fetched.ok) {
     console.log(JSON.stringify({ status: "error", details: { step: "fetch", http_status: fetched.status } }, null, 2));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const current = fetched.json?.data ?? fetched.json ?? {};
@@ -188,7 +225,8 @@ async function main() {
   const needsUpdate = !pathCheck.ok || !methodOk || !active;
   if (!needsUpdate) {
     console.log(JSON.stringify({ status: "ready", details: { workflow_id: existing.id } }, null, 2));
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
   const merged = withUpdatedWebhookConfig({ ...current, ...desired, id: existing.id }, expectedPath);
@@ -200,7 +238,8 @@ async function main() {
 
   if (!updated.ok) {
     console.log(JSON.stringify({ status: "error", details: { step: "update", http_status: updated.status } }, null, 2));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const status = active ? "updated" : "activated";
@@ -211,11 +250,11 @@ async function main() {
       2,
     ),
   );
-  process.exit(0);
+  process.exitCode = 0;
 }
 
 main().catch((e) => {
   console.log(JSON.stringify({ status: "error", details: { error: String(e?.message ?? e) } }, null, 2));
-  process.exit(1);
+  process.exitCode = 1;
 });
 

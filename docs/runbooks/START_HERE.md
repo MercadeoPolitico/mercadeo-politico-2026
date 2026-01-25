@@ -15,6 +15,9 @@ Dejar el sistema **deployado y estable** en:
 - Supabase project ref (desde `.env.local`, safe): `adjawofpdxnezbmwafvg`.
  - Supabase CLI (local) ya quedó **linkeado** al project ref y puede aplicar migraciones remotas.
 
+### Si estás “reconectando” (sesión nueva / CLIs raros)
+Ver: `docs/runbooks/RECONNECT.md` (Docker logout/login, Chrome vs Edge, PowerShell commands).
+
 ---
 
 ## 2) Variables mínimas (sin valores)

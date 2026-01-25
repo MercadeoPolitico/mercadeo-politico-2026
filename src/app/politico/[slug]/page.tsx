@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { POLITICO_COOKIE_NAME, readPoliticoSessionCookieValue } from "@/lib/politico/session";
 import { getCitizenPanelForCandidate } from "@/lib/analytics/citizenPanel";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
+import { PublicPageShell } from "@/components/PublicPageShell";
 export const runtime = "nodejs";
 
 export default async function PoliticoWorkspacePage({ params }: { params: Promise<{ slug: string }> }) {
@@ -16,10 +17,10 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
   const admin = createSupabaseAdminClient();
   if (!admin) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">No disponible</h1>
         <p className="text-sm text-muted">El portal no está configurado en este entorno.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -31,10 +32,10 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
   if (!politician) notFound();
   if (politician.id !== session.politicianId) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-2">
+      <PublicPageShell className="mx-auto w-full max-w-lg space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Acceso denegado</h1>
         <p className="text-sm text-muted">Este enlace no corresponde a este político.</p>
-      </div>
+      </PublicPageShell>
     );
   }
 
@@ -118,7 +119,7 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
   }
 
   return (
-    <div className="space-y-10">
+    <PublicPageShell className="space-y-10">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight">Workspace móvil</h1>
         <p className="text-sm text-muted">
@@ -241,7 +242,7 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
 
         {safePending.length === 0 ? <p className="text-sm text-muted">No hay publicaciones pendientes.</p> : null}
       </section>
-    </div>
+    </PublicPageShell>
   );
 }
 

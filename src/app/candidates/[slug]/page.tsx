@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Section } from "@/components/Section";
+import { PublicPageShell } from "@/components/PublicPageShell";
 import { getCandidateBySlug } from "@/lib/candidates/getCandidateBySlug";
 import { getSiteUrlString } from "@/lib/site";
 import { PixelFire } from "@/components/analytics/PixelFire";
@@ -70,7 +71,7 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
   const proposalText = "proposal" in view ? (view.proposal as string) : "";
 
   return (
-    <div className="space-y-10">
+    <PublicPageShell className="space-y-10">
       <PixelFire candidateSlug={view.slug} eventType={ref === "shared" ? "shared_link_visit" : "profile_view"} refType={refType} />
       <Section>
         <header className="space-y-2">
@@ -103,7 +104,7 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
           </div>
         </article>
       </Section>
-    </div>
+    </PublicPageShell>
   );
 }
 

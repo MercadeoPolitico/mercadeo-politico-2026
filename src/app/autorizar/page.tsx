@@ -1,4 +1,5 @@
 import { Section } from "@/components/Section";
+import { PublicPageShell } from "@/components/PublicPageShell";
 import { AuthorizeClient } from "./ui";
 
 export const metadata = {
@@ -9,14 +10,14 @@ export const metadata = {
 export default function AutorizarPage({ searchParams }: { searchParams: { token?: string } }) {
   const token = typeof searchParams?.token === "string" ? searchParams.token : "";
   return (
-    <div className="space-y-10">
+    <PublicPageShell className="space-y-10">
       <Section
         title="Autorización de publicación"
         subtitle="Solo tú (dueño de la red) puedes aprobar o rechazar. El enlace expira automáticamente."
       >
         <AuthorizeClient token={token} />
       </Section>
-    </div>
+    </PublicPageShell>
   );
 }
 
