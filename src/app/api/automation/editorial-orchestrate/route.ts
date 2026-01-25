@@ -58,13 +58,47 @@ function newsQueryFor(office: string, region: string): string {
   const off = office.toLowerCase();
   if (off.includes("senado")) {
     // National scope: prioritize high-impact / civic risk topics.
-    return "Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR violencia) seguridad";
+    return "Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR muerte OR robo OR atraco OR violencia) seguridad";
   }
   // Cámara: prioritize territory (Meta, etc). Allow national if it impacts the region (GDELT ranking helps).
   const reg = String(region ?? "").trim();
   return reg
     ? `${reg} Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR violencia) seguridad`
     : "Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR violencia) seguridad";
+}
+
+function severityScoreFromTitle(title: string): number {
+  const t = String(title || "").toLowerCase();
+  const severe = [
+    "secuestro",
+    "extors",
+    "homicid",
+    "asesin",
+    "sicari",
+    "masacre",
+    "atent",
+    "bomba",
+    "explos",
+    "narcot",
+    "captur",
+    "incaut",
+    "corrup",
+    "fraude",
+    "rob",
+    "atraco",
+    "accidente",
+    "choque",
+    "incendio",
+    "muert",
+    "herid",
+    "desaparec",
+    "amenaza",
+  ];
+  const viral = ["viral", "tendencia", "concierto", "música", "musica", "fútbol", "futbol", "festival", "show", "entreten"];
+  const severeHits = severe.filter((k) => t.includes(k)).length;
+  const viralHits = viral.filter((k) => t.includes(k)).length;
+  // Push severe to the top; still allow fallback selection when none exist.
+  return severeHits * 3 - viralHits;
 }
 
 function isBlockedNewsUrl(url: string): boolean {
@@ -119,6 +153,10 @@ async function fetchBestNewsArticle(args: {
     });
     if (!a) continue;
     if (isBlockedNewsUrl(a.url)) continue;
+    // Enforce "grave > viral": for early queries, require a minimum severity.
+    const sev = severityScoreFromTitle(a.title);
+    const isEarly = q.toLowerCase().includes("seguridad") || q.toLowerCase().includes("extors") || q.toLowerCase().includes("secuestro") || q.toLowerCase().includes("corrup");
+    if (isEarly && sev < 3) continue;
     return a;
   }
   return null;
@@ -1121,7 +1159,7 @@ export async function POST(req: Request) {
     "- Debe incluir un cierre tipo 'derecho ciudadano al voto' (reformulado cada vez, no literal).",
     "- Incluye link relativo a /centro-informativo en facebook/x (sin URL absoluta).",
     "- Variants:",
-    "  - blog: Ideal 450–650 palabras (mínimo aceptable 350, máximo recomendado 800). Presentación atractiva:",
+    "  - blog: 500–800 palabras (OBLIGATORIO). Presentación atractiva:",
     "    - Primera línea: Título (<=120 caracteres)",
     "    - Luego 1 lead corto",
     "    - Secciones sugeridas: “Qué pasó”, “Por qué importa”, “Cómo encaja con la propuesta del candidato”, “Qué sigue / Recomendaciones”",
@@ -1196,7 +1234,7 @@ export async function POST(req: Request) {
       "Redacta SOLO el artículo del Centro Informativo (NO JSON).",
       "Reglas:",
       "- Español (Colombia).",
-      "- Ideal 450–650 palabras (mín. 350, máx. 800).",
+      "- 500–800 palabras (OBLIGATORIO).",
       "- Primera línea: TÍTULO reescrito (no copies literal el titular del medio).",
       "- Estructura: Qué pasó / Por qué importa / Cómo encaja con 1–2 ejes del programa / Qué sigue.",
       "- Incluye el nombre del candidato y su número de tarjetón cuando menciones su implicación.",
@@ -1400,13 +1438,13 @@ export async function POST(req: Request) {
 
   // Enforce target blog length (best-effort) before persisting.
   const wc = wordCount(winner.data.platform_variants.blog);
-  if (wc < 350 || wc > 800) {
+  if (wc < 500 || wc > 800) {
     const topic = [
       "Ajusta SOLO el contenido del JSON para cumplir longitud y estructura del blog.",
       "Reglas:",
       "- Devuelve SOLO JSON con el MISMO esquema.",
       "- Mantén hechos verificables (sin inventar cifras/datos).",
-      "- Blog: 450–650 palabras (mín. 350, máx. 800).",
+      "- Blog: 500–800 palabras (OBLIGATORIO).",
       "- Debe explicar cómo 1–2 ejes de propuesta del candidato aportan a la situación.",
       "- Conserva hashtags (3+) y 'Fuente:' si existe.",
       "- Integra 3–5 SEO keywords dentro del texto de forma natural.",

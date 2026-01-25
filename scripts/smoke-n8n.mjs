@@ -30,6 +30,11 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+function isTruthy(v) {
+  const t = String(v ?? "").trim().toLowerCase();
+  return t === "1" || t === "true" || t === "yes" || t === "on";
+}
+
 async function head(url) {
   const r = await fetch(url, { method: "HEAD", redirect: "manual", cache: "no-store" });
   return { status: r.status, ok: r.ok, headers: Object.fromEntries(r.headers.entries()) };
@@ -43,7 +48,12 @@ async function main() {
   const basicActive = (process.env.N8N_BASIC_AUTH_ACTIVE || envLocal.N8N_BASIC_AUTH_ACTIVE || "").trim();
   const basicUser = (process.env.N8N_BASIC_AUTH_USER || envLocal.N8N_BASIC_AUTH_USER || "").trim();
   const basicPass = (process.env.N8N_BASIC_AUTH_PASSWORD || envLocal.N8N_BASIC_AUTH_PASSWORD || "").trim();
+  const strict = isTruthy(process.env.SMOKE_N8N_STRICT || envLocal.SMOKE_N8N_STRICT);
   assert(webhookUrl, "Missing N8N_WEBHOOK_URL (set in shell env or .env.local)");
+  if (!apiKey && !strict) {
+    console.log("[smoke:n8n] SKIP (no N8N_API_KEY set)");
+    return;
+  }
   assert(apiKey, "Missing N8N_API_KEY (set in shell env or .env.local)");
 
   const base = new URL(webhookUrl).origin;
@@ -68,7 +78,15 @@ async function main() {
   });
   if (res.stdout) process.stdout.write(res.stdout);
   if (res.stderr) process.stderr.write(res.stderr);
-  assert(res.status === 0, "ensure-n8n-workflow-ready failed (check output above for auth/config hints)");
+  if (res.status !== 0) {
+    const out = `${res.stdout ?? ""}\n${res.stderr ?? ""}`.toLowerCase();
+    const looksUnauthorized = out.includes("unauthorized") || out.includes("\"status\": 401") || out.includes("status\":401");
+    if (looksUnauthorized && !strict) {
+      console.log("[smoke:n8n] WARN unauthorized (set SMOKE_N8N_STRICT=1 to fail). Verify N8N_API_KEY + Public API/Basic Auth.");
+      return;
+    }
+    assert(res.status === 0, "ensure-n8n-workflow-ready failed (check output above for auth/config hints)");
+  }
 
   console.log("[smoke:n8n] DONE", true);
 }

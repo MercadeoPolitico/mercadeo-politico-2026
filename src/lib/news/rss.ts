@@ -129,14 +129,53 @@ function scoreQueryMatch(title: string, queryTerms: string[]): number {
 
 function pickTop(items: RssItem[], queryTerms: string[]): RssItem | null {
   if (!items.length) return null;
-  const scored = items
-    .map((it) => {
-      // Bias toward impactful/urgent civic news; still tempered by recency + query relevance.
-      const s = scoreRecency(it.published_at) + scoreSensational(it.title) * 2 + scoreQueryMatch(it.title, queryTerms);
-      return { it, s };
-    })
-    .sort((a, b) => b.s - a.s);
-  return scored[0]?.it ?? null;
+  // Hard preference buckets:
+  // 1) "grave" civic-risk topics (seguridad/violencia/accidentes)
+  // 2) "viral" / agenda ligera (solo si no hay grave)
+  // 3) fallback: cualquier cosa relevante y reciente
+  const t = (s: string) => s.toLowerCase();
+  const isGrave = (title: string) =>
+    [
+      "secuestro",
+      "extors",
+      "homicid",
+      "asesin",
+      "sicari",
+      "masacre",
+      "atent",
+      "captur",
+      "allan",
+      "incaut",
+      "narcot",
+      "corrup",
+      "fraude",
+      "abuso",
+      "violenc",
+      "rob",
+      "atraco",
+      "accidente",
+      "choque",
+      "muert",
+      "herid",
+      "incendio",
+      "explos",
+      "amenaza",
+    ].some((k) => t(title).includes(k));
+  const isViral = (title: string) =>
+    ["viral", "tendencia", "faránd", "farand", "concierto", "música", "musica", "fútbol", "futbol", "festival", "show", "entreten"].some((k) =>
+      t(title).includes(k),
+    );
+
+  const score = (it: RssItem) => scoreRecency(it.published_at) + scoreSensational(it.title) * 2 + scoreQueryMatch(it.title, queryTerms);
+  const sortByScore = (arr: RssItem[]) => arr.map((it) => ({ it, s: score(it) })).sort((a, b) => b.s - a.s)[0]?.it ?? null;
+
+  const grave = items.filter((it) => isGrave(it.title));
+  if (grave.length) return sortByScore(grave) ?? sortByScore(items);
+
+  const viral = items.filter((it) => isViral(it.title));
+  if (viral.length) return sortByScore(viral) ?? sortByScore(items);
+
+  return sortByScore(items);
 }
 
 function parseRss2(xml: string, source: RssSource): RssItem[] {
@@ -222,10 +261,11 @@ export async function pickTopRssItem(args: {
 }): Promise<RssItem | null> {
   const active = args.sources.filter((s) => s.active);
   const all: RssItem[] = [];
-  for (const s of active.slice(0, 12)) {
-    // eslint-disable-next-line no-await-in-loop
-    const items = await fetchRssItems({ source: s, limit: 12 });
-    all.push(...items);
+  // Fetch in parallel to avoid N * timeout latency.
+  const pickedSources = active.slice(0, 8);
+  const results = await Promise.allSettled(pickedSources.map((s) => fetchRssItems({ source: s, limit: 12 })));
+  for (const r of results) {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) all.push(...r.value);
   }
   // Deduplicate by URL
   const seen = new Set<string>();
