@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Section } from "@/components/Section";
 import { PublicPageShell } from "@/components/PublicPageShell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { ReactNode } from "react";
 
 export const metadata = {
   title: "Centro informativo ciudadano",
@@ -94,10 +95,10 @@ function splitPublicText(input: string): { main: string; meta: string[]; legal: 
   };
 }
 
-function renderInlineBold(text: string): Array<string | JSX.Element> {
+function renderInlineBold(text: string): ReactNode[] {
   const t = String(text || "");
   if (!t.includes("**")) return [t];
-  const out: Array<string | JSX.Element> = [];
+  const out: ReactNode[] = [];
   const re = /\*\*([^*]+)\*\*/g;
   let last = 0;
   let m: RegExpExecArray | null;
