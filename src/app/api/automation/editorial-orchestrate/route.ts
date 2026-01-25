@@ -55,15 +55,16 @@ function allowAutomation(req: Request): boolean {
 }
 
 function newsQueryFor(office: string, region: string): string {
-  // Keep queries conservative; GDELT will rank relevance.
   const off = office.toLowerCase();
   if (off.includes("senado")) {
-    // National scope: Colombia; allow international only if it surfaces naturally as high relevance.
-    return "Colombia seguridad";
+    // National scope: prioritize high-impact / civic risk topics.
+    return "Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR violencia) seguridad";
   }
   // Cámara: prioritize territory (Meta, etc). Allow national if it impacts the region (GDELT ranking helps).
   const reg = String(region ?? "").trim();
-  return reg ? `${reg} Colombia seguridad` : "Colombia seguridad";
+  return reg
+    ? `${reg} Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR violencia) seguridad`
+    : "Colombia (secuestro OR extorsión OR homicidio OR atentado OR narcotráfico OR corrupción OR accidente OR violencia) seguridad";
 }
 
 function isBlockedNewsUrl(url: string): boolean {
@@ -476,11 +477,13 @@ function sanitizeHeadline(args: { titleLine: string; candidateName: string; ball
   return t.slice(0, 120);
 }
 
-function buildSubtitle(args: { candidateName: string; office: string; axis: string | null }): string {
+function buildSubtitle(args: { candidateName: string; office: string; axis: string | null; ballotNumber?: string | number | null }): string {
   const name = normalizeSpaces(args.candidateName).slice(0, 80);
   const office = normalizeSpaces(args.office).slice(0, 40);
   const axis = args.axis ? normalizeSpaces(args.axis).slice(0, 64) : "Agenda cívica y seguridad ciudadana";
-  return `${name} · ${office} · ${axis}…`.slice(0, 140);
+  const bn = args.ballotNumber ? `Tarjetón ${String(args.ballotNumber).trim()}` : null;
+  // Order: Name · Office · Tarjetón N · Axis
+  return `${name} · ${office} · ${bn ? `${bn} · ` : ""}${axis}…`.slice(0, 140);
 }
 
 function stripMarkdownLike(input: string): string {
@@ -488,6 +491,66 @@ function stripMarkdownLike(input: string): string {
     .replaceAll(/[*_`>#-]/g, " ")
     .replaceAll(/\s+/g, " ")
     .trim();
+}
+
+function pickVariantIndex(seed: string, mod: number): number {
+  const s = String(seed || "mp26").slice(0, 300);
+  const hex = createHash("sha256").update(s).digest("hex").slice(0, 8);
+  const n = parseInt(hex, 16) >>> 0;
+  return mod > 0 ? n % mod : 0;
+}
+
+function paraphraseAxis(axis: string, seed: string): string {
+  const a = stripMarkdownLike(axis).toLowerCase();
+  if (!a) return "";
+
+  // Known axes → controlled paraphrases (same meaning, less repetition).
+  const rules: Array<{ match: (s: string) => boolean; variants: string[] }> = [
+    {
+      match: (s) => s.includes("control") && s.includes("territorial") && (s.includes("perman") || s.includes("sosten")),
+      variants: [
+        "presencia institucional sostenida en el territorio",
+        "control y presencia permanente en el territorio",
+        "gobernanza territorial con despliegue continuo de seguridad",
+      ],
+    },
+    {
+      match: (s) => s.includes("anticorrup") || (s.includes("lucha") && s.includes("corrup")),
+      variants: [
+        "cero tolerancia a la corrupción con control y sanción",
+        "integridad pública con auditoría y transparencia real",
+        "blindaje anticorrupción en contratación y ejecución",
+      ],
+    },
+    {
+      match: (s) => s.includes("seguridad") && s.includes("legal"),
+      variants: ["seguridad con legalidad y reglas claras", "orden y seguridad respetando la ley", "seguridad ciudadana con justicia y legalidad"],
+    },
+  ];
+
+  for (const r of rules) {
+    if (!r.match(a)) continue;
+    const i = pickVariantIndex(`${seed}|${a}|axis`, r.variants.length);
+    return r.variants[i] ?? r.variants[0]!;
+  }
+
+  // Generic light rewrite (synonyms) for other axes.
+  const swaps: Array<[RegExp, string[]]> = [
+    [/\bpermanente\b/gi, ["sostenida", "constante"]],
+    [/\bcontrol\b/gi, ["coordinación", "gestión"]],
+    [/\bterritorial\b/gi, ["en el territorio", "territorial"]],
+    [/\bseguridad\b/gi, ["protección ciudadana", "seguridad"]],
+    [/\bjusticia\b/gi, ["justicia", "debido proceso"]],
+    [/\bcorrupción\b/gi, ["corrupción", "malversación"]],
+  ];
+
+  let out = stripMarkdownLike(axis);
+  for (const [re, vars] of swaps) {
+    if (!re.test(out)) continue;
+    const i = pickVariantIndex(`${seed}|${re.source}`, vars.length);
+    out = out.replace(re, vars[i] ?? vars[0]!);
+  }
+  return normalizeSpaces(out).slice(0, 110);
 }
 
 function pickProposalAxes(args: { proposals: string; hints: string[] }): string[] {
@@ -554,14 +617,21 @@ function ensureCandidateAlignmentInBlog(args: {
   })();
 
   const badge = ballot ? `**${name} · Tarjetón ${ballot}**` : `**${name}**`;
-  const axisSentence = axes.length
-    ? `En su programa, destaca: ${axes.map((a) => `“${a}”`).join(" y ")}.`
-    : "En su programa, plantea medidas concretas para fortalecer la seguridad con legalidad y control institucional.";
+  const seed = `${name}|${ballot}|${args.newsHint}`.slice(0, 380);
+  const prettyAxes = axes.map((a) => paraphraseAxis(a, seed)).filter(Boolean);
+  const axisBits = prettyAxes.length ? prettyAxes : args.axisHint ? [paraphraseAxis(args.axisHint, seed)].filter(Boolean) : [];
 
-  const paragraph =
-    `${badge} propone un enfoque institucional y verificable para responder a retos como el de esta noticia. ` +
-    `${axisSentence} ` +
-    `Esto permite traducir lecciones (locales o internacionales) en acciones aplicables a Colombia, con prioridad en ${String(args.office || "").toLowerCase().includes("senado") ? "la agenda nacional" : "el territorio"}.\n`;
+  const scope = String(args.office || "").toLowerCase().includes("senado") ? "la agenda nacional" : "el territorio";
+  const axisSentence = axisBits.length
+    ? `Esto se conecta con su propuesta de ${axisBits.length === 1 ? axisBits[0] : `${axisBits[0]} y ${axisBits[1]}`}.`
+    : "Esto se conecta con su propuesta de fortalecer la seguridad con legalidad y presencia institucional.";
+
+  const templates = [
+    `${badge} aterriza este tipo de retos con un enfoque práctico: ${axisSentence} En escenarios como este, la prioridad es traducir el análisis en acciones medibles en ${scope}.`,
+    `${badge} plantea una ruta clara ante situaciones como la de esta noticia. ${axisSentence} El objetivo es recuperar confianza ciudadana con resultados visibles en ${scope}.`,
+    `Cuando el debate se vuelve complejo, hace falta un plan. ${badge} propone actuar con serenidad y firmeza: ${axisSentence} Así se evitan respuestas improvisadas y se fortalece ${scope}.`,
+  ];
+  const paragraph = templates[pickVariantIndex(`${seed}|tpl`, templates.length)] ?? templates[0]!;
 
   // Insert after "Cómo encaja..." if present; otherwise insert before "Fuente:" or at end.
   const lines = base.split("\n");
@@ -627,6 +697,21 @@ function isBadOgImageUrl(u: string): boolean {
   if (docBits.some((b) => s.includes(b))) return true;
   if (s.endsWith(".svg")) return true;
   return false;
+}
+
+function isHotlinkSafeImageUrl(u: string): boolean {
+  try {
+    const host = new URL(u).host.toLowerCase();
+    const allow = [
+      "upload.wikimedia.org",
+      "commons.wikimedia.org",
+      "wikipedia.org",
+      new URL(getSiteUrlString()).host.toLowerCase(),
+    ];
+    return allow.some((h) => host === h || host.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
 }
 
 function stripPublicMetaLines(input: string): string {
@@ -1414,7 +1499,9 @@ export async function POST(req: Request) {
   const sourceUrl = rssChosen?.url ?? article?.url ?? null;
   const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
   const ogImage =
-    og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
+    og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) && isHotlinkSafeImageUrl(og.image_url)
+      ? og.image_url
+      : null;
 
   const imageQuery = [
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
@@ -1506,7 +1593,7 @@ export async function POST(req: Request) {
 
   // Subtitle must mention the candidate; title must NOT mention them.
   const axis = deriveEditorialAxisFromProposals(String(pol.proposals || "")) ?? null;
-  const subtitle = buildSubtitle({ candidateName: pol.name, office: pol.office, axis });
+  const subtitle = buildSubtitle({ candidateName: pol.name, office: pol.office, axis, ballotNumber: pol.ballot_number ?? null });
 
   const blogWithCredits = (() => {
     const baseRaw = normalizeLineBreaks(winner.data.platform_variants.blog || "");

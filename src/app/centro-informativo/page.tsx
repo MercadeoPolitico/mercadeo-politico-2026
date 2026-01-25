@@ -22,6 +22,15 @@ type Post = {
   published_at: string;
 };
 
+function isLocalHostUrl(u: string): boolean {
+  try {
+    const host = new URL(u).host.toLowerCase();
+    return host.endsWith("vercel.app") || host === "localhost";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeLineBreaks(input: string): string {
   // Some AI engines may output HTML breaks. Centro Informativo stores/render as plain text.
   return String(input || "")
@@ -153,6 +162,8 @@ export default async function CitizenInfoCenterPage() {
                 const mainText = bodyParts.main || excerptParts.main;
                 const mediaUrl = p.media_urls?.[0] ? String(p.media_urls[0]) : "";
                 const showMedia = Boolean(mediaUrl && !isLikelyDocumentImageUrl(mediaUrl));
+                const displayMediaUrl =
+                  showMedia && mediaUrl && !isLocalHostUrl(mediaUrl) ? `/api/public/media-proxy?url=${encodeURIComponent(mediaUrl)}` : mediaUrl;
 
                 return (
                   <div className="grid gap-4 lg:grid-cols-[220px_1fr] lg:items-start">
@@ -160,11 +171,10 @@ export default async function CitizenInfoCenterPage() {
                       <figure className="overflow-hidden rounded-2xl border border-border bg-background/40">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={mediaUrl}
+                          src={displayMediaUrl}
                           alt=""
                           className="h-[180px] w-full object-cover"
                           loading="lazy"
-                          referrerPolicy="no-referrer"
                         />
                       </figure>
                     ) : (

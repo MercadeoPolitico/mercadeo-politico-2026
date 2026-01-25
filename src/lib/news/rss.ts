@@ -131,7 +131,8 @@ function pickTop(items: RssItem[], queryTerms: string[]): RssItem | null {
   if (!items.length) return null;
   const scored = items
     .map((it) => {
-      const s = scoreRecency(it.published_at) + scoreSensational(it.title) + scoreQueryMatch(it.title, queryTerms);
+      // Bias toward impactful/urgent civic news; still tempered by recency + query relevance.
+      const s = scoreRecency(it.published_at) + scoreSensational(it.title) * 2 + scoreQueryMatch(it.title, queryTerms);
       return { it, s };
     })
     .sort((a, b) => b.s - a.s);
