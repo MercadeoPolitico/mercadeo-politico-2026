@@ -1374,10 +1374,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "assertion_failed", request_id: requestId }, { status: 500 });
   }
 
+  // Global auto toggle (app_settings) acts as a hard-stop for automated publishing.
+  // If OFF: we still generate drafts, but we do NOT auto-publish nor forward to n8n.
+  let globalAutoEnabled = true;
+  try {
+    const { data } = await admin.from("app_settings").select("value").eq("key", "auto_blog_global_enabled").maybeSingle();
+    const v = data && typeof (data as any).value === "string" ? String((data as any).value).trim().toLowerCase() : null;
+    if (v === "false") globalAutoEnabled = false;
+  } catch {
+    // ignore (default: enabled)
+  }
+
   // Optional auto-publish (governed by candidate-level toggle).
   // - If OFF, Centro Informativo can remain empty (editorial policy).
   // - If ON, we publish immediately and optionally forward a teaser to n8n.
-  if (pol.auto_publish_enabled === true) {
+  if (pol.auto_publish_enabled === true && globalAutoEnabled) {
     try {
       const created_at = new Date().toISOString();
       const titleLine = blogWithCredits.split("\n").find((l) => l.trim().length > 0) ?? `Centro informativo · ${pol.name}`;

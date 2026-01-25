@@ -224,6 +224,41 @@ body::before {
   will-change: transform, opacity;
 }
 
+/* Brand seal glow (footer) */
+@keyframes marketbrainSealGlow {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.22)) drop-shadow(0 0 18px rgba(250, 204, 21, 0.18));
+    opacity: 0.92;
+  }
+  50% {
+    transform: translateY(-1px) scale(1.03);
+    filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.35)) drop-shadow(0 0 26px rgba(250, 204, 21, 0.28));
+    opacity: 1;
+  }
+}
+
+.marketbrain-seal-glow {
+  animation: marketbrainSealGlow 3.2s ease-in-out infinite;
+  will-change: transform, filter, opacity;
+}
+
+/* Admin fluorescent toggle dot */
+@keyframes marketbrainNeonPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(52, 211, 153, 0.55), 0 0 24px rgba(52, 211, 153, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(52, 211, 153, 0.85), 0 0 36px rgba(52, 211, 153, 0.35);
+  }
+}
+
+.marketbrain-neon-pulse {
+  animation: marketbrainNeonPulse 1.9s ease-in-out infinite;
+}
+
 /* Synthetic Intelligence meters (admin) */
 @keyframes siBarPulse {
   0% {

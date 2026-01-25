@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { AdminAutoPublishToggle } from "./AdminAutoPublishToggle";
 
 export const metadata: Metadata = {
   title: "Admin",
@@ -31,7 +32,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <Link href="/admin" className="font-semibold tracking-tight">
             Admin · mercadeo-politico-2026
           </Link>
-          <nav className="flex items-center gap-1">
+          <div className="flex items-center gap-3">
+            <AdminAutoPublishToggle />
+            <nav className="flex items-center gap-1">
             <Link className="rounded-full px-3 py-2 text-sm font-medium text-muted hover:bg-surface hover:text-foreground" href="/admin">
               Dashboard
             </Link>
@@ -70,7 +73,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             >
               n8n / Redes
             </Link>
-          </nav>
+            </nav>
+          </div>
         </div>
       </header>
       <main className="mx-auto w-full max-w-6xl px-4 py-10">{children}</main>
