@@ -46,9 +46,18 @@ async function main() {
   assert(key, "Missing SUPABASE_SERVICE_ROLE_KEY");
   const sb = createClient(url, key, { auth: { persistSession: false } });
 
+  // 0) Ensure global auto toggle is ON (hard-stop for auto-publishing).
+  {
+    const at = new Date().toISOString();
+    const { error } = await sb
+      .from("app_settings")
+      .upsert({ key: "auto_blog_global_enabled", value: "true", updated_at: at }, { onConflict: "key" });
+    if (error) throw new Error(`app_settings_upsert_failed:${error.message || "unknown"}`);
+  }
+
   // 1) Ensure auto_publish is ON for all politicians (requested default ON).
   {
-    const { error } = await sb.from("politicians").update({ auto_publish_enabled: true }).neq("id", "");
+    const { error } = await sb.from("politicians").update({ auto_publish_enabled: true, auto_blog_enabled: true }).neq("id", "");
     if (error) throw new Error(`politicians_update_failed:${error.message || "unknown"}`);
   }
 
