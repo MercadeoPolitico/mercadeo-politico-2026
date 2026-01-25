@@ -79,6 +79,7 @@ async function fetchBestNewsArticle(args: {
   office: string;
   region: string;
   regional_hints: string[];
+  avoid_urls?: string[];
 }): Promise<import("@/lib/news/gdelt").GdeltArticle | null> {
   const off = args.office.toLowerCase();
   const reg = String(args.region || "").trim();
@@ -109,7 +110,11 @@ async function fetchBestNewsArticle(args: {
 
   for (const q of queries) {
     // eslint-disable-next-line no-await-in-loop
-    const a = await fetchTopGdeltArticle(q, { preferred_url_hints: args.regional_hints, prefer_sensational: true });
+    const a = await fetchTopGdeltArticle(q, {
+      preferred_url_hints: args.regional_hints,
+      prefer_sensational: true,
+      exclude_urls: args.avoid_urls ?? [],
+    });
     if (!a) continue;
     if (isBlockedNewsUrl(a.url)) continue;
     return a;
@@ -600,6 +605,58 @@ async function fetchActiveRssSources(args: {
   return (data ?? []) as any;
 }
 
+function regionKeyFromCandidate(args: { office: string; region: string }): "meta" | "colombia" {
+  // National scope (Senado) defaults to Colombia.
+  const off = String(args.office || "").toLowerCase();
+  if (off.includes("senado")) return "colombia";
+  const r = String(args.region || "").toLowerCase();
+  if (r.includes("meta")) return "meta";
+  // Future-safe fallback: treat unknown regions as Colombia-wide until new region keys are added.
+  return "colombia";
+}
+
+async function recentUsedNewsUrls(args: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  candidate_id: string;
+}): Promise<string[]> {
+  const admin = args.admin;
+  if (!admin) return [];
+  const urls: string[] = [];
+  try {
+    // Recent published posts for this candidate
+    const { data: posts } = await admin
+      .from("citizen_news_posts")
+      .select("source_url")
+      .eq("candidate_id", args.candidate_id)
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(120);
+    for (const r of posts ?? []) {
+      const u = (r as any)?.source_url;
+      if (typeof u === "string" && u.trim()) urls.push(u.trim());
+    }
+
+    // Recent drafts for this candidate (kept even if posts are purged)
+    const { data: drafts } = await admin
+      .from("ai_drafts")
+      .select("metadata")
+      .eq("candidate_id", args.candidate_id)
+      .eq("content_type", "blog")
+      .order("created_at", { ascending: false })
+      .limit(140);
+    for (const d of drafts ?? []) {
+      const m = (d as any)?.metadata ?? null;
+      const su = m && typeof m.source_url === "string" ? String(m.source_url).trim() : "";
+      const ru = m && typeof m.original_rss_url === "string" ? String(m.original_rss_url).trim() : "";
+      const nu = m?.news && typeof m.news.url === "string" ? String(m.news.url).trim() : "";
+      for (const u of [su, ru, nu]) if (u) urls.push(u);
+    }
+  } catch {
+    // ignore
+  }
+  return Array.from(new Set(urls.map((u) => u.trim()).filter(Boolean))).slice(0, 240);
+}
+
 function chooseNewsSignal(args: {
   gdelt: import("@/lib/news/gdelt").GdeltArticle | null;
   rss: RssItem | null;
@@ -799,24 +856,36 @@ export async function POST(req: Request) {
   // 1) Admin inputs first (if provided by automation caller)
   const hasAdminInputs = adminProvidedNewsLinks.length > 0 || adminEditorialNotes.length > 0 || recentMediaUrls.length > 0;
 
-  // 2) News selection (GDELT) only if no admin-provided news links
-  const gdeltArticle = adminProvidedNewsLinks.length
-    ? null
-    : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints });
+  const avoidNewsUrls = adminProvidedNewsLinks.length ? [] : await recentUsedNewsUrls({ admin, candidate_id: pol.id });
 
   // RSS additive signal (only when no admin-provided news)
-  const regionKey = regional.region_used === "meta" ? "meta" : "colombia";
+  const regionKey = regionKeyFromCandidate({ office: pol.office, region: pol.region });
   const rssSources = adminProvidedNewsLinks.length ? [] : await fetchActiveRssSources({ admin, region_key: regionKey });
   const rssItem =
     adminProvidedNewsLinks.length
       ? null
       : await pickTopRssItem({
           sources: rssSources,
-          query_terms: [pol.region, pol.office, "Colombia", "seguridad", "corrupción", "Meta", "Villavicencio"].filter(Boolean).map(String),
+          query_terms: [
+            pol.region,
+            pol.office,
+            "Colombia",
+            "seguridad",
+            "corrupción",
+            ...(regionKey === "meta" ? ["Meta", "Villavicencio", "Acacías", "Granada (Meta)"] : []),
+          ]
+            .filter(Boolean)
+            .map(String),
+          avoid_urls: avoidNewsUrls,
         });
 
+  // 2) News selection (GDELT) only if no admin-provided news links
+  const gdeltArticle = adminProvidedNewsLinks.length
+    ? null
+    : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: avoidNewsUrls });
+
   // Decide which signal to use (RSS is additive; never exclusive).
-  const chosen = chooseNewsSignal({ gdelt: gdeltArticle, rss: rssItem, prefer_rss: Boolean(rssItem && !gdeltArticle) });
+  const chosen = chooseNewsSignal({ gdelt: gdeltArticle, rss: rssItem, prefer_rss: Boolean(rssItem) });
   const article = chosen?.type === "gdelt" ? chosen.article : null;
   const rssChosen = chosen?.type === "rss" ? chosen.item : null;
 
@@ -1458,8 +1527,8 @@ export async function POST(req: Request) {
       const slug = slugify(`${pol.slug}-${created_at}-${titleLine}`);
       const mediaUrl =
         (metadata as any)?.media?.image_url && typeof (metadata as any).media.image_url === "string" ? String((metadata as any).media.image_url) : "";
-      const mediaOk =
-        mediaUrl && !isBadOgImageUrl(mediaUrl) && String((metadata as any)?.media?.source ?? "") !== "fallback_svg" ? mediaUrl : "";
+      // Publish an image whenever possible. If we couldn't find a real image, the fallback SVG is still better than blank.
+      const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : "";
 
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")

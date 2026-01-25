@@ -20,6 +20,11 @@ export type GdeltPickOptions = {
    * This is a soft preference only.
    */
   prefer_sensational?: boolean;
+  /**
+   * Optional list of URLs already used recently, to avoid repeating news.
+   * Exact match (case-insensitive).
+   */
+  exclude_urls?: string[];
 };
 
 function hasOp(q: string, op: string): boolean {
@@ -156,6 +161,12 @@ export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOption
   if (!raw) return null;
   const preferredHints = normalizeHints(opts?.preferred_url_hints);
   const preferSensational = opts?.prefer_sensational === true;
+  const exclude = new Set(
+    (opts?.exclude_urls ?? [])
+      .map((u) => String(u || "").trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 600),
+  );
 
   // Two-pass strategy:
   // 1) Try with default filters (Spanish + Colombia bias for local queries)
@@ -189,6 +200,8 @@ export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOption
         .filter((a) => a.title && a.url);
 
       if (mapped.length === 0) continue;
+      const filtered = exclude.size ? mapped.filter((a) => !exclude.has(String(a.url || "").trim().toLowerCase())) : mapped;
+      const candidatesList = filtered.length ? filtered : mapped;
 
       const biasCo = shouldBiasToColombia(qRaw);
       const blockedHosts = new Set(["thehindu.com", "carbuzz.com"]);
@@ -200,15 +213,15 @@ export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOption
       };
 
       // If Colombia bias is on and we have any Colombian-looking sources, prefer them.
-      const colombian = biasCo ? mapped.filter((a) => isLikelyColombianSource(a)) : [];
+      const colombian = biasCo ? candidatesList.filter((a) => isLikelyColombianSource(a)) : [];
 
       // If we have any preferred regional sources, prefer them strongly.
-      const hinted = preferredHints.length ? mapped.filter((a) => matchesAnyHint(a.url, preferredHints)) : [];
+      const hinted = preferredHints.length ? candidatesList.filter((a) => matchesAnyHint(a.url, preferredHints)) : [];
 
       // If we have some non-blocked options, avoid obviously irrelevant outlets.
-      const nonBlocked = mapped.filter((a) => !isBlocked(a.url));
+      const nonBlocked = candidatesList.filter((a) => !isBlocked(a.url));
 
-      const pool = hinted.length ? hinted : colombian.length ? colombian : nonBlocked.length ? nonBlocked : mapped;
+      const pool = hinted.length ? hinted : colombian.length ? colombian : nonBlocked.length ? nonBlocked : candidatesList;
 
       // Score and pick best candidate (soft preferences).
       const scored = pool

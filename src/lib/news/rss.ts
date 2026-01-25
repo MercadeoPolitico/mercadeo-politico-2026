@@ -217,6 +217,7 @@ export async function fetchRssItems(args: { source: RssSource; limit?: number })
 export async function pickTopRssItem(args: {
   sources: RssSource[];
   query_terms: string[];
+  avoid_urls?: string[];
 }): Promise<RssItem | null> {
   const active = args.sources.filter((s) => s.active);
   const all: RssItem[] = [];
@@ -232,6 +233,8 @@ export async function pickTopRssItem(args: {
     seen.add(x.url);
     return true;
   });
-  return pickTop(deduped, args.query_terms);
+  const avoid = new Set((args.avoid_urls ?? []).map((u) => String(u || "").trim().toLowerCase()).filter(Boolean));
+  const filtered = avoid.size ? deduped.filter((x) => !avoid.has(String(x.url || "").trim().toLowerCase())) : deduped;
+  return pickTop(filtered.length ? filtered : deduped, args.query_terms);
 }
 
