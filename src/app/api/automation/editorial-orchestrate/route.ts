@@ -536,8 +536,9 @@ function ensureCandidateAlignmentInBlog(args: {
   const name = normalizeSpaces(args.candidateName);
   const ballot = args.ballotNumber ? String(args.ballotNumber).trim() : "";
   const mustToken = ballot ? `tarjetón ${ballot}` : name;
-  const hasCandidate = name && base.toLowerCase().includes(name.toLowerCase());
-  const hasBallot = ballot ? base.toLowerCase().includes(`tarjetón ${ballot}`) : true;
+  const lowBase = base.toLowerCase();
+  const hasCandidate = name && lowBase.includes(name.toLowerCase());
+  const hasBallot = ballot ? lowBase.includes(`tarjetón ${ballot}`) : true;
 
   const axes = (() => {
     const hints = [
@@ -568,9 +569,12 @@ function ensureCandidateAlignmentInBlog(args: {
   const idxSource = lines.findIndex((l) => l.toLowerCase().startsWith("fuente:"));
   const insertAt = idxHow >= 0 ? idxHow + 1 : idxSource >= 0 ? idxSource : Math.max(2, lines.length - 1);
 
-  // Avoid duplicating if already present.
-  if (hasCandidate && hasBallot) return base;
-  if (base.toLowerCase().includes(mustToken.toLowerCase())) return base;
+  // Avoid duplicating if we already injected a bold badge + alignment cue.
+  const hasBadge = name ? lowBase.includes(`**${name.toLowerCase()}`) : false;
+  const hasAlignmentCue = lowBase.includes("en su programa") || lowBase.includes("cómo encaja") || lowBase.includes("como encaja");
+  const hasMustToken = mustToken ? lowBase.includes(mustToken.toLowerCase()) : false;
+  const needs = !hasBadge || !hasAlignmentCue || !hasMustToken || !hasCandidate || !hasBallot;
+  if (!needs) return base;
 
   const next = [...lines.slice(0, insertAt), "", paragraph.trim(), "", ...lines.slice(insertAt)].join("\n").replace(/\n{3,}/g, "\n\n").trim();
   return next;
