@@ -1,0 +1,22 @@
+---
+description: MP26 core operating protocol (persistent)
+alwaysApply: true
+---
+
+# MP26: Core operating protocol
+
+## Working style
+- Be decisive and execution-focused; avoid repeating explanations.
+- Prefer real fixes over “mock” or hypothetical changes.
+- If something is unclear, consult the transcript file referenced by the user instead of guessing.
+
+## Engineering rules (project expectations)
+- Use the repo tools to verify changes (lint/build) after substantive edits.
+- Keep changes aligned to the existing architecture (Next.js App Router + Supabase + n8n + cron).
+- Don’t weaken security to “make it work” (no broad SSRF proxies, no unsafe scraping).
+
+## Cache / PWA sanity
+- If users report “no styles” or broken UI after deploy, assume stale HTML/assets and apply cache reset mechanisms:
+  - Ensure `/api/cache/version` changes on deploy and the watcher (`CacheResetWatcher`) can redirect to `/api/cache/clear`.
+  - Prefer build-id based versioning + optional admin-triggered bump.
+

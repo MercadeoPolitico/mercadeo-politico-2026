@@ -1,0 +1,18 @@
+---
+description: News sourcing & rights guardrails (persistent)
+alwaysApply: true
+---
+
+# MP26: News sourcing & rights guardrails
+
+- Do not scrape and republish full text from commercial news sites.
+- Prefer:
+  - Official/open government feeds
+  - RSS/Atom/JSON endpoints where usage is allowed
+  - Link-only citation to the original source URL
+  - Our own analysis text (500–800 words) generated from metadata + candidate program
+- Images:
+  - Publish only CC (Wikimedia) or first-party assets
+  - Never hotlink/redistribute publisher images (use OG images as reference-only metadata if needed)
+- Any feed used by automation must be explicitly approved (`license_confirmed = true`) unless it is clearly open government.
+
