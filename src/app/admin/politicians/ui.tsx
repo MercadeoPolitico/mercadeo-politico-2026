@@ -17,6 +17,7 @@ export function AdminPoliticiansClient({ initial }: { initial: Politician[] }) {
   const [items, setItems] = useState<Politician[]>(initial);
   const [creating, setCreating] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const [slug, setSlug] = useState("");
   const [name, setName] = useState("");
@@ -31,6 +32,24 @@ export function AdminPoliticiansClient({ initial }: { initial: Politician[] }) {
     if (!res.ok) return;
     const json = (await res.json()) as { ok: boolean; politicians: Politician[] };
     if (json.ok) setItems(json.politicians ?? []);
+  }
+
+  async function deleteCandidate(id: string, name: string) {
+    const ok = window.confirm(`Vas a ELIMINAR el candidato "${name}". Esta acción no se puede deshacer. ¿Continuar?`);
+    if (!ok) return;
+    setDeleting(id);
+    const res = await fetch("/api/admin/politicians", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setDeleting(null);
+    if (!res.ok) {
+      setMsg("No fue posible eliminar el candidato (verifica permisos / dependencias).");
+      return;
+    }
+    setMsg("Candidato eliminado.");
+    await refresh();
   }
 
   async function create() {
@@ -124,15 +143,28 @@ export function AdminPoliticiansClient({ initial }: { initial: Politician[] }) {
 
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((p) => (
-          <Link key={p.id} href={`/admin/politicians/${p.id}`} className="glass-card p-6 transition hover:bg-white/10">
-            <p className="text-sm font-semibold">{p.name}</p>
-            <p className="mt-1 text-sm text-muted">{p.office}</p>
-            <p className="mt-1 text-xs text-muted">
-              {p.region}
-              {p.party ? ` · ${p.party}` : ""}
-            </p>
-            <p className="mt-3 text-xs text-muted">Última actualización: {new Date(p.updated_at).toLocaleString("es-CO")}</p>
-          </Link>
+          <div key={p.id} className="glass-card p-6">
+            <div className="flex items-start justify-between gap-3">
+              <Link href={`/admin/politicians/${p.id}`} className="min-w-0 flex-1">
+                <p className="text-sm font-semibold">{p.name}</p>
+                <p className="mt-1 text-sm text-muted">{p.office}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {p.region}
+                  {p.party ? ` · ${p.party}` : ""}
+                </p>
+                <p className="mt-3 text-xs text-muted">Última actualización: {new Date(p.updated_at).toLocaleString("es-CO")}</p>
+              </Link>
+              <button
+                className="glass-button"
+                type="button"
+                onClick={() => void deleteCandidate(p.id, p.name)}
+                disabled={deleting === p.id}
+                title="Eliminar candidato"
+              >
+                {deleting === p.id ? "…" : "Eliminar"}
+              </button>
+            </div>
+          </div>
         ))}
       </div>
 

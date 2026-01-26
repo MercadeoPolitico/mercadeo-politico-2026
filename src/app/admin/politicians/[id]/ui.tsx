@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { ensureSocialVariants } from "@/lib/automation/socialVariants";
 
 type Politician = {
   id: string;
@@ -53,17 +53,23 @@ export function PoliticianWorkspaceClient({
   links: SocialLink[];
   publications: Publication[];
 }) {
-  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
-
   const initialSnapshot = useMemo(
     () => ({
+      name: politician.name ?? "",
+      office: politician.office ?? "",
+      region: politician.region ?? "",
+      party: politician.party ?? "",
       bio: politician.biography ?? "",
       proposals: politician.proposals ?? "",
       ballotNumber: politician.ballot_number ? String(politician.ballot_number) : "",
     }),
-    [politician.ballot_number, politician.biography, politician.proposals]
+    [politician.ballot_number, politician.biography, politician.name, politician.office, politician.party, politician.proposals, politician.region]
   );
 
+  const [name, setName] = useState(initialSnapshot.name);
+  const [office, setOffice] = useState(initialSnapshot.office);
+  const [region, setRegion] = useState(initialSnapshot.region);
+  const [party, setParty] = useState<string>(initialSnapshot.party);
   const [bio, setBio] = useState(initialSnapshot.bio);
   const [proposals, setProposals] = useState(initialSnapshot.proposals);
   const [ballotNumber, setBallotNumber] = useState<string>(initialSnapshot.ballotNumber);
@@ -72,7 +78,13 @@ export function PoliticianWorkspaceClient({
   const [savedSnapshot, setSavedSnapshot] = useState(initialSnapshot);
 
   const hasUnsavedProfileChanges =
-    bio !== savedSnapshot.bio || proposals !== savedSnapshot.proposals || ballotNumber !== savedSnapshot.ballotNumber;
+    name !== savedSnapshot.name ||
+    office !== savedSnapshot.office ||
+    region !== savedSnapshot.region ||
+    party !== savedSnapshot.party ||
+    bio !== savedSnapshot.bio ||
+    proposals !== savedSnapshot.proposals ||
+    ballotNumber !== savedSnapshot.ballotNumber;
 
   const [links, setLinks] = useState<SocialLink[]>(initialLinks);
   const [newPlatform, setNewPlatform] = useState("facebook");
@@ -92,6 +104,23 @@ export function PoliticianWorkspaceClient({
   const [creatingPub, setCreatingPub] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [loadingFromDraft, setLoadingFromDraft] = useState(false);
+
+  // Autopoblar variantes cuando hay base (sin pisar ediciones manuales).
+  useEffect(() => {
+    const base = pubContent.trim();
+    if (!base) return;
+    if (pubVariants && (pubVariants.facebook.trim() || pubVariants.instagram.trim() || pubVariants.x.trim())) return;
+    const computed = ensureSocialVariants({
+      baseText: base,
+      blogText: base,
+      variants: null,
+      seo_keywords: (politician as any)?.seo_keywords ?? [],
+      candidate: { name, ballot_number: ballotNumber.trim() ? ballotNumber.trim() : politician.ballot_number ?? null },
+    });
+    setPubVariants({ facebook: computed.facebook, instagram: computed.instagram, x: computed.x });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pubContent]);
 
   const [accessMsg, setAccessMsg] = useState<string | null>(null);
   const [accessLink, setAccessLink] = useState<string | null>(null);
@@ -100,60 +129,119 @@ export function PoliticianWorkspaceClient({
   const [hubMsg, setHubMsg] = useState<string | null>(null);
   const [hubLoading, setHubLoading] = useState(false);
   const [files, setFiles] = useState<{ name: string; url: string }[]>([]);
+  const [analyzeLoading, setAnalyzeLoading] = useState<string | null>(null);
 
   async function refreshPublications() {
-    if (!supabase) return;
-    const { data } = await supabase
-      .from("politician_publications")
-      .select("id,platform,title,content,variants,media_urls,status,rotation_window_days,expires_at,created_at,updated_at,decided_at,decision_notes")
-      .eq("politician_id", politician.id)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (data) setPublications(data as Publication[]);
+    const res = await fetch(`/api/admin/politicians/publications?politician_id=${encodeURIComponent(politician.id)}`, { method: "GET" }).catch(
+      () => null
+    );
+    if (!res || !res.ok) return;
+    const json = (await res.json().catch(() => null)) as any;
+    if (json?.ok && Array.isArray(json.publications)) setPublications(json.publications as Publication[]);
   }
 
   async function refreshLinks() {
-    if (!supabase) return;
-    const { data } = await supabase
-      .from("politician_social_links")
-      .select("id,platform,handle,url,status,created_at")
-      .eq("politician_id", politician.id)
-      .order("created_at", { ascending: true });
-    if (data) setLinks(data as SocialLink[]);
+    const res = await fetch(`/api/admin/politicians/links?politician_id=${encodeURIComponent(politician.id)}`, { method: "GET" }).catch(() => null);
+    if (!res || !res.ok) return;
+    const json = (await res.json().catch(() => null)) as any;
+    if (json?.ok && Array.isArray(json.links)) setLinks(json.links as SocialLink[]);
   }
 
   async function saveProfile() {
     setProfileMsg(null);
-    if (!supabase) {
-      setProfileMsg("Supabase no está configurado en este entorno.");
-      return;
-    }
     setSavingProfile(true);
     const bn = ballotNumber.trim() ? Number(ballotNumber.trim()) : null;
-    const { error } = await supabase
-      .from("politicians")
-      .update({
+    const res = await fetch("/api/admin/politicians", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: politician.id,
+        name: name.trim(),
+        office: office.trim(),
+        region: region.trim(),
+        party: party.trim() ? party.trim() : "",
         biography: bio,
         proposals,
         ballot_number: Number.isFinite(bn as number) ? (bn as number) : null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", politician.id);
+      }),
+    }).catch(() => null);
     setSavingProfile(false);
-    if (error) {
+    if (!res || !res.ok) {
       setProfileMsg("No fue posible guardar.");
       return;
     }
     setProfileMsg("Guardado.");
-    setSavedSnapshot({ bio, proposals, ballotNumber });
+    setSavedSnapshot({ name, office, region, party, bio, proposals, ballotNumber });
+  }
+
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+
+  const profilePhotoUrl = useMemo(() => {
+    const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+    if (!base) return null;
+    // We can't know extension ahead of time; show the canonical "no-ext" URL by trying common ones on the server is expensive.
+    // In UI we use the published deterministic URL from getCandidates; here we show that same base (without assuming ext).
+    return `${base}/storage/v1/object/public/politician-media/${encodeURIComponent(politician.id)}/profile/profile`;
+  }, [politician.id]);
+
+  async function uploadProfilePhoto(file: File) {
+    setPhotoMsg(null);
+    setPhotoUploading(true);
+    const fd = new FormData();
+    fd.set("politician_id", politician.id);
+    fd.set("file", file);
+    const res = await fetch("/api/admin/politicians/photo", { method: "POST", body: fd });
+    setPhotoUploading(false);
+    const j = (await res.json().catch(() => null)) as any;
+    if (!res.ok || !j?.ok) {
+      const err = typeof j?.error === "string" ? j.error : "upload_failed";
+      setPhotoMsg(`No fue posible subir la foto: ${err}`);
+      return;
+    }
+    setPhotoMsg("Foto guardada. Se reflejará en el landing/candidatos.");
+  }
+
+  async function deleteProfilePhoto() {
+    const ok = window.confirm("¿Eliminar la foto del candidato?");
+    if (!ok) return;
+    setPhotoMsg(null);
+    setPhotoUploading(true);
+    const res = await fetch("/api/admin/politicians/photo", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ politician_id: politician.id }),
+    });
+    setPhotoUploading(false);
+    if (!res.ok) {
+      setPhotoMsg("No fue posible eliminar la foto.");
+      return;
+    }
+    setPhotoMsg("Foto eliminada.");
+  }
+
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  async function deleteCandidate() {
+    const ok = window.confirm(`Vas a ELIMINAR el candidato "${politician.name}". Esta acción no se puede deshacer. ¿Continuar?`);
+    if (!ok) return;
+    setDeleteMsg(null);
+    setDeleteLoading(true);
+    const res = await fetch("/api/admin/politicians", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: politician.id }),
+    });
+    setDeleteLoading(false);
+    if (!res.ok) {
+      setDeleteMsg("No fue posible eliminar.");
+      return;
+    }
+    window.location.assign("/admin/politicians");
   }
 
   async function addLink() {
     setLinkMsg(null);
-    if (!supabase) {
-      setLinkMsg("Supabase no está configurado en este entorno.");
-      return;
-    }
     const url = newUrl.trim();
     if (!url) {
       setLinkMsg("URL requerida.");
@@ -167,14 +255,17 @@ export function PoliticianWorkspaceClient({
       setLinkMsg("Plataforma inválida.");
       return;
     }
-    const { error } = await supabase.from("politician_social_links").insert({
-      politician_id: politician.id,
-      platform: newPlatform,
-      handle: newHandle.trim() ? newHandle.trim() : null,
-      url,
-      status: "active",
-    });
-    if (error) {
+    const res = await fetch("/api/admin/politicians/links", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        politician_id: politician.id,
+        platform: newPlatform,
+        handle: newHandle.trim() ? newHandle.trim() : null,
+        url,
+      }),
+    }).catch(() => null);
+    if (!res || !res.ok) {
       setLinkMsg("No fue posible agregar el enlace.");
       return;
     }
@@ -185,9 +276,12 @@ export function PoliticianWorkspaceClient({
 
   async function deleteLink(id: string) {
     setLinkMsg(null);
-    if (!supabase) return;
-    const { error } = await supabase.from("politician_social_links").delete().eq("id", id);
-    if (error) {
+    const res = await fetch("/api/admin/politicians/links", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => null);
+    if (!res || !res.ok) {
       setLinkMsg("No fue posible eliminar el enlace.");
       return;
     }
@@ -196,10 +290,13 @@ export function PoliticianWorkspaceClient({
 
   async function toggleLinkStatus(link: SocialLink) {
     setLinkMsg(null);
-    if (!supabase) return;
     const next = link.status === "active" ? "inactive" : "active";
-    const { error } = await supabase.from("politician_social_links").update({ status: next }).eq("id", link.id);
-    if (error) {
+    const res = await fetch("/api/admin/politicians/links", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: link.id, status: next }),
+    }).catch(() => null);
+    if (!res || !res.ok) {
       setLinkMsg("No fue posible actualizar el estado.");
       return;
     }
@@ -208,11 +305,6 @@ export function PoliticianWorkspaceClient({
 
   async function createPublication() {
     setPubMsg(null);
-    if (!supabase) {
-      setPubMsg("Supabase no está configurado en este entorno.");
-      return;
-    }
-
     const content = pubContent.trim();
     if (!content) {
       setPubMsg("Contenido requerido.");
@@ -224,30 +316,36 @@ export function PoliticianWorkspaceClient({
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const computed = ensureSocialVariants({
+      baseText: content,
+      blogText: content,
+      variants: pubVariants ?? null,
+      seo_keywords: (politician as any)?.seo_keywords ?? [],
+      candidate: { name, ballot_number: ballotNumber.trim() ? ballotNumber.trim() : politician.ballot_number ?? null },
+    });
+    const nextVariants = pubVariants ?? { facebook: computed.facebook, instagram: computed.instagram, x: computed.x };
+
     const rotation = pubRotationDays.trim() ? Number(pubRotationDays) : null;
     const expires_at = pubExpiresAt.trim() ? new Date(pubExpiresAt).toISOString() : null;
 
     setCreatingPub(true);
-    const { data: me } = await supabase.auth.getUser();
-    const created_by = me.user?.id ?? null;
-
-    const { error } = await supabase.from("politician_publications").insert({
-      politician_id: politician.id,
-      platform: pubPlatform,
-      title: pubTitle.trim() ? pubTitle.trim() : null,
-      content,
-      variants: pubVariants ?? {},
-      media_urls: media_urls.length ? media_urls : null,
-      status: "pending_approval",
-      rotation_window_days: Number.isFinite(rotation as number) ? rotation : null,
-      expires_at,
-      created_by,
-      updated_at: new Date().toISOString(),
-    });
-
+    const res = await fetch("/api/admin/politicians/publications", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        politician_id: politician.id,
+        platform: pubPlatform,
+        title: pubTitle.trim() ? pubTitle.trim() : null,
+        content,
+        variants: nextVariants,
+        media_urls: media_urls.length ? media_urls : null,
+        rotation_window_days: Number.isFinite(rotation as number) ? rotation : null,
+        expires_at,
+      }),
+    }).catch(() => null);
     setCreatingPub(false);
 
-    if (error) {
+    if (!res || !res.ok) {
       setPubMsg("No fue posible crear la publicación.");
       return;
     }
@@ -259,35 +357,20 @@ export function PoliticianWorkspaceClient({
     await refreshPublications();
   }
 
-  function sanitizeFilename(name: string): string {
-    const base = name.normalize("NFKD").replaceAll(/[^\w.\-]+/g, "-");
-    return base.length ? base.slice(0, 120) : "file";
-  }
-
   async function uploadMedia(file: File) {
     setUploadMsg(null);
-    if (!supabase) {
-      setUploadMsg("Supabase no está configurado en este entorno.");
-      return;
-    }
     setUploading(true);
-    const filename = sanitizeFilename(file.name);
-    const path = `${politician.id}/${Date.now()}-${filename}`;
-
-    const { error } = await supabase.storage.from("politician-media").upload(path, file, {
-      cacheControl: "3600",
-      upsert: false,
-      contentType: file.type || undefined,
-    });
-
-    if (error) {
+    const fd = new FormData();
+    fd.set("politician_id", politician.id);
+    fd.set("file", file);
+    const res = await fetch("/api/admin/politicians/media", { method: "POST", body: fd }).catch(() => null);
+    const j = (await res?.json().catch(() => null)) as any;
+    if (!res || !res.ok || !j?.ok || typeof j?.url !== "string") {
       setUploading(false);
-      setUploadMsg("No fue posible subir el archivo (verifica bucket/políticas).");
+      setUploadMsg("No fue posible subir el archivo (verifica configuración/permisos).");
       return;
     }
-
-    const { data } = supabase.storage.from("politician-media").getPublicUrl(path);
-    const url = data.publicUrl;
+    const url = String(j.url);
     setUploading(false);
 
     // Append to media field (comma-separated)
@@ -295,25 +378,35 @@ export function PoliticianWorkspaceClient({
       const next = prev.trim();
       return next ? `${next}, ${url}` : url;
     });
-    setUploadMsg("Archivo subido. Se agregó el URL al campo de media.");
+    setUploadMsg("Archivo subido (optimizado cuando aplica). Se agregó el URL al campo de media.");
   }
 
   async function refreshFiles() {
     setHubMsg(null);
-    if (!supabase) return;
-    const { data, error } = await supabase.storage.from("politician-media").list(politician.id, {
-      limit: 50,
-      sortBy: { column: "created_at", order: "desc" },
+    const res = await fetch(`/api/admin/politicians/media?politician_id=${encodeURIComponent(politician.id)}`, { method: "GET" }).catch(
+      () => null
+    );
+    if (!res || !res.ok) return;
+    const j = (await res.json().catch(() => null)) as any;
+    if (j?.ok && Array.isArray(j.files)) setFiles(j.files as { name: string; url: string }[]);
+  }
+
+  async function analyzeFileToDraft(f: { name: string; url: string }) {
+    setHubMsg(null);
+    setAnalyzeLoading(f.name);
+    const resp = await fetch("/api/admin/politicians/files/analyze", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ politician_id: politician.id, file_url: f.url, filename: f.name }),
     });
-    if (error || !data) return;
-    const next = data
-      .filter((o) => o.name && !o.name.endsWith("/"))
-      .map((o) => {
-        const path = `${politician.id}/${o.name}`;
-        const { data: u } = supabase.storage.from("politician-media").getPublicUrl(path);
-        return { name: o.name, url: u.publicUrl };
-      });
-    setFiles(next);
+    setAnalyzeLoading(null);
+    const j = (await resp.json().catch(() => null)) as any;
+    if (!resp.ok || !j?.ok) {
+      const err = typeof j?.error === "string" ? j.error : "analyze_failed";
+      setHubMsg(`No fue posible analizar el archivo: ${err}`);
+      return;
+    }
+    setHubMsg("Documento analizado: borrador creado en Admin → Contenido.");
   }
 
   async function generateNewsBlog() {
@@ -427,6 +520,53 @@ export function PoliticianWorkspaceClient({
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-3">
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Nombre</label>
+              <input className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Cargo</label>
+              <input className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={office} onChange={(e) => setOffice(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Región</label>
+              <input className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={region} onChange={(e) => setRegion(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <label className="text-sm font-medium">Partido (opcional)</label>
+              <input className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={party} onChange={(e) => setParty(e.target.value)} />
+            </div>
+
+            <div className="rounded-2xl border border-border bg-background/60 p-4">
+              <p className="text-sm font-semibold">Foto del candidato</p>
+              <p className="mt-1 text-xs text-muted">Se publica en landing y en /candidates. Sin logos/texto agregado.</p>
+              <div className="mt-3 grid gap-2">
+                <input
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  type="file"
+                  accept="image/*"
+                  disabled={photoUploading}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadProfilePhoto(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button className="glass-button" type="button" onClick={() => void deleteProfilePhoto()} disabled={photoUploading}>
+                    Eliminar foto
+                  </button>
+                  {profilePhotoUrl ? (
+                    <a className="glass-button inline-flex items-center justify-center" href={profilePhotoUrl} target="_blank" rel="noreferrer">
+                      Ver (debug)
+                    </a>
+                  ) : null}
+                </div>
+                {photoMsg ? <p className="text-xs text-muted">{photoMsg}</p> : null}
+              </div>
+            </div>
+          </div>
           <div className="space-y-2">
             <label className="text-sm font-medium">Biografía</label>
             <textarea
@@ -435,6 +575,9 @@ export function PoliticianWorkspaceClient({
               onChange={(e) => setBio(e.target.value)}
             />
           </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
             <label className="text-sm font-medium">Propuesta / líneas programáticas</label>
             <textarea
@@ -480,6 +623,10 @@ export function PoliticianWorkspaceClient({
         <button className="glass-button" type="button" onClick={saveProfile} disabled={savingProfile}>
           {savingProfile ? "Guardando…" : "Guardar perfil"}
         </button>
+        {deleteMsg ? <p className="text-sm text-amber-300">{deleteMsg}</p> : null}
+        <button className="glass-button" type="button" onClick={deleteCandidate} disabled={deleteLoading}>
+          {deleteLoading ? "Eliminando…" : "Eliminar candidato"}
+        </button>
       </section>
 
       <section className="glass-card space-y-4 p-6">
@@ -522,9 +669,19 @@ export function PoliticianWorkspaceClient({
                     <p className="truncate text-sm font-medium">{f.name}</p>
                     <p className="truncate text-xs text-muted">{f.url}</p>
                   </div>
-                  <button className="glass-button" type="button" onClick={() => navigator.clipboard.writeText(f.url)}>
-                    Copiar URL
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="glass-button" type="button" onClick={() => navigator.clipboard.writeText(f.url)}>
+                      Copiar URL
+                    </button>
+                    <button
+                      className="glass-button"
+                      type="button"
+                      onClick={() => void analyzeFileToDraft(f)}
+                      disabled={analyzeLoading === f.name}
+                    >
+                      {analyzeLoading === f.name ? "Analizando…" : "Crear borrador"}
+                    </button>
+                  </div>
                 </div>
               ))}
               {files.length === 0 ? <p className="text-sm text-muted">Sin archivos listados aún.</p> : null}
@@ -686,19 +843,63 @@ export function PoliticianWorkspaceClient({
             <div className="rounded-2xl border border-border bg-background/60 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm font-semibold">Variantes (FB / IG / X)</p>
-                <button
-                  className="glass-button"
-                  type="button"
-                  onClick={() =>
-                    setPubVariants({
-                      facebook: pubContent,
-                      instagram: pubContent,
-                      x: pubContent.slice(0, 280),
-                    })
-                  }
-                >
-                  Autogenerar desde base
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className="glass-button"
+                    type="button"
+                    onClick={async () => {
+                      setPubMsg(null);
+                      setLoadingFromDraft(true);
+                      const res = await fetch(
+                        `/api/admin/politicians/drafts/latest?candidate_id=${encodeURIComponent(politician.id)}`,
+                        { method: "GET" }
+                      ).catch(() => null);
+                      const j = (await res?.json().catch(() => null)) as any;
+                      setLoadingFromDraft(false);
+                      if (!res || !res.ok || !j?.ok || !j?.draft) {
+                        setPubMsg("No fue posible cargar el último borrador (revisa Admin → Contenido).");
+                        return;
+                      }
+                      const text = String(j.draft.generated_text ?? "").trim();
+                      if (!text) {
+                        setPubMsg("El borrador encontrado no tiene texto.");
+                        return;
+                      }
+                      setPubContent(text);
+                      const v = (j.draft.variants && typeof j.draft.variants === "object" ? j.draft.variants : null) as any;
+                      const computed = ensureSocialVariants({
+                        baseText: text,
+                        blogText: text,
+                        variants: v,
+                        seo_keywords: (politician as any)?.seo_keywords ?? [],
+                        candidate: { name, ballot_number: ballotNumber.trim() ? ballotNumber.trim() : politician.ballot_number ?? null },
+                      });
+                      setPubVariants({ facebook: computed.facebook, instagram: computed.instagram, x: computed.x });
+                    }}
+                    disabled={loadingFromDraft}
+                    title="Trae el último borrador de la cola (ai_drafts) y llena base + variantes"
+                  >
+                    {loadingFromDraft ? "Cargando borrador…" : "Cargar último borrador"}
+                  </button>
+                  <button
+                    className="glass-button"
+                    type="button"
+                    onClick={() => {
+                      const base = pubContent.trim();
+                      const computed = ensureSocialVariants({
+                        baseText: base,
+                        blogText: base,
+                        variants: null,
+                        seo_keywords: (politician as any)?.seo_keywords ?? [],
+                        candidate: { name, ballot_number: ballotNumber.trim() ? ballotNumber.trim() : politician.ballot_number ?? null },
+                      });
+                      setPubVariants({ facebook: computed.facebook, instagram: computed.instagram, x: computed.x });
+                    }}
+                    disabled={!pubContent.trim()}
+                  >
+                    Autogenerar desde base
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-3">
                 <textarea

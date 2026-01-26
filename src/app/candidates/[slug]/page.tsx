@@ -22,7 +22,7 @@ function titleFor(candidate: { name: string; role: string; region: string }): st
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const candidate = getCandidateBySlug(slug);
+  const candidate = await getCandidateBySlug(slug);
   if (!candidate) return {};
 
   const canonical = `${getSiteUrlString()}/candidates/${candidate.slug}`;
@@ -36,7 +36,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function CandidatePage({ params, searchParams }: PageProps) {
   const { slug } = await params;
-  const candidate = getCandidateBySlug(slug);
+  const candidate = await getCandidateBySlug(slug);
   if (!candidate) notFound();
 
   const supabase = await createSupabaseServerClient();

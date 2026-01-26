@@ -6,8 +6,8 @@ import { getCandidates } from "@/lib/candidates/getCandidates";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
 import { RotatingSeoMicrocopy } from "@/components/RotatingSeoMicrocopy";
 
-export default function Home() {
-  const candidates = getCandidates();
+export default async function Home() {
+  const candidates = await getCandidates();
   return (
     <PublicPageShell className="space-y-14 landing-animate">
       <Section>
@@ -114,7 +114,7 @@ export default function Home() {
 
       <Section title="Candidatos (Colombia, 2026)" subtitle="Perfiles públicos con biografía, propuesta y enlaces oficiales.">
         <div className="grid gap-4 md:grid-cols-2">
-          {candidates.map((c) => (
+          {candidates.map((c, idx) => (
             <CandidateCard
               key={c.id}
               name={c.name}
@@ -123,6 +123,8 @@ export default function Home() {
               region={c.region}
               ballotNumber={c.ballotNumber}
               shortBio={c.shortBio}
+              photoUrl={c.photoUrl}
+              enterIndex={idx}
               href={`/candidates/${c.slug}`}
               proposalHref={`/candidates/${c.slug}#propuesta`}
             />

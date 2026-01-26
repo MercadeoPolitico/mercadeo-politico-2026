@@ -10,13 +10,13 @@ export const metadata = {
     "Candidatos y datos base para elecciones Colombia 2026 (enfoque Meta). Comunicación ética y transparente.",
 };
 
-export default function CandidatesPage() {
-  const candidates = getCandidates();
+export default async function CandidatesPage() {
+  const candidates = await getCandidates();
   const senate = candidates.filter((c) => c.role === "Senado de la República");
   const house = candidates.filter((c) => c.role === "Cámara de Representantes");
 
   return (
-    <PublicPageShell className="space-y-10">
+    <PublicPageShell className="space-y-10 candidates-animate">
       <Section
         title="Candidatos"
         subtitle="Información básica y enlaces oficiales (cuando existan) para visibilidad digital."
@@ -25,7 +25,7 @@ export default function CandidatesPage() {
           <div className="space-y-3">
             <h2 className="text-lg font-semibold">Senado de la República</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {senate.map((c) => (
+              {senate.map((c, idx) => (
                 <CandidateCard
                   key={c.id}
                   name={c.name}
@@ -34,6 +34,8 @@ export default function CandidatesPage() {
                   region={c.region}
                   ballotNumber={c.ballotNumber}
                   shortBio={c.shortBio}
+                  photoUrl={c.photoUrl}
+                  enterIndex={idx}
                   href={`/candidates/${c.slug}`}
                   proposalHref={`/candidates/${c.slug}#propuesta`}
                 />
@@ -44,7 +46,7 @@ export default function CandidatesPage() {
           <div className="space-y-3">
             <h2 className="text-lg font-semibold">Cámara de Representantes</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              {house.map((c) => (
+              {house.map((c, idx) => (
                 <CandidateCard
                   key={c.id}
                   name={c.name}
@@ -53,6 +55,8 @@ export default function CandidatesPage() {
                   region={c.region}
                   ballotNumber={c.ballotNumber}
                   shortBio={c.shortBio}
+                  photoUrl={c.photoUrl}
+                  enterIndex={senate.length + idx}
                   href={`/candidates/${c.slug}`}
                   proposalHref={`/candidates/${c.slug}#propuesta`}
                 />

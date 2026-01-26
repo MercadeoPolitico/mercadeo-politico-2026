@@ -16,6 +16,8 @@ export type Candidate = {
   ballotNumber: number;
   region: string;
   party?: string;
+  /** Optional public photo URL (first-party Storage or other allowed host). */
+  photoUrl?: string | null;
   biography: string; // long, multi-paragraph plain text
   shortBio: string; // 2–3 lines
   proposal?: string; // optional long plain text (public)

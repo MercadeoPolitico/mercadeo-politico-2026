@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { getSiteUrlString } from "@/lib/site";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const base = getSiteUrlString();
 
@@ -17,17 +17,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/about", changeFrequency: "monthly", priority: 0.6 },
   ];
 
-  const candidateRoutes: RouteDef[] = (() => {
-    try {
-      const cands = getCandidates();
-      return cands.flatMap((c) => [
-        { path: `/candidates/${c.slug}`, changeFrequency: "weekly", priority: 0.85 },
-        { path: `/candidates/${c.slug}/propuesta`, changeFrequency: "weekly", priority: 0.8 },
-      ]);
-    } catch {
-      return [];
-    }
-  })();
+  const cands = await getCandidates().catch(() => []);
+  const candidateRoutes: RouteDef[] = (cands ?? []).flatMap((c) => [
+    { path: `/candidates/${c.slug}`, changeFrequency: "weekly", priority: 0.85 },
+    { path: `/candidates/${c.slug}/propuesta`, changeFrequency: "weekly", priority: 0.8 },
+  ]);
 
   return [...routes, ...candidateRoutes].map((r) => ({
     url: `${base}${r.path}`,

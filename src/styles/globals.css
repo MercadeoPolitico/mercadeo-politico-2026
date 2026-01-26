@@ -269,6 +269,56 @@ body::before {
   }
 }
 
+/* Candidate photos: fly-in + subtle glow (fast; controlled via CSS vars) */
+@keyframes mp26CandidatePhotoEnter {
+  0% {
+    opacity: 0;
+    transform:
+      translate3d(var(--mp26-photo-from-x, -40px), var(--mp26-photo-from-y, 28px), 0)
+      rotate(var(--mp26-photo-from-r, -8deg))
+      scale(0.92);
+    filter: blur(8px) saturate(1.08);
+  }
+  55% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1.02);
+    filter: blur(0) saturate(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    filter: none;
+  }
+}
+
+.candidate-photo-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 9999px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 22px 55px rgba(56, 189, 248, 0.14),
+    0 0 42px rgba(34, 197, 94, 0.12);
+  flex: 0 0 auto;
+}
+
+.candidates-animate .candidate-photo-wrap {
+  animation: mp26CandidatePhotoEnter 1.35s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  animation-delay: var(--mp26-photo-delay, 0ms);
+  will-change: transform, opacity, filter;
+}
+
+.candidate-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  display: block;
+}
+
 @keyframes mp26CardGlowSweep {
   0% {
     opacity: 0;
@@ -332,6 +382,11 @@ body::before {
   .landing-animate .glass-hero {
     animation: mp26CardFadeIn 220ms ease-out both !important;
     transform: none !important;
+  }
+  .candidates-animate .candidate-photo-wrap {
+    animation: mp26CardFadeIn 160ms ease-out both !important;
+    transform: none !important;
+    filter: none !important;
   }
 }
 

@@ -14,6 +14,22 @@ function env(name: string): string | null {
   return v && v.trim().length ? v.trim() : null;
 }
 
+function sessionSecret(): string | null {
+  // Prefer dedicated secret, but allow safe fallbacks so the portal works
+  // in deployments where only CRON_SECRET / NEXTAUTH_SECRET is configured.
+  // IMPORTANT: this must remain a secret value (never a hardcoded constant).
+  return (
+    env("POLITICO_SESSION_SECRET") ||
+    env("MP26_POLITICO_SESSION_SECRET") ||
+    env("NEXTAUTH_SECRET") ||
+    env("CRON_SECRET") ||
+    // Last-resort fallback: still secret, widely configured in this project.
+    // Using it ONLY for signing the portal cookie (not for DB access).
+    env("SUPABASE_SERVICE_ROLE_KEY") ||
+    null
+  );
+}
+
 function b64url(input: string): string {
   return Buffer.from(input, "utf8").toString("base64url");
 }
@@ -27,7 +43,7 @@ function sign(payload: string, secret: string): string {
 }
 
 export function createPoliticoSessionCookieValue(s: Session): string | null {
-  const secret = env("POLITICO_SESSION_SECRET");
+  const secret = sessionSecret();
   if (!secret) return null;
 
   const payload = `${s.tokenId}|${s.politicianId}|${s.exp}`;
@@ -37,7 +53,7 @@ export function createPoliticoSessionCookieValue(s: Session): string | null {
 
 export function readPoliticoSessionCookieValue(value: string | undefined): Session | null {
   if (!value) return null;
-  const secret = env("POLITICO_SESSION_SECRET");
+  const secret = sessionSecret();
   if (!secret) return null;
 
   const [payloadB64, sig] = value.split(".");

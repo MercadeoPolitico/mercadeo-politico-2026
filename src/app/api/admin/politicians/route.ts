@@ -52,3 +52,60 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true, id, slug });
 }
 
+export async function PATCH(req: Request) {
+  await requireAdmin();
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+
+  const body = await readJsonBodyWithLimit(req);
+  if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
+  if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+
+  const b = body.data as Record<string, unknown>;
+  const id = isNonEmptyString(b.id) ? b.id.trim() : "";
+  if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
+
+  const patch: Record<string, unknown> = {};
+  if (isNonEmptyString(b.slug)) {
+    const slug = b.slug.trim().toLowerCase();
+    if (!isSlug(slug)) return NextResponse.json({ error: "invalid_slug" }, { status: 400 });
+    patch.slug = slug;
+  }
+  if (isNonEmptyString(b.name)) patch.name = b.name.trim();
+  if (isNonEmptyString(b.office)) patch.office = b.office.trim();
+  if (typeof b.party === "string") patch.party = b.party.trim() ? b.party.trim() : null;
+  if (isNonEmptyString(b.region)) patch.region = b.region.trim();
+  if (typeof b.ballot_number === "number" && Number.isFinite(b.ballot_number)) patch.ballot_number = b.ballot_number;
+  if (b.ballot_number === null) patch.ballot_number = null;
+  if (typeof b.biography === "string") patch.biography = b.biography;
+  if (typeof b.proposals === "string") patch.proposals = b.proposals;
+  if (typeof b.auto_blog_enabled === "boolean") patch.auto_blog_enabled = b.auto_blog_enabled;
+  if (typeof b.auto_publish_enabled === "boolean") patch.auto_publish_enabled = b.auto_publish_enabled;
+
+  patch.updated_at = new Date().toISOString();
+
+  if (Object.keys(patch).length <= 1) return NextResponse.json({ error: "nothing_to_update" }, { status: 400 });
+
+  const { error } = await supabase.from("politicians").update(patch).eq("id", id);
+  if (error) return NextResponse.json({ error: "update_failed" }, { status: 400 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(req: Request) {
+  await requireAdmin();
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+
+  const body = await readJsonBodyWithLimit(req);
+  if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
+  if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+
+  const b = body.data as Record<string, unknown>;
+  const id = isNonEmptyString(b.id) ? b.id.trim() : "";
+  if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
+
+  const { error } = await supabase.from("politicians").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: "delete_failed" }, { status: 400 });
+  return NextResponse.json({ ok: true });
+}
+

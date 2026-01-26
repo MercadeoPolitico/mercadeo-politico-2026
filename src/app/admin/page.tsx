@@ -37,7 +37,7 @@ function trendFromWindows(curr: number, prev: number): Trend {
 
 export default async function AdminDashboardPage() {
   const { role } = await requireAdmin();
-  const candidates = getCandidates();
+  const candidates = await getCandidates();
 
   // Read-only, best-effort status (no secrets)
   // Continuity-first: accept common env aliases and treat "configured" as active unless explicitly disabled.
