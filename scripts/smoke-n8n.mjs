@@ -76,18 +76,33 @@ async function main() {
       ...(basicPass ? { N8N_BASIC_AUTH_PASSWORD: basicPass } : {}),
     },
   });
-  if (res.stdout) process.stdout.write(res.stdout);
-  if (res.stderr) process.stderr.write(res.stderr);
   if (res.status !== 0) {
-    const out = `${res.stdout ?? ""}\n${res.stderr ?? ""}`.toLowerCase();
+    const rawOut = `${res.stdout ?? ""}\n${res.stderr ?? ""}`.trim();
+    // Try to parse the ensure-script JSON output.
+    let parsed = null;
+    try {
+      parsed = rawOut ? JSON.parse(rawOut) : null;
+    } catch {
+      parsed = null;
+    }
+    const out = rawOut.toLowerCase();
     const looksUnauthorized = out.includes("unauthorized") || out.includes("\"status\": 401") || out.includes("status\":401");
     if (looksUnauthorized && !strict) {
-      console.log("[smoke:n8n] WARN unauthorized (set SMOKE_N8N_STRICT=1 to fail). Verify N8N_API_KEY + Public API/Basic Auth.");
+      // Keep it actionable, but do NOT echo any secret or raw status payload.
+      console.log("[smoke:n8n] WARN n8n Public API no accesible. Para corregir: crea/rota un API key en n8n (Settings → n8n API) y actualiza N8N_API_KEY. Luego reintenta.");
+      // Also print a compact safe hint if we got structured output.
+      if (parsed?.details?.step) console.log("[smoke:n8n] hint_step", String(parsed.details.step));
       return;
     }
+    // If strict or not unauthorized-looking: print outputs for debugging.
+    if (res.stdout) process.stdout.write(res.stdout);
+    if (res.stderr) process.stderr.write(res.stderr);
     assert(res.status === 0, "ensure-n8n-workflow-ready failed (check output above for auth/config hints)");
   }
 
+  // Success path: print outputs (safe JSON).
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stderr) process.stderr.write(res.stderr);
   console.log("[smoke:n8n] DONE", true);
 }
 
