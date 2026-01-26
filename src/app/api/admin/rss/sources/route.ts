@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
+import { fetchRssItems } from "@/lib/news/rss";
 
 export const runtime = "nodejs";
 
@@ -21,8 +22,8 @@ function baseUrlFromRssUrl(rss_url: string): string {
 
 export async function POST(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ ok: false, error: body.error }, { status: 400 });
@@ -44,7 +45,7 @@ export async function POST(req: Request) {
   const now = new Date().toISOString();
   const base_url = baseUrlFromRssUrl(rss_url);
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("news_rss_sources")
     .insert({
       name,
@@ -60,13 +61,37 @@ export async function POST(req: Request) {
     .single();
 
   if (error || !data?.id) return NextResponse.json({ ok: false, error: "insert_failed" }, { status: 500 });
+  // Immediate health probe (real signal). Keeps UI status accurate right after creation.
+  try {
+    if (active) {
+      const started = Date.now();
+      const items = await fetchRssItems({ source: { id: data.id, name, region_key: region_key === "otra" ? "colombia" : (region_key as any), base_url, rss_url, active }, limit: 3 });
+      const ms = Date.now() - started;
+      const items_count = Array.isArray(items) ? items.length : 0;
+      const status = items_count <= 0 ? "down" : ms >= 3500 ? "warn" : "ok";
+      await admin
+        .from("news_rss_sources")
+        .update({
+          last_health_status: status,
+          last_health_checked_at: new Date().toISOString(),
+          last_health_http_status: null,
+          last_health_ms: ms,
+          last_health_error: items_count > 0 ? null : "no_items_or_fetch_failed",
+          last_item_count: items_count,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", data.id);
+    }
+  } catch {
+    // ignore (best-effort)
+  }
   return NextResponse.json({ ok: true, id: data.id });
 }
 
 export async function PATCH(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ ok: false, error: body.error }, { status: 400 });
@@ -94,15 +119,15 @@ export async function PATCH(req: Request) {
   if (isNonEmptyString(b.usage_policy)) patch.usage_policy = b.usage_policy.trim().slice(0, 160);
   patch.updated_at = new Date().toISOString();
 
-  const { error } = await supabase.from("news_rss_sources").update(patch).eq("id", id);
+  const { error } = await admin.from("news_rss_sources").update(patch).eq("id", id);
   if (error) return NextResponse.json({ ok: false, error: "update_failed" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ ok: false, error: body.error }, { status: 400 });
@@ -112,7 +137,7 @@ export async function DELETE(req: Request) {
   const id = isNonEmptyString(b.id) ? b.id.trim() : "";
   if (!id) return NextResponse.json({ ok: false, error: "id_required" }, { status: 400 });
 
-  const { error } = await supabase.from("news_rss_sources").delete().eq("id", id);
+  const { error } = await admin.from("news_rss_sources").delete().eq("id", id);
   if (error) return NextResponse.json({ ok: false, error: "delete_failed" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

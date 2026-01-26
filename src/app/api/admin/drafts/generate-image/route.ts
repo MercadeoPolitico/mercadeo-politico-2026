@@ -268,6 +268,40 @@ function titleFromText(text: string): string {
   return (lines.find((l) => l.length > 0) ?? "").slice(0, 160);
 }
 
+async function recentMediaUrls(admin: ReturnType<typeof createSupabaseAdminClient>, candidateId: string): Promise<string[]> {
+  if (!admin) return [];
+  const urls: string[] = [];
+  try {
+    const { data: posts } = await admin
+      .from("citizen_news_posts")
+      .select("media_urls")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(120);
+    for (const r of posts ?? []) {
+      const arr = Array.isArray((r as any)?.media_urls) ? ((r as any).media_urls as unknown[]) : [];
+      for (const u of arr) if (typeof u === "string" && u.trim()) urls.push(u.trim());
+    }
+
+    const { data: drafts } = await admin
+      .from("ai_drafts")
+      .select("metadata")
+      .eq("candidate_id", candidateId)
+      .order("created_at", { ascending: false })
+      .limit(140);
+    for (const d of drafts ?? []) {
+      const m = (d as any)?.metadata ?? null;
+      const u1 = m && typeof m.image_url === "string" ? String(m.image_url).trim() : "";
+      const u2 = m?.media && typeof m.media.image_url === "string" ? String(m.media.image_url).trim() : "";
+      if (u1) urls.push(u1);
+      if (u2) urls.push(u2);
+    }
+  } catch {
+    // ignore (best-effort)
+  }
+  return Array.from(new Set(urls)).slice(0, 260);
+}
+
 export async function POST(req: Request) {
   if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -302,10 +336,11 @@ export async function POST(req: Request) {
   const region = pol?.region ? String(pol.region).trim() : "Colombia";
 
   // 1) Prefer CC image (Wikimedia) for relevance + rights.
+  const avoid_urls = await recentMediaUrls(admin, draft.candidate_id);
   const wikQueryPrimary = [draftTitle, region, "Colombia"].filter(Boolean).join(" ");
   const wikQueryFallback = [region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
   const picked =
-    (await pickWikimediaImage({ query: wikQueryPrimary, avoid_urls: [] })) ?? (await pickWikimediaImage({ query: wikQueryFallback, avoid_urls: [] }));
+    (await pickWikimediaImage({ query: wikQueryPrimary, avoid_urls })) ?? (await pickWikimediaImage({ query: wikQueryFallback, avoid_urls }));
 
   const prompt = [
     "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",

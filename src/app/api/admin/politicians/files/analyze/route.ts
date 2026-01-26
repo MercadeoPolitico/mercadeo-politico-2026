@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { openAiJson } from "@/lib/automation/openai";
 
@@ -74,8 +74,8 @@ type BlogDraftJson = {
 
 export async function POST(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
   if (!politician_id) return NextResponse.json({ error: "politician_id_required" }, { status: 400 });
   if (!file_url) return NextResponse.json({ error: "file_url_required" }, { status: 400 });
 
-  const { data: pol } = await supabase.from("politicians").select("id,name,office,region,party,ballot_number,proposals").eq("id", politician_id).maybeSingle();
+  const { data: pol } = await admin.from("politicians").select("id,name,office,region,party,ballot_number,proposals").eq("id", politician_id).maybeSingle();
   if (!pol) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
   const extracted = await extractTextFromFile({ url: file_url, filename });
@@ -133,7 +133,7 @@ export async function POST(req: Request) {
   const seo_keywords = Array.isArray(data?.seo_keywords) ? data.seo_keywords.filter((x: any) => typeof x === "string").slice(0, 16) : [];
   const image_keywords = Array.isArray(data?.image_keywords) ? data.image_keywords.filter((x: any) => typeof x === "string").slice(0, 16) : seo_keywords;
 
-  const { data: inserted, error: insErr } = await supabase
+  const { data: inserted, error: insErr } = await admin
     .from("ai_drafts")
     .insert({
       candidate_id: politician_id,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 
 export const runtime = "nodejs";
@@ -15,8 +15,8 @@ function isSlug(v: string): boolean {
 
 export async function POST(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
   const id = slug; // deterministic
 
-  const { error } = await supabase.from("politicians").insert({
+  const { error } = await admin.from("politicians").insert({
     id,
     slug,
     name,
@@ -54,8 +54,8 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -86,15 +86,15 @@ export async function PATCH(req: Request) {
 
   if (Object.keys(patch).length <= 1) return NextResponse.json({ error: "nothing_to_update" }, { status: 400 });
 
-  const { error } = await supabase.from("politicians").update(patch).eq("id", id);
+  const { error } = await admin.from("politicians").update(patch).eq("id", id);
   if (error) return NextResponse.json({ error: "update_failed" }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -104,7 +104,7 @@ export async function DELETE(req: Request) {
   const id = isNonEmptyString(b.id) ? b.id.trim() : "";
   if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
 
-  const { error } = await supabase.from("politicians").delete().eq("id", id);
+  const { error } = await admin.from("politicians").delete().eq("id", id);
   if (error) return NextResponse.json({ error: "delete_failed" }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

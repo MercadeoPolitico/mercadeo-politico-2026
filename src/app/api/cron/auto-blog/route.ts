@@ -30,9 +30,10 @@ function parseEnabled(v: string | null): boolean {
 
 function parseEveryHours(v: string | null): number {
   const n = v ? Number(v) : NaN;
-  if (!Number.isFinite(n)) return 4;
+  // Default: 3 publicaciones / 24h por candidato.
+  if (!Number.isFinite(n)) return 8;
   const h = Math.floor(n);
-  if (h < 1 || h > 24) return 4;
+  if (h < 1 || h > 24) return 8;
   return h;
 }
 
@@ -109,7 +110,7 @@ export async function GET(req: Request) {
       const cycle = Math.floor(lastSafe / Math.max(1, periodMs)) + 1;
       const jitterMs = jitterMsFor({ candidateId: c.id, cycle, maxJitterMs });
       const nextDueMs = lastSafe + periodMs + jitterMs;
-      return { id: c.id, nextDueMs };
+      return { id: c.id, nextDueMs, cycle };
     })
     .filter((x) => now >= x.nextDueMs)
     .sort((a, b) => a.nextDueMs - b.nextDueMs);
@@ -126,29 +127,25 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Create TWO lines in order:
-    // (1) noticia grave / alto impacto cívico
-    // (2) noticia viral / conversación pública
-    // IMPORTANT: run viral first so "grave" becomes the newest item (top of public feed).
-    let ok = true;
-    for (const news_mode of ["viral", "grave"] as const) {
-      // eslint-disable-next-line no-await-in-loop
-      const resp = await fetch(target, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-automation-token": apiToken },
-        body: JSON.stringify({
-          candidate_id: c.id,
-          max_items: 1,
-          news_mode,
-          editorial_style: "noticiero_portada",
-          editorial_inclination: "informativo",
-        }),
-        cache: "no-store",
-      });
-      if (!resp.ok) ok = false;
-    }
+    // Create ONE item per trigger (so we can keep 3 publicaciones / 24h).
+    // Alternate deterministically between "grave" and "viral" so the feed stays varied.
+    const cycle = typeof (dueMeta as any)?.cycle === "number" ? (dueMeta as any).cycle : 0;
+    const news_mode = sha256Int(`${c.id}|${cycle}|mp26_auto_blog_mode`) % 2 === 0 ? "grave" : "viral";
+    // eslint-disable-next-line no-await-in-loop
+    const resp = await fetch(target, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-automation-token": apiToken },
+      body: JSON.stringify({
+        candidate_id: c.id,
+        max_items: 1,
+        news_mode,
+        editorial_style: "noticiero_portada",
+        editorial_inclination: "informativo",
+      }),
+      cache: "no-store",
+    });
 
-    if (!ok) {
+    if (!resp.ok) {
       results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
       continue;
     }

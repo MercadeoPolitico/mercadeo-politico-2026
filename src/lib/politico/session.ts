@@ -3,6 +3,24 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const POLITICO_COOKIE_NAME = "mp_politico";
 
+export type PoliticoSession =
+  | {
+      mode: "env";
+      tokenId: string;
+      politicianId: string;
+      exp: number; // unix seconds
+    }
+  | {
+      // Fallback mode when an env secret is not configured.
+      // Signature verification is performed server-side using the token_hash stored in DB.
+      mode: "token";
+      tokenId: string;
+      politicianId: string;
+      exp: number; // unix seconds
+      sig: string;
+      payload: string;
+    };
+
 type Session = {
   tokenId: string;
   politicianId: string;
@@ -42,33 +60,32 @@ function sign(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("base64url");
 }
 
-export function createPoliticoSessionCookieValue(s: Session): string | null {
-  const secret = sessionSecret();
-  if (!secret) return null;
+export function createPoliticoSessionCookieValue(args: Session & { tokenHashSecret?: string | null }): string | null {
+  const payload = `${args.tokenId}|${args.politicianId}|${args.exp}`;
 
-  const payload = `${s.tokenId}|${s.politicianId}|${s.exp}`;
-  const sig = sign(payload, secret);
-  return `${b64url(payload)}.${sig}`;
+  const envSecret = sessionSecret();
+  if (envSecret) {
+    const sig = sign(payload, envSecret);
+    return `env.${b64url(payload)}.${sig}`;
+  }
+
+  const tokenSecret = typeof args.tokenHashSecret === "string" && args.tokenHashSecret.trim() ? args.tokenHashSecret.trim() : null;
+  if (!tokenSecret) return null;
+  const sig = sign(payload, tokenSecret);
+  return `token.${b64url(payload)}.${sig}`;
 }
 
-export function readPoliticoSessionCookieValue(value: string | undefined): Session | null {
+export function readPoliticoSessionCookieValue(value: string | undefined): PoliticoSession | null {
   if (!value) return null;
-  const secret = sessionSecret();
-  if (!secret) return null;
-
-  const [payloadB64, sig] = value.split(".");
-  if (!payloadB64 || !sig) return null;
+  const parts = value.split(".");
+  if (parts.length !== 3) return null;
+  const [modeRaw, payloadB64, sig] = parts;
+  const mode = modeRaw === "env" ? "env" : modeRaw === "token" ? "token" : null;
+  if (!mode || !payloadB64 || !sig) return null;
 
   let payload: string;
   try {
     payload = unb64url(payloadB64);
-  } catch {
-    return null;
-  }
-
-  const expected = sign(payload, secret);
-  try {
-    if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
   } catch {
     return null;
   }
@@ -78,6 +95,19 @@ export function readPoliticoSessionCookieValue(value: string | undefined): Sessi
   if (!tokenId || !politicianId || !Number.isFinite(exp)) return null;
   if (Math.floor(Date.now() / 1000) > exp) return null;
 
-  return { tokenId, politicianId, exp };
+  if (mode === "env") {
+    const secret = sessionSecret();
+    if (!secret) return null;
+    const expected = sign(payload, secret);
+    try {
+      if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+    } catch {
+      return null;
+    }
+    return { mode: "env", tokenId, politicianId, exp };
+  }
+
+  // mode === "token": do NOT verify here (needs DB lookup).
+  return { mode: "token", tokenId, politicianId, exp, sig, payload };
 }
 

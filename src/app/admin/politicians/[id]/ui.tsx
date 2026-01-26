@@ -93,6 +93,12 @@ export function PoliticianWorkspaceClient({
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
 
   const [publications, setPublications] = useState<Publication[]>(initialPublications);
+  const pubCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const p of publications) c[p.status] = (c[p.status] ?? 0) + 1;
+    return c;
+  }, [publications]);
+  const [pubListMode, setPubListMode] = useState<"all" | "pending_approval" | "approved" | "rejected">("all");
   const [pubPlatform, setPubPlatform] = useState("facebook");
   const [pubTitle, setPubTitle] = useState("");
   const [pubContent, setPubContent] = useState("");
@@ -105,6 +111,37 @@ export function PoliticianWorkspaceClient({
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [loadingFromDraft, setLoadingFromDraft] = useState(false);
+  const [prefilledFromDraft, setPrefilledFromDraft] = useState(false);
+
+  async function loadLatestDraftIntoPublication() {
+    setPubMsg(null);
+    setLoadingFromDraft(true);
+    const res = await fetch(`/api/admin/politicians/drafts/latest?candidate_id=${encodeURIComponent(politician.id)}`, { method: "GET" }).catch(
+      () => null,
+    );
+    const j = (await res?.json().catch(() => null)) as any;
+    setLoadingFromDraft(false);
+    if (!res || !res.ok || !j?.ok || !j?.draft) {
+      setPubMsg("No fue posible cargar el último borrador (revisa Admin → Contenido).");
+      return false;
+    }
+    const text = String(j.draft.generated_text ?? "").trim();
+    if (!text) {
+      setPubMsg("El borrador encontrado no tiene texto.");
+      return false;
+    }
+    setPubContent(text);
+    const v = (j.draft.variants && typeof j.draft.variants === "object" ? j.draft.variants : null) as any;
+    const computed = ensureSocialVariants({
+      baseText: text,
+      blogText: text,
+      variants: v,
+      seo_keywords: (politician as any)?.seo_keywords ?? [],
+      candidate: { name, ballot_number: ballotNumber.trim() ? ballotNumber.trim() : politician.ballot_number ?? null },
+    });
+    setPubVariants({ facebook: computed.facebook, instagram: computed.instagram, x: computed.x });
+    return true;
+  }
 
   // Autopoblar variantes cuando hay base (sin pisar ediciones manuales).
   useEffect(() => {
@@ -121,6 +158,27 @@ export function PoliticianWorkspaceClient({
     setPubVariants({ facebook: computed.facebook, instagram: computed.instagram, x: computed.x });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pubContent]);
+
+  // Auto-cargar el último borrador (mejor UX): solo si el formulario está vacío.
+  useEffect(() => {
+    if (prefilledFromDraft) return;
+    if (pubContent.trim()) return;
+    void (async () => {
+      const ok = await loadLatestDraftIntoPublication();
+      setPrefilledFromDraft(true);
+      if (!ok) setPrefilledFromDraft(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [politician.id]);
+
+  function removeMediaUrl(url: string) {
+    const parts = pubMedia
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((u) => u !== url);
+    setPubMedia(parts.join(", "));
+  }
 
   const [accessMsg, setAccessMsg] = useState<string | null>(null);
   const [accessLink, setAccessLink] = useState<string | null>(null);
@@ -701,7 +759,7 @@ export function PoliticianWorkspaceClient({
               <button className="glass-button" type="button" onClick={orchestrateEditorial} disabled={hubLoading}>
                 {hubLoading ? "Orquestando…" : "Orquestación editorial (n8n/2-AI)"}
               </button>
-              <Link className="glass-button" href="/admin/content">
+              <Link className="glass-button" href={`/admin/content?candidate_id=${encodeURIComponent(politician.id)}`}>
                 Ir a cola de revisión
               </Link>
             </div>
@@ -848,33 +906,7 @@ export function PoliticianWorkspaceClient({
                     className="glass-button"
                     type="button"
                     onClick={async () => {
-                      setPubMsg(null);
-                      setLoadingFromDraft(true);
-                      const res = await fetch(
-                        `/api/admin/politicians/drafts/latest?candidate_id=${encodeURIComponent(politician.id)}`,
-                        { method: "GET" }
-                      ).catch(() => null);
-                      const j = (await res?.json().catch(() => null)) as any;
-                      setLoadingFromDraft(false);
-                      if (!res || !res.ok || !j?.ok || !j?.draft) {
-                        setPubMsg("No fue posible cargar el último borrador (revisa Admin → Contenido).");
-                        return;
-                      }
-                      const text = String(j.draft.generated_text ?? "").trim();
-                      if (!text) {
-                        setPubMsg("El borrador encontrado no tiene texto.");
-                        return;
-                      }
-                      setPubContent(text);
-                      const v = (j.draft.variants && typeof j.draft.variants === "object" ? j.draft.variants : null) as any;
-                      const computed = ensureSocialVariants({
-                        baseText: text,
-                        blogText: text,
-                        variants: v,
-                        seo_keywords: (politician as any)?.seo_keywords ?? [],
-                        candidate: { name, ballot_number: ballotNumber.trim() ? ballotNumber.trim() : politician.ballot_number ?? null },
-                      });
-                      setPubVariants({ facebook: computed.facebook, instagram: computed.instagram, x: computed.x });
+                      await loadLatestDraftIntoPublication();
                     }}
                     disabled={loadingFromDraft}
                     title="Trae el último borrador de la cola (ai_drafts) y llena base + variantes"
@@ -952,6 +984,30 @@ export function PoliticianWorkspaceClient({
                 onChange={(e) => setPubMedia(e.target.value)}
                 placeholder="https://...jpg, https://...mp4"
               />
+              {(() => {
+                const urls = pubMedia
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                if (!urls.length) return null;
+                return (
+                  <div className="mt-2 grid gap-2">
+                    {urls.map((u) => (
+                      <div key={u} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-background/50 px-3 py-2">
+                        <p className="min-w-0 truncate text-xs text-muted">{u}</p>
+                        <div className="flex shrink-0 gap-2">
+                          <button className="glass-button" type="button" onClick={() => navigator.clipboard.writeText(u)} title="Copiar URL">
+                            Copiar
+                          </button>
+                          <button className="glass-button" type="button" onClick={() => removeMediaUrl(u)} title="Quitar de la publicación">
+                            Quitar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="grid gap-2">
@@ -978,17 +1034,57 @@ export function PoliticianWorkspaceClient({
 
           <div className="grid gap-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Últimas</p>
+              <div>
+                <p className="text-sm font-semibold">Últimas</p>
+                <p className="mt-1 text-xs text-muted">
+                  pendientes={pubCounts.pending_approval ?? 0} · aprobadas={pubCounts.approved ?? 0} · rechazadas={pubCounts.rejected ?? 0}
+                </p>
+              </div>
               <button className="glass-button" type="button" onClick={refreshPublications}>
                 Refrescar
               </button>
             </div>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  { k: "all", label: "Todas" },
+                  { k: "pending_approval", label: "Pendientes" },
+                  { k: "approved", label: "Aprobadas" },
+                  { k: "rejected", label: "Rechazadas" },
+                ] as const
+              ).map((x) => (
+                <button
+                  key={x.k}
+                  className={`glass-button ${pubListMode === x.k ? "border-amber-300/40 bg-amber-300/12" : ""}`}
+                  type="button"
+                  onClick={() => setPubListMode(x.k)}
+                >
+                  {x.label}
+                </button>
+              ))}
+            </div>
             {publications.map((p) => (
+              pubListMode !== "all" && p.status !== pubListMode ? null : (
               <div key={p.id} className="rounded-2xl border border-border bg-background/60 p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold">{p.platform}</p>
-                    <p className="mt-1 text-xs text-muted">Estado: {p.status}</p>
+                    <p className="mt-1 text-xs text-muted">
+                      Estado:{" "}
+                      <span
+                        className={
+                          p.status === "approved"
+                            ? "text-emerald-300"
+                            : p.status === "rejected"
+                              ? "text-rose-300"
+                              : p.status === "pending_approval"
+                                ? "text-amber-300"
+                                : "text-muted"
+                        }
+                      >
+                        {p.status}
+                      </span>
+                    </p>
                   </div>
                   <p className="text-xs text-muted">{new Date(p.created_at).toLocaleString("es-CO")}</p>
                 </div>
@@ -1023,6 +1119,7 @@ export function PoliticianWorkspaceClient({
                   <p className="mt-3 text-xs text-muted">Decisión: {new Date(p.decided_at).toLocaleString("es-CO")}</p>
                 ) : null}
               </div>
+              )
             ))}
             {publications.length === 0 ? <p className="text-sm text-muted">Aún no hay publicaciones.</p> : null}
           </div>

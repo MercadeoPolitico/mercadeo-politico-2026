@@ -41,7 +41,7 @@ export default async function PoliticoAccessPage({
   const token_hash = sha256Hex(raw);
   const { data: tokenRow } = await admin
     .from("politician_access_tokens")
-    .select("id,politician_id,expires_at")
+    .select("id,politician_id,expires_at,token_hash")
     .eq("token_hash", token_hash)
     .maybeSingle();
 
@@ -84,6 +84,8 @@ export default async function PoliticoAccessPage({
     tokenId: tokenRow.id,
     politicianId: tokenRow.politician_id,
     exp,
+    // Fallback mode: sign with the DB token_hash if env secret is missing.
+    tokenHashSecret: typeof (tokenRow as any).token_hash === "string" ? String((tokenRow as any).token_hash) : token_hash,
   });
 
   if (!cookieValue) {

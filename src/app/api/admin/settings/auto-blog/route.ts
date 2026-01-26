@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 
 export const runtime = "nodejs";
@@ -28,16 +28,17 @@ async function getSetting(sb: any, key: string): Promise<string | null> {
 
 export async function GET() {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
 
-  const enabledRaw = await getSetting(supabase, "auto_blog_global_enabled");
-  const hoursRaw = await getSetting(supabase, "auto_blog_every_hours");
+  const enabledRaw = await getSetting(admin, "auto_blog_global_enabled");
+  const hoursRaw = await getSetting(admin, "auto_blog_every_hours");
 
   const enabled = enabledRaw === null ? true : enabledRaw.trim().toLowerCase() !== "false";
   const every_hours = (() => {
     const n = parseIntSafe(hoursRaw);
-    if (!n || n < 1 || n > 24) return 4;
+    // Default: 3 publicaciones / 24h por candidato.
+    if (!n || n < 1 || n > 24) return 8;
     return n;
   })();
 
@@ -46,8 +47,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ ok: false, error: body.error }, { status: 400 });
@@ -59,11 +60,11 @@ export async function POST(req: Request) {
 
   const now = new Date().toISOString();
   if (enabled !== null) {
-    await supabase.from("app_settings").upsert({ key: "auto_blog_global_enabled", value: enabled ? "true" : "false", updated_at: now });
+    await admin.from("app_settings").upsert({ key: "auto_blog_global_enabled", value: enabled ? "true" : "false", updated_at: now });
   }
   if (every_hours !== null) {
     const clamped = Math.max(1, Math.min(24, every_hours));
-    await supabase.from("app_settings").upsert({ key: "auto_blog_every_hours", value: String(clamped), updated_at: now });
+    await admin.from("app_settings").upsert({ key: "auto_blog_every_hours", value: String(clamped), updated_at: now });
   }
 
   return NextResponse.json({ ok: true });

@@ -27,6 +27,22 @@ function slugify(input: string): string {
   return base.length ? base.slice(0, 64) : `post-${Date.now()}`;
 }
 
+function imageUrlFromDraftMeta(meta: unknown): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const m = meta as Record<string, unknown>;
+  const media = m.media && typeof m.media === "object" ? (m.media as Record<string, unknown>) : null;
+  const candidates = [
+    media && typeof media.image_url === "string" ? media.image_url : null,
+    typeof m.image_url === "string" ? m.image_url : null,
+    m.image_metadata && typeof m.image_metadata === "object" && typeof (m.image_metadata as any).url === "string" ? (m.image_metadata as any).url : null,
+  ]
+    .filter((x): x is string => typeof x === "string")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const url = candidates[0] ?? "";
+  return url && /^https?:\/\//i.test(url) ? url : null;
+}
+
 export async function POST(req: Request) {
   await requireAdmin();
   const supabase = await createSupabaseServerClient();
@@ -80,13 +96,7 @@ export async function POST(req: Request) {
     return null;
   })();
 
-  const media_url = (() => {
-    if (!draft.metadata || typeof draft.metadata !== "object") return null;
-    const meta = draft.metadata as Record<string, unknown>;
-    const media = meta.media && typeof meta.media === "object" ? (meta.media as Record<string, unknown>) : null;
-    const url = media && typeof media.image_url === "string" ? media.image_url.trim() : "";
-    return url && /^https?:\/\//i.test(url) ? url : null;
-  })();
+  const media_url = imageUrlFromDraftMeta(draft.metadata);
 
   // Safety checks (avoid publishing incomplete posts)
   if (!title.trim()) return NextResponse.json({ error: "missing_title" }, { status: 400 });

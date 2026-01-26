@@ -1,11 +1,16 @@
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { POLITICO_COOKIE_NAME, readPoliticoSessionCookieValue } from "@/lib/politico/session";
 import { getCitizenPanelForCandidate } from "@/lib/analytics/citizenPanel";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
 import { PublicPageShell } from "@/components/PublicPageShell";
 export const runtime = "nodejs";
+
+function sign(payload: string, secret: string): string {
+  return createHmac("sha256", secret).update(payload).digest("base64url");
+}
 
 export default async function PoliticoWorkspacePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -22,6 +27,19 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
         <p className="text-sm text-muted">El portal no está configurado en este entorno.</p>
       </PublicPageShell>
     );
+  }
+
+  // If session was signed using token_hash (fallback mode), verify now using DB.
+  if (session.mode === "token") {
+    const { data: tok } = await admin.from("politician_access_tokens").select("id,token_hash,expires_at").eq("id", session.tokenId).maybeSingle();
+    if (!tok || typeof (tok as any).token_hash !== "string") redirect("/politico/access");
+    if ((tok as any).expires_at && Date.now() > Date.parse(String((tok as any).expires_at))) redirect("/politico/access");
+    const expected = sign(session.payload, String((tok as any).token_hash));
+    try {
+      if (!timingSafeEqual(Buffer.from(session.sig), Buffer.from(expected))) redirect("/politico/access");
+    } catch {
+      redirect("/politico/access");
+    }
   }
 
   const { data: politician } = await admin
@@ -76,6 +94,18 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
 
     const admin = createSupabaseAdminClient();
     if (!admin) redirect("/politico/access");
+
+    if (session.mode === "token") {
+      const { data: tok } = await admin.from("politician_access_tokens").select("id,token_hash,expires_at").eq("id", session.tokenId).maybeSingle();
+      if (!tok || typeof (tok as any).token_hash !== "string") redirect("/politico/access");
+      if ((tok as any).expires_at && Date.now() > Date.parse(String((tok as any).expires_at))) redirect("/politico/access");
+      const expected = sign(session.payload, String((tok as any).token_hash));
+      try {
+        if (!timingSafeEqual(Buffer.from(session.sig), Buffer.from(expected))) redirect("/politico/access");
+      } catch {
+        redirect("/politico/access");
+      }
+    }
 
     const publicationId = String(formData.get("publication_id") ?? "");
     const decision = String(formData.get("decision") ?? "");

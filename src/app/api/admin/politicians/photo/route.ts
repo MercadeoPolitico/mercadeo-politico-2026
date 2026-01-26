@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 
 export const runtime = "nodejs";
@@ -17,8 +17,8 @@ function profilePathFor(politicianId: string): string {
 
 export async function POST(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const form = await req.formData().catch(() => null);
   if (!form) return NextResponse.json({ error: "invalid_form" }, { status: 400 });
@@ -51,27 +51,27 @@ export async function POST(req: Request) {
 
   // Deterministic path (overwrite).
   const path = profilePathFor(politician_id);
-  const { error: upErr } = await supabase.storage.from("politician-media").upload(path, bytes, {
+  const { error: upErr } = await admin.storage.from("politician-media").upload(path, bytes, {
     upsert: true,
     cacheControl: "3600",
     contentType,
   });
   if (upErr) return NextResponse.json({ error: "upload_failed" }, { status: 400 });
 
-  const { data } = supabase.storage.from("politician-media").getPublicUrl(path);
+  const { data } = admin.storage.from("politician-media").getPublicUrl(path);
   const url = data?.publicUrl;
   if (!url || typeof url !== "string") return NextResponse.json({ error: "public_url_failed" }, { status: 500 });
 
   // Touch politician updated_at so pages can bust caches (best-effort).
-  await supabase.from("politicians").update({ updated_at: new Date().toISOString() }).eq("id", politician_id);
+  await admin.from("politicians").update({ updated_at: new Date().toISOString() }).eq("id", politician_id);
 
   return NextResponse.json({ ok: true, url });
 }
 
 export async function DELETE(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -80,8 +80,8 @@ export async function DELETE(req: Request) {
   const politician_id = isNonEmptyString(b.politician_id) ? b.politician_id.trim() : "";
   if (!politician_id) return NextResponse.json({ error: "politician_id_required" }, { status: 400 });
 
-  await supabase.storage.from("politician-media").remove([profilePathFor(politician_id)]);
-  await supabase.from("politicians").update({ updated_at: new Date().toISOString() }).eq("id", politician_id);
+  await admin.storage.from("politician-media").remove([profilePathFor(politician_id)]);
+  await admin.from("politicians").update({ updated_at: new Date().toISOString() }).eq("id", politician_id);
   return NextResponse.json({ ok: true });
 }
 

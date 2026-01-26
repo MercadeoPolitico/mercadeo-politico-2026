@@ -3,6 +3,7 @@
  *
  * - Uses SUPABASE_SERVICE_ROLE_KEY + NEXT_PUBLIC_SUPABASE_URL from .env.local (or process.env)
  * - Uploads to deterministic path: <candidate_id>/profile/profile
+ * - Best-effort optimizes to a square WebP (512x512) when `sharp` is available.
  * - Does NOT print secrets
  */
 import fs from "node:fs";
@@ -37,9 +38,22 @@ function contentTypeFromExt(p) {
   return "application/octet-stream";
 }
 
+async function maybeOptimizeToWebpSquare(buf) {
+  try {
+    const mod = await import("sharp");
+    const sharp = mod.default ?? mod;
+    const out = await sharp(buf).rotate().resize(512, 512, { fit: "cover", position: "attention" }).webp({ quality: 84 }).toBuffer();
+    return { buf: out, contentType: "image/webp" };
+  } catch {
+    return { buf, contentType: null };
+  }
+}
+
 async function uploadOne(sb, candidateId, filePath) {
-  const buf = fs.readFileSync(filePath);
-  const ct = contentTypeFromExt(filePath);
+  const raw = fs.readFileSync(filePath);
+  const opt = await maybeOptimizeToWebpSquare(raw);
+  const buf = opt.buf;
+  const ct = opt.contentType || contentTypeFromExt(filePath);
   const storagePath = `${candidateId}/profile/profile`;
   const { error } = await sb.storage.from("politician-media").upload(storagePath, buf, {
     upsert: true,
@@ -64,12 +78,12 @@ async function main() {
     {
       id: "jose-angel-martinez",
       file:
-        "C:\\Users\\jc1ga\\.cursor\\projects\\f-mercadeo-politico-2026\\assets\\c__Users_jc1ga_AppData_Roaming_Cursor_User_workspaceStorage_9774d72e6e497d1b00d81c2906957f6d_images_237eff3e-2ea8-4cc9-88e7-997cfa2bd923-12be20b0-ab82-4bc0-941c-b72182b999d8.png",
+        "C:\\Users\\jc1ga\\.cursor\\projects\\f-mercadeo-politico-2026\\assets\\c__Users_jc1ga_AppData_Roaming_Cursor_User_workspaceStorage_9774d72e6e497d1b00d81c2906957f6d_images_Jose_Angel_MArtinez-304c759c-cb8c-425e-a2d4-d57c8fcee55d.png",
     },
     {
       id: "eduardo-buitrago",
       file:
-        "C:\\Users\\jc1ga\\.cursor\\projects\\f-mercadeo-politico-2026\\assets\\c__Users_jc1ga_AppData_Roaming_Cursor_User_workspaceStorage_9774d72e6e497d1b00d81c2906957f6d_images_91048e0c-38f9-4d26-9a18-a3317998adbc-f82f90a2-e09c-4494-b935-733515153123.png",
+        "C:\\Users\\jc1ga\\.cursor\\projects\\f-mercadeo-politico-2026\\assets\\c__Users_jc1ga_AppData_Roaming_Cursor_User_workspaceStorage_9774d72e6e497d1b00d81c2906957f6d_images_Eduard_Buitrago-2d7e74e1-e6c1-49dd-a9e9-7692ccd631d1.png",
     },
   ];
 

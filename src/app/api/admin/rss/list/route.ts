@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { fetchRssItems } from "@/lib/news/rss";
 
 export const runtime = "nodejs";
@@ -15,13 +15,13 @@ function normalizeHealth(itemsCount: number, ms: number): HealthStatus {
 
 export async function GET(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const url = new URL(req.url);
   const withHealth = url.searchParams.get("with_health") === "1" || url.searchParams.get("with_health") === "true";
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("news_rss_sources")
     .select(
       "id,name,region_key,base_url,rss_url,active,license_confirmed,usage_policy,updated_at,last_health_status,last_health_checked_at,last_health_http_status,last_health_ms,last_health_error,last_item_count",
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
     // Best-effort: persist snapshot (no secrets).
     // eslint-disable-next-line no-await-in-loop
-    await supabase
+    await admin
       .from("news_rss_sources")
       .update({
         last_health_status: status,

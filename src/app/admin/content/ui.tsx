@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { ContentType, GenerateResponse } from "@/lib/automation/types";
 
 type SocialVariants = {
@@ -53,6 +54,8 @@ type PublishedPost = {
 type LoadState = "idle" | "loading" | "ready" | "error";
 
 export function AdminContentPanel() {
+  const searchParams = useSearchParams();
+  const filterCandidateId = useMemo(() => String(searchParams.get("candidate_id") ?? "").trim(), [searchParams]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [selected, setSelected] = useState<Draft | null>(null);
@@ -88,7 +91,8 @@ export function AdminContentPanel() {
 
   async function refresh() {
     setLoadState("loading");
-    const res = await fetch("/api/admin/drafts", { method: "GET" });
+    const url = filterCandidateId ? `/api/admin/drafts?candidate_id=${encodeURIComponent(filterCandidateId)}` : "/api/admin/drafts";
+    const res = await fetch(url, { method: "GET" });
     if (!res.ok) {
       setLoadState("error");
       return;
@@ -151,7 +155,8 @@ export function AdminContentPanel() {
       })
       .catch(() => {});
 
-    fetch("/api/admin/drafts", { method: "GET" })
+    const draftsUrl = filterCandidateId ? `/api/admin/drafts?candidate_id=${encodeURIComponent(filterCandidateId)}` : "/api/admin/drafts";
+    fetch(draftsUrl, { method: "GET" })
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -170,7 +175,12 @@ export function AdminContentPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [filterCandidateId]);
+
+  useEffect(() => {
+    if (!filterCandidateId) return;
+    setCandidateId(filterCandidateId);
+  }, [filterCandidateId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,8 +190,8 @@ export function AdminContentPanel() {
         if (cancelled) return;
         if (r.ok && j?.ok) {
           setAutoBlogEnabled(Boolean(j.enabled));
-          const h = typeof j.every_hours === "number" ? j.every_hours : 4;
-          setAutoBlogEveryHours(Number.isFinite(h) ? h : 4);
+          const h = typeof j.every_hours === "number" ? j.every_hours : 8;
+          setAutoBlogEveryHours(Number.isFinite(h) ? h : 8);
         }
       })
       .catch(() => {});
@@ -196,9 +206,8 @@ export function AdminContentPanel() {
     await fetch("/api/admin/settings/auto-blog", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabled: next, every_hours: 4 }),
+      body: JSON.stringify({ enabled: next, every_hours: autoBlogEveryHours || 8 }),
     }).catch(() => {});
-    setAutoBlogEveryHours(4);
     setAutoBlogSaving(false);
   }
 
@@ -324,6 +333,49 @@ export function AdminContentPanel() {
     }
 
     setImageState("done");
+    await refresh();
+  }
+
+  const [manualImageUploading, setManualImageUploading] = useState(false);
+  const [manualImageMsg, setManualImageMsg] = useState<string | null>(null);
+
+  async function uploadManualImageForSelected(file: File) {
+    if (!selected) return;
+    setManualImageMsg(null);
+    setManualImageUploading(true);
+    const fd = new FormData();
+    fd.set("draft_id", selected.id);
+    fd.set("file", file);
+    const res = await fetch("/api/admin/drafts/image", { method: "POST", body: fd });
+    const j = (await res.json().catch(() => null)) as any;
+    setManualImageUploading(false);
+    if (!res.ok || !j?.ok) {
+      setManualImageMsg("No fue posible subir la imagen.");
+      await refresh();
+      return;
+    }
+    setManualImageMsg("Imagen actualizada.");
+    await refresh();
+  }
+
+  async function deleteManualImageForSelected() {
+    if (!selected) return;
+    const ok = window.confirm("¿Eliminar la imagen de este borrador?");
+    if (!ok) return;
+    setManualImageMsg(null);
+    setManualImageUploading(true);
+    const res = await fetch("/api/admin/drafts/image", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draft_id: selected.id }),
+    });
+    setManualImageUploading(false);
+    if (!res.ok) {
+      setManualImageMsg("No fue posible eliminar la imagen.");
+      await refresh();
+      return;
+    }
+    setManualImageMsg("Imagen eliminada.");
     await refresh();
   }
 
@@ -1109,13 +1161,57 @@ export function AdminContentPanel() {
                   </span>
                 </p>
                 {imageUrlOf(selected) ? (
-                  <p className="mt-2 text-xs text-muted">
-                    <a className="underline" href={imageUrlOf(selected)!} target="_blank" rel="noreferrer">
-                      Abrir imagen
-                    </a>
-                  </p>
-                ) : null}
+                  <div className="mt-3 grid gap-2 sm:grid-cols-[180px_1fr] sm:items-start">
+                    <figure className="overflow-hidden rounded-2xl border border-border bg-background/40">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={imageUrlOf(selected)!} alt="" className="h-[140px] w-full object-cover" loading="lazy" />
+                    </figure>
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted">
+                        <a className="underline" href={imageUrlOf(selected)!} target="_blank" rel="noreferrer">
+                          Abrir imagen
+                        </a>
+                      </p>
+                      <div className="grid gap-2">
+                        <label className="text-xs font-semibold text-muted">Subir / reemplazar imagen</label>
+                        <input
+                          className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                          type="file"
+                          accept="image/*"
+                          disabled={manualImageUploading}
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) void uploadManualImageForSelected(f);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        <button className="glass-button" type="button" onClick={() => void deleteManualImageForSelected()} disabled={manualImageUploading}>
+                          Eliminar imagen
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 grid gap-2">
+                    <label className="text-xs font-semibold text-muted">Subir imagen</label>
+                    <input
+                      className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                      type="file"
+                      accept="image/*"
+                      disabled={manualImageUploading}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) void uploadManualImageForSelected(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                    <button className="glass-button" type="button" onClick={() => void deleteManualImageForSelected()} disabled={manualImageUploading}>
+                      Eliminar imagen
+                    </button>
+                  </div>
+                )}
                 {imageState === "error" ? <p className="mt-2 text-xs text-amber-300">{imageErrorMsg}</p> : null}
+                {manualImageMsg ? <p className="mt-2 text-xs text-muted">{manualImageMsg}</p> : null}
                 <p className="mt-2 text-xs text-muted">No bloquea aprobación/publicación si no hay imagen.</p>
                 <label className="mt-3 flex items-center gap-2 text-xs text-muted">
                   <input

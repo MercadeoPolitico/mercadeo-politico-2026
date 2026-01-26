@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { isAdminSession } from "@/lib/auth/adminSession";
 
@@ -7,18 +7,25 @@ export const runtime = "nodejs";
 
 type DraftStatus = "pending_review" | "approved" | "rejected" | "edited" | "sent_to_n8n";
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
-  const { data, error } = await supabase
+  const url = new URL(req.url);
+  const candidate_id = String(url.searchParams.get("candidate_id") ?? "").trim();
+  const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? "50") || 50));
+
+  let q = admin
     .from("ai_drafts")
     .select(
       "id,candidate_id,content_type,topic,tone,generated_text,variants,metadata,image_keywords,rotation_window_days,expires_at,source,status,reviewer_notes,created_at,updated_at",
     )
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(limit);
+  if (candidate_id) q = q.eq("candidate_id", candidate_id);
+
+  const { data, error } = await q;
 
   if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
   return NextResponse.json({ ok: true, drafts: data ?? [] });
@@ -26,8 +33,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -57,7 +64,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "missing_required_fields" }, { status: 400 });
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await admin
     .from("ai_drafts")
     .insert({
       candidate_id,
@@ -82,8 +89,8 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -104,7 +111,7 @@ export async function PATCH(req: Request) {
   if (typeof b.expires_at === "string" || b.expires_at === null) patch.expires_at = b.expires_at;
   patch.updated_at = new Date().toISOString();
 
-  const { error } = await supabase.from("ai_drafts").update(patch).eq("id", id);
+  const { error } = await admin.from("ai_drafts").update(patch).eq("id", id);
   if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
 
   return NextResponse.json({ ok: true });
@@ -112,8 +119,8 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -123,7 +130,7 @@ export async function DELETE(req: Request) {
   const id = typeof b.id === "string" ? b.id.trim() : "";
   if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
 
-  const { error } = await supabase.from("ai_drafts").delete().eq("id", id);
+  const { error } = await admin.from("ai_drafts").delete().eq("id", id);
   if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
 
   return NextResponse.json({ ok: true });

@@ -46,13 +46,27 @@ export async function GET(req: Request) {
   const storageUrl = storageUrlForCandidate(id);
   if (!storageUrl) return fallbackSvg();
 
-  // Cheap existence check: HEAD with tight timeout. If it exists, redirect to Storage (best for caching).
+  // Cheap existence check: GET with tight timeout.
+  // Note: Supabase Storage public objects may not reliably support HEAD across all deployments,
+  // which would cause false negatives and fall back to the placeholder.
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 1400);
   try {
-    const r = await fetch(storageUrl, { method: "HEAD", cache: "no-store", redirect: "follow", signal: ctrl.signal });
-    if (r.ok) {
-      return NextResponse.redirect(storageUrl, 302);
+    const r = await fetch(storageUrl, {
+      method: "GET",
+      cache: "no-store",
+      redirect: "follow",
+      signal: ctrl.signal,
+      // Try to avoid downloading the full image during the probe.
+      headers: { range: "bytes=0-0" },
+    });
+    // If Storage doesn't support range requests, it may return 200.
+    if (r.ok || r.status === 206) return NextResponse.redirect(storageUrl, 302);
+    // Ensure the body is not kept open.
+    try {
+      r.body?.cancel();
+    } catch {
+      // ignore
     }
   } catch {
     // fall through to svg

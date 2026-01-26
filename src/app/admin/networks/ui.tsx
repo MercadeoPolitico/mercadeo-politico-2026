@@ -659,7 +659,7 @@ export function NetworksPanel() {
       </div>
 
       <div className="glass-card p-6">
-        <p className="text-sm font-semibold">Conectar redes por enlace (OAuth)</p>
+        <p className="text-sm font-semibold">Conectar redes por enlace (OAuth) · WhatsApp</p>
         <p className="mt-1 text-xs text-muted">
           Este flujo es opcional y no reemplaza la autorización por enlace. Sirve para que el dueño conecte su cuenta oficial (Meta/X/Reddit) desde el celular.
         </p>
@@ -711,7 +711,8 @@ export function NetworksPanel() {
                 className="glass-button mt-2"
                 type="button"
                 onClick={async () => {
-                  const base = window.location.origin.replace(/\/+$/, "");
+                  const rawBase = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/+$/, "");
+                  const base = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `https://${rawBase}`;
                   const link = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
                   setOauthLink(link);
                   try {
@@ -730,11 +731,7 @@ export function NetworksPanel() {
 
           {oauthLink ? (
             <div className="mt-4 rounded-xl border border-border bg-background p-3">
-              <p className="text-xs font-semibold text-muted">Enlace de conexión (envíalo por WhatsApp)</p>
               <p className="mt-1 break-all text-xs text-muted">{oauthLink}</p>
-              <p className="mt-2 text-[11px] text-muted">
-                Nota: si el proveedor aún no está configurado, el enlace mostrará “no disponible” sin afectar el resto del sistema.
-              </p>
             </div>
           ) : null}
         </details>

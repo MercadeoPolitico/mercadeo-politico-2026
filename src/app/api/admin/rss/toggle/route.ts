@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 
 export const runtime = "nodejs";
@@ -11,8 +11,8 @@ function isNonEmptyString(v: unknown): v is string {
 
 export async function POST(req: Request) {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
+  const admin = createSupabaseAdminClient();
+  if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const body = await readJsonBodyWithLimit(req);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   if (active === null) return NextResponse.json({ error: "active_required" }, { status: 400 });
 
   const now = new Date().toISOString();
-  const { error } = await supabase.from("news_rss_sources").update({ active, updated_at: now }).eq("id", id);
+  const { error } = await admin.from("news_rss_sources").update({ active, updated_at: now }).eq("id", id);
   if (error) return NextResponse.json({ error: "update_failed" }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
