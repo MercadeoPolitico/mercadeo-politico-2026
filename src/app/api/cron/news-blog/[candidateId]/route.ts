@@ -30,22 +30,33 @@ export async function GET(_req: Request, ctx: { params: Promise<{ candidateId: s
   const origin = new URL(req.url).origin;
   const target = `${origin}/api/automation/editorial-orchestrate`;
 
-  // Cron wrapper: delegates to the unified editorial engine (RSS+GDELT+media+tone).
-  const payload = { candidate_id, max_items: 1 };
-  const resp = await fetch(target, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-automation-token": apiToken },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
+  // Cron wrapper: create TWO lines in order:
+  // (1) noticia grave / alto impacto cívico
+  // (2) noticia viral / conversación pública (si hay)
+  const results: any[] = [];
+  // IMPORTANT: run viral first so "grave" is the most recent item (top of feed).
+  for (const news_mode of ["viral", "grave"] as const) {
+    const payload = { candidate_id, max_items: 1, news_mode };
+    // eslint-disable-next-line no-await-in-loop
+    const resp = await fetch(target, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-automation-token": apiToken },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
 
-  const txt = await resp.text().catch(() => "");
-  let json: any = null;
-  try {
-    json = JSON.parse(txt);
-  } catch {
-    // ignore
+    // eslint-disable-next-line no-await-in-loop
+    const txt = await resp.text().catch(() => "");
+    let json: any = null;
+    try {
+      json = JSON.parse(txt);
+    } catch {
+      // ignore
+    }
+    results.push({ news_mode, status: resp.status, ok: resp.ok, response: json ?? { body: txt.slice(0, 4000) } });
   }
-  return NextResponse.json(json ?? { ok: resp.ok, status: resp.status, body: txt.slice(0, 4000) }, { status: resp.status });
+
+  const ok = results.every((r) => r.ok || r.response?.skipped);
+  return NextResponse.json({ ok, candidate_id, results }, { status: ok ? 200 : 207 });
 }
 

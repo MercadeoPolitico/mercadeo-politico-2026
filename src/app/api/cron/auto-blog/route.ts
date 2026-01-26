@@ -126,15 +126,29 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // eslint-disable-next-line no-await-in-loop
-    const resp = await fetch(target, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-automation-token": apiToken },
-      body: JSON.stringify({ candidate_id: c.id, max_items: 1, editorial_style: "noticiero_portada", editorial_inclination: "persuasivo_suave" }),
-      cache: "no-store",
-    });
+    // Create TWO lines in order:
+    // (1) noticia grave / alto impacto cívico
+    // (2) noticia viral / conversación pública
+    // IMPORTANT: run viral first so "grave" becomes the newest item (top of public feed).
+    let ok = true;
+    for (const news_mode of ["viral", "grave"] as const) {
+      // eslint-disable-next-line no-await-in-loop
+      const resp = await fetch(target, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-automation-token": apiToken },
+        body: JSON.stringify({
+          candidate_id: c.id,
+          max_items: 1,
+          news_mode,
+          editorial_style: "noticiero_portada",
+          editorial_inclination: "persuasivo_suave",
+        }),
+        cache: "no-store",
+      });
+      if (!resp.ok) ok = false;
+    }
 
-    if (!resp.ok) {
+    if (!ok) {
       results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
       continue;
     }

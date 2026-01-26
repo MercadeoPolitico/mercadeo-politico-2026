@@ -19,6 +19,38 @@ export type RssItem = {
   rss_image_urls: string[];
 };
 
+export type RssPickMode = "grave" | "viral" | "any";
+
+function parseMetaGovJson(text: string, source: RssSource): RssItem[] {
+  // meta.gov.co uses a Vue SPA; its backend exposes JSON endpoints like:
+  // https://devx.meta.gov.co/api/noticias-inicio/?format=json
+  // Shape (observed): { res:"ok", noticias:[{id,titulo,imagen,url,fecha?...}, ...] }
+  try {
+    const parsed = JSON.parse(text) as any;
+    const rows = Array.isArray(parsed?.noticias) ? parsed.noticias : [];
+    const out: RssItem[] = [];
+    for (const r of rows) {
+      const title = normalizeTitle(r?.titulo ?? r?.title ?? "");
+      const url = safeUrl(String(r?.url ?? ""), source.base_url);
+      if (!title || !url) continue;
+      const pub = normalizeDate(r?.fecha ?? r?.published_at ?? r?.date ?? "") ?? null;
+      const imgRaw = String(r?.imagen ?? r?.image ?? "").trim();
+      const img = imgRaw ? safeUrl(imgRaw, source.base_url) : null;
+      out.push({
+        title,
+        url,
+        published_at: pub,
+        source_name: source.name,
+        source_region: source.region_key,
+        rss_image_urls: img ? [img] : [],
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function stripCdata(s: string): string {
   return s.replaceAll(/^<!\[CDATA\[/, "").replaceAll(/\]\]>$/, "");
 }
@@ -127,12 +159,8 @@ function scoreQueryMatch(title: string, queryTerms: string[]): number {
   return Math.min(10, hits * 2);
 }
 
-function pickTop(items: RssItem[], queryTerms: string[]): RssItem | null {
+function pickTop(items: RssItem[], queryTerms: string[], mode: RssPickMode): RssItem | null {
   if (!items.length) return null;
-  // Hard preference buckets:
-  // 1) "grave" civic-risk topics (seguridad/violencia/accidentes)
-  // 2) "viral" / agenda ligera (solo si no hay grave)
-  // 3) fallback: cualquier cosa relevante y reciente
   const t = (s: string) => s.toLowerCase();
   const isGrave = (title: string) =>
     [
@@ -169,11 +197,15 @@ function pickTop(items: RssItem[], queryTerms: string[]): RssItem | null {
   const score = (it: RssItem) => scoreRecency(it.published_at) + scoreSensational(it.title) * 2 + scoreQueryMatch(it.title, queryTerms);
   const sortByScore = (arr: RssItem[]) => arr.map((it) => ({ it, s: score(it) })).sort((a, b) => b.s - a.s)[0]?.it ?? null;
 
-  const grave = items.filter((it) => isGrave(it.title));
-  if (grave.length) return sortByScore(grave) ?? sortByScore(items);
+  if (mode === "grave") {
+    const grave = items.filter((it) => isGrave(it.title));
+    return (grave.length ? sortByScore(grave) : null) ?? sortByScore(items);
+  }
 
-  const viral = items.filter((it) => isViral(it.title));
-  if (viral.length) return sortByScore(viral) ?? sortByScore(items);
+  if (mode === "viral") {
+    const viral = items.filter((it) => isViral(it.title));
+    return (viral.length ? sortByScore(viral) : null) ?? sortByScore(items);
+  }
 
   return sortByScore(items);
 }
@@ -245,9 +277,18 @@ export async function fetchRssItems(args: { source: RssSource; limit?: number })
     const resp = await fetch(source.rss_url, { method: "GET", cache: "no-store", signal: controller.signal });
     clearTimeout(t);
     if (!resp.ok) return [];
-    const xml = (await resp.text()).slice(0, 500_000);
-    const lower = xml.toLowerCase();
-    const parsed = lower.includes("<feed") && lower.includes("http://www.w3.org/2005/atom") ? parseAtom(xml, source) : parseRss2(xml, source);
+    const contentType = (resp.headers.get("content-type") ?? "").toLowerCase();
+    const raw = (await resp.text()).slice(0, 500_000);
+    const trimmed = raw.trimStart();
+
+    // Support JSON-based "feeds" (e.g., meta.gov.co API) as additive signals.
+    if (contentType.includes("application/json") || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      const parsed = parseMetaGovJson(raw, source);
+      return parsed.slice(0, Math.max(1, limit));
+    }
+
+    const lower = raw.toLowerCase();
+    const parsed = lower.includes("<feed") && lower.includes("http://www.w3.org/2005/atom") ? parseAtom(raw, source) : parseRss2(raw, source);
     return parsed.slice(0, Math.max(1, limit));
   } catch {
     return [];
@@ -258,6 +299,7 @@ export async function pickTopRssItem(args: {
   sources: RssSource[];
   query_terms: string[];
   avoid_urls?: string[];
+  mode?: RssPickMode;
 }): Promise<RssItem | null> {
   const active = args.sources.filter((s) => s.active);
   const all: RssItem[] = [];
@@ -276,6 +318,7 @@ export async function pickTopRssItem(args: {
   });
   const avoid = new Set((args.avoid_urls ?? []).map((u) => String(u || "").trim().toLowerCase()).filter(Boolean));
   const filtered = avoid.size ? deduped.filter((x) => !avoid.has(String(x.url || "").trim().toLowerCase())) : deduped;
-  return pickTop(filtered.length ? filtered : deduped, args.query_terms);
+  const mode: RssPickMode = args.mode ?? "grave";
+  return pickTop(filtered.length ? filtered : deduped, args.query_terms, mode);
 }
 

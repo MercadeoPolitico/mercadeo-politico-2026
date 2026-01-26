@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabase
     .from("news_rss_sources")
     .select(
-      "id,name,region_key,base_url,rss_url,active,updated_at,last_health_status,last_health_checked_at,last_health_http_status,last_health_ms,last_health_error,last_item_count",
+      "id,name,region_key,base_url,rss_url,active,license_confirmed,usage_policy,updated_at,last_health_status,last_health_checked_at,last_health_http_status,last_health_ms,last_health_error,last_item_count",
     )
     .order("region_key", { ascending: true })
     .order("name", { ascending: true });

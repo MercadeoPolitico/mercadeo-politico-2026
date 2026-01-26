@@ -34,6 +34,8 @@ type RssSource = {
   base_url: string;
   rss_url: string;
   active: boolean;
+  license_confirmed?: boolean;
+  usage_policy?: string | null;
   updated_at: string;
   last_health_status?: HealthStatus;
   last_health_checked_at?: string | null;
@@ -82,11 +84,20 @@ export function NetworksPanel() {
   const [msg, setMsg] = useState<string | null>(null);
   const [rssSources, setRssSources] = useState<RssSource[]>([]);
   const [inviteInfo, setInviteInfo] = useState<Record<string, { invite_url: string; expires_at: string }>>({});
-  const [rssForm, setRssForm] = useState<{ name: string; region_key: RssSource["region_key"]; rss_url: string; active: boolean }>({
+  const [rssForm, setRssForm] = useState<{
+    name: string;
+    region_key: RssSource["region_key"];
+    rss_url: string;
+    active: boolean;
+    license_confirmed: boolean;
+    usage_policy: string;
+  }>({
     name: "",
     region_key: "meta",
     rss_url: "",
     active: true,
+    license_confirmed: false,
+    usage_policy: "unknown",
   });
 
   const [newFor, setNewFor] = useState<string>("");
@@ -357,18 +368,26 @@ export function NetworksPanel() {
 
   async function createRss() {
     setMsg(null);
-    const payload = { ...rssForm, name: rssForm.name.trim(), rss_url: rssForm.rss_url.trim() };
+    const payload = {
+      ...rssForm,
+      name: rssForm.name.trim(),
+      rss_url: rssForm.rss_url.trim(),
+      usage_policy: String(rssForm.usage_policy || "unknown").trim(),
+    };
     const r = await fetch("/api/admin/rss/sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     const j = (await r.json().catch(() => null)) as any;
     if (!r.ok || !j?.ok) {
       setMsg("No fue posible crear la fuente RSS. Verifica URL y región.");
       return;
     }
-    setRssForm({ name: "", region_key: rssForm.region_key, rss_url: "", active: true });
+    setRssForm({ name: "", region_key: rssForm.region_key, rss_url: "", active: true, license_confirmed: false, usage_policy: "unknown" });
     await refresh();
   }
 
-  async function updateRss(src: RssSource, patch: Partial<Pick<RssSource, "name" | "region_key" | "rss_url" | "active">>) {
+  async function updateRss(
+    src: RssSource,
+    patch: Partial<Pick<RssSource, "name" | "region_key" | "rss_url" | "active" | "license_confirmed" | "usage_policy">>,
+  ) {
     setMsg(null);
     const r = await fetch("/api/admin/rss/sources", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: src.id, ...patch }) });
     if (!r.ok) {
@@ -433,6 +452,9 @@ export function NetworksPanel() {
           Estas fuentes alimentan el motor como señales estructuradas (no reemplazan otras fuentes). Formato requerido:{" "}
           <span className="font-mono">name · region · rss_url · active</span>. La “señal” se calcula automáticamente (no manual).
         </p>
+        <p className="mt-2 text-xs text-muted">
+          Importante: por cumplimiento de derechos/condiciones, el motor solo usa RSS con <span className="font-semibold">Licencia confirmada</span>.
+        </p>
 
         <div className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
           <p className="text-sm font-semibold">Agregar fuente</p>
@@ -464,6 +486,26 @@ export function NetworksPanel() {
               <input type="checkbox" checked={rssForm.active} onChange={(e) => setRssForm((p) => ({ ...p, active: e.target.checked }))} />
               Activa
             </label>
+            <label className="flex items-center gap-2 text-xs text-muted" title="Solo marca esto si tienes permiso/licencia o Términos que permitan uso comercial.">
+              <input
+                type="checkbox"
+                checked={rssForm.license_confirmed}
+                onChange={(e) => setRssForm((p) => ({ ...p, license_confirmed: e.target.checked }))}
+              />
+              Licencia confirmada
+            </label>
+            <select
+              className="rounded-xl border border-border bg-background px-3 py-2 text-xs"
+              value={rssForm.usage_policy}
+              onChange={(e) => setRssForm((p) => ({ ...p, usage_policy: e.target.value }))}
+              title="Etiqueta interna (no cambia legalidad, solo ayuda a auditoría)."
+            >
+              <option value="unknown">policy: unknown</option>
+              <option value="open_government">policy: open_government</option>
+              <option value="permission">policy: permission</option>
+              <option value="personal_only">policy: personal_only</option>
+              <option value="paid_license">policy: paid_license</option>
+            </select>
             <button className="glass-button" type="button" onClick={createRss} disabled={!rssForm.name.trim() || !rssForm.rss_url.trim()}>
               Guardar RSS
             </button>
@@ -491,6 +533,10 @@ export function NetworksPanel() {
                           <a className="underline" href={s.base_url} target="_blank" rel="noreferrer">
                             sitio
                           </a>
+                          {" · "}
+                          <span className={s.license_confirmed ? "text-emerald-300" : "text-amber-300"}>
+                            {s.license_confirmed ? "licencia OK" : "sin licencia"}
+                          </span>
                         </p>
                         <p className="mt-1 text-[11px] text-muted">
                           señal:{" "}
@@ -499,12 +545,21 @@ export function NetworksPanel() {
                           </span>
                           {typeof s.last_health_ms === "number" ? ` · ${s.last_health_ms}ms` : ""}
                           {typeof s.last_item_count === "number" ? ` · items=${s.last_item_count}` : ""}
+                          {s.usage_policy ? ` · ${String(s.usage_policy)}` : ""}
                         </p>
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <SignalIcon status={s.last_health_status ?? null} active={s.active} />
                         <button className="glass-button" type="button" onClick={() => toggleRss(s)}>
                           {s.active ? "Desactivar" : "Activar"}
+                        </button>
+                        <button
+                          className="glass-button"
+                          type="button"
+                          onClick={() => updateRss(s, { license_confirmed: !Boolean(s.license_confirmed) } as any)}
+                          title="Confirma/revoca licencia para que el motor use esta fuente."
+                        >
+                          {s.license_confirmed ? "Revocar licencia" : "Confirmar licencia"}
                         </button>
                         <button className="glass-button" type="button" onClick={refresh} title="Re-chequear (refrescar)">
                           Rechequear

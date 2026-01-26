@@ -33,6 +33,8 @@ export async function POST(req: Request) {
   const region_key = isNonEmptyString(b.region_key) ? b.region_key.trim().toLowerCase() : "";
   const rss_url = isNonEmptyString(b.rss_url) ? b.rss_url.trim() : "";
   const active = typeof b.active === "boolean" ? b.active : true;
+  const license_confirmed = typeof b.license_confirmed === "boolean" ? b.license_confirmed : false;
+  const usage_policy = isNonEmptyString(b.usage_policy) ? b.usage_policy.trim().slice(0, 160) : "unknown";
 
   if (!name) return NextResponse.json({ ok: false, error: "name_required" }, { status: 400 });
   if (!rss_url) return NextResponse.json({ ok: false, error: "rss_url_required" }, { status: 400 });
@@ -50,6 +52,8 @@ export async function POST(req: Request) {
       rss_url,
       base_url,
       active,
+      license_confirmed,
+      usage_policy,
       updated_at: now,
     })
     .select("id")
@@ -86,6 +90,8 @@ export async function PATCH(req: Request) {
     patch.base_url = baseUrlFromRssUrl(url);
   }
   if (typeof b.active === "boolean") patch.active = b.active;
+  if (typeof b.license_confirmed === "boolean") patch.license_confirmed = b.license_confirmed;
+  if (isNonEmptyString(b.usage_policy)) patch.usage_policy = b.usage_policy.trim().slice(0, 160);
   patch.updated_at = new Date().toISOString();
 
   const { error } = await supabase.from("news_rss_sources").update(patch).eq("id", id);

@@ -10,7 +10,7 @@ import { submitToN8n } from "@/lib/automation/n8n";
 import { getSiteUrlString } from "@/lib/site";
 import { pickWikimediaImage } from "@/lib/media/wikimedia";
 import { fetchOpenGraphMedia } from "@/lib/media/opengraph";
-import { pickTopRssItem, type RssSource, type RssItem } from "@/lib/news/rss";
+import { pickTopRssItem, type RssPickMode, type RssSource, type RssItem } from "@/lib/news/rss";
 import { ensureSocialVariants } from "@/lib/automation/socialVariants";
 import { createHash, randomUUID } from "node:crypto";
 
@@ -93,12 +93,36 @@ function severityScoreFromTitle(title: string): number {
     "herid",
     "desaparec",
     "amenaza",
+    // Emergencias / necesidades públicas (alto impacto cívico)
+    "emergenc",
+    "inund",
+    "desliz",
+    "derrumbe",
+    "sismo",
+    "tembl",
+    "sequía",
+    "sequia",
+    "racion",
+    "sin agua",
+    "corte de agua",
+    "apagón",
+    "apagón",
+    "hospital",
+    "urgenc",
+    "salud",
+    "vacun",
+    "desplaz",
   ];
   const viral = ["viral", "tendencia", "concierto", "música", "musica", "fútbol", "futbol", "festival", "show", "entreten"];
   const severeHits = severe.filter((k) => t.includes(k)).length;
   const viralHits = viral.filter((k) => t.includes(k)).length;
   // Push severe to the top; still allow fallback selection when none exist.
   return severeHits * 3 - viralHits;
+}
+
+function isViralTitle(title: string): boolean {
+  const t = String(title || "").toLowerCase();
+  return ["viral", "tendencia", "concierto", "música", "musica", "fútbol", "futbol", "festival", "show", "entreten"].some((k) => t.includes(k));
 }
 
 function isBlockedNewsUrl(url: string): boolean {
@@ -157,6 +181,55 @@ async function fetchBestNewsArticle(args: {
     const sev = severityScoreFromTitle(a.title);
     const isEarly = q.toLowerCase().includes("seguridad") || q.toLowerCase().includes("extors") || q.toLowerCase().includes("secuestro") || q.toLowerCase().includes("corrup");
     if (isEarly && sev < 3) continue;
+    return a;
+  }
+  return null;
+}
+
+async function fetchViralNewsArticle(args: {
+  office: string;
+  region: string;
+  regional_hints: string[];
+  avoid_urls?: string[];
+}): Promise<import("@/lib/news/gdelt").GdeltArticle | null> {
+  const off = args.office.toLowerCase();
+  const reg = String(args.region || "").trim();
+  const queries =
+    off.includes("senado")
+      ? [
+          "Colombia tendencia",
+          "Colombia viral",
+          "Colombia redes sociales",
+          "Colombia entretenimiento",
+          "Colombia fútbol",
+          "Colombia música",
+          // fallback: still Colombia, broader
+          "Colombia",
+        ]
+      : reg
+        ? [
+            `${reg} tendencia`,
+            `${reg} viral`,
+            "Villavicencio tendencia",
+            "Meta tendencia",
+            // fallback to national if local isn't available
+            "Colombia tendencia",
+            "Colombia viral",
+            "Colombia",
+          ]
+        : ["Colombia tendencia", "Colombia viral", "Colombia"];
+
+  for (const q of queries) {
+    // eslint-disable-next-line no-await-in-loop
+    const a = await fetchTopGdeltArticle(q, {
+      preferred_url_hints: args.regional_hints,
+      prefer_sensational: false,
+      exclude_urls: args.avoid_urls ?? [],
+    });
+    if (!a) continue;
+    if (isBlockedNewsUrl(a.url)) continue;
+    // Prefer actual viral-ish headlines.
+    if (!isViralTitle(a.title)) continue;
     return a;
   }
   return null;
@@ -795,6 +868,8 @@ async function fetchActiveRssSources(args: {
     .from("news_rss_sources")
     .select("id,name,region_key,base_url,rss_url,active")
     .eq("active", true)
+    // Guardrail: only use feeds explicitly confirmed as licensed/allowed for this platform.
+    .eq("license_confirmed", true)
     .eq("region_key", args.region_key)
     .order("name", { ascending: true });
   return (data ?? []) as any;
@@ -969,6 +1044,8 @@ export async function POST(req: Request) {
   const b = body.data as Record<string, unknown>;
   const candidate_id = typeof b.candidate_id === "string" ? b.candidate_id.trim() : "";
   const max_items = typeof b.max_items === "number" ? b.max_items : 1;
+  const news_mode_raw = typeof b.news_mode === "string" ? b.news_mode.trim().toLowerCase() : "";
+  const news_mode: RssPickMode = news_mode_raw === "viral" ? "viral" : news_mode_raw === "any" ? "any" : "grave";
   if (!candidate_id) return NextResponse.json({ error: "candidate_id_required" }, { status: 400 });
   if (max_items < 1 || max_items > 2) return NextResponse.json({ error: "max_items_invalid" }, { status: 400 });
 
@@ -997,6 +1074,7 @@ export async function POST(req: Request) {
     candidate_id,
     max_items,
     testMode,
+    news_mode,
     actor: "automation",
   });
 
@@ -1115,12 +1193,15 @@ export async function POST(req: Request) {
             .filter(Boolean)
             .map(String),
           avoid_urls: avoidNewsUrls,
+          mode: news_mode,
         });
 
   // 2) News selection (GDELT) only if no admin-provided news links
   const gdeltArticle = adminProvidedNewsLinks.length
     ? null
-    : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: avoidNewsUrls });
+    : news_mode === "viral"
+      ? await fetchViralNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: avoidNewsUrls })
+      : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: avoidNewsUrls });
 
   // Decide which signal to use (RSS is additive; never exclusive).
   const chosen = chooseNewsSignal({ gdelt: gdeltArticle, rss: rssItem, prefer_rss: Boolean(rssItem) });
@@ -1143,6 +1224,7 @@ export async function POST(req: Request) {
     '{ "sentiment":"positive|negative|neutral", "seo_keywords": string[], "master_editorial": string, "platform_variants": { "blog": string, "facebook": string, "x": string, "reddit": string }, "image_keywords": string[] }',
     "",
     "Reglas globales (muy importantes):",
+    `- Tipo de noticia priorizada: ${news_mode === "viral" ? "VIRAL / conversación pública" : "GRAVE / alto impacto cívico"}.`,
     `- Estilo editorial: ${editorial_style === "noticiero_portada" ? "noticiero tipo periódico/portada (titular fuerte pero sobrio, lead claro, orden visual)" : "sobrio"}.`,
     `- Inclinación: ${editorial_inclination}.`,
     "  - informativo: neutral, explica hechos y contexto. Persuasión mínima (cívica).",
@@ -1533,13 +1615,13 @@ export async function POST(req: Request) {
     // ignore
   }
 
-  // Prefer the real article's own media (OpenGraph/Twitter card) with credit to the outlet.
+  // IMPORTANT (rights & reliability):
+  // - We do NOT publish/hotlink outlet images (OpenGraph/Twitter cards) because licenses are unclear and hotlinking often fails.
+  // - We only publish CC images (Wikimedia) or our own fallback placeholder.
   const sourceUrl = rssChosen?.url ?? article?.url ?? null;
   const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
-  const ogImage =
-    og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) && isHotlinkSafeImageUrl(og.image_url)
-      ? og.image_url
-      : null;
+  const ogRefImageUrl =
+    og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
 
   const imageQuery = [
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
@@ -1550,8 +1632,8 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join(" ");
 
-  const pickedImage = ogImage ? null : await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
-  const finalImageUrl = ogImage ?? pickedImage?.thumb_url ?? pickedImage?.image_url ?? fallbackPublicImageUrl(`${pol.id}-${imageQuery}-${Date.now()}`);
+  const pickedImage = await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
+  const finalImageUrl = pickedImage?.thumb_url ?? pickedImage?.image_url ?? fallbackPublicImageUrl(`${pol.id}-${imageQuery}-${Date.now()}`);
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -1585,36 +1667,33 @@ export async function POST(req: Request) {
     // RSS images are reference-only, never published.
     rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
     image_source: rssChosen && (rssChosen.rss_image_urls?.length ?? 0) > 0 ? "rss_reference" : "ai_generated",
-    media:
-      ogImage
-        ? {
-            type: "image",
-            image_url: finalImageUrl,
-            page_url: sourceUrl ?? null,
-            license_short: null,
-            attribution: og?.site_name ? `Imagen: ${og.site_name} (crédito al medio, ver fuente)` : "Imagen: crédito al medio, ver fuente",
-            author: null,
-            source: "article_og",
-          }
-        : pickedImage
-          ? {
-              type: "image",
-              image_url: finalImageUrl,
-              page_url: pickedImage.page_url,
-              license_short: pickedImage.license_short,
-              attribution: pickedImage.attribution,
-              author: pickedImage.author,
-              source: pickedImage.source,
-            }
-          : {
-              type: "image",
-              image_url: finalImageUrl,
-            page_url: sourceUrl ?? null,
-              license_short: "fallback_svg",
-              attribution: "Imagen generada localmente (placeholder editorial).",
-              author: null,
-              source: "fallback_svg",
-            },
+    reference_media: ogRefImageUrl
+      ? {
+          type: "image",
+          image_url: ogRefImageUrl,
+          page_url: sourceUrl ?? null,
+          source: "article_og_reference_only",
+        }
+      : null,
+    media: pickedImage
+      ? {
+          type: "image",
+          image_url: finalImageUrl,
+          page_url: pickedImage.page_url,
+          license_short: pickedImage.license_short,
+          attribution: pickedImage.attribution,
+          author: pickedImage.author,
+          source: pickedImage.source,
+        }
+      : {
+          type: "image",
+          image_url: finalImageUrl,
+          page_url: sourceUrl ?? null,
+          license_short: "fallback_svg",
+          attribution: "Imagen generada localmente (placeholder editorial).",
+          author: null,
+          source: "fallback_svg",
+        },
     news: rssChosen
       ? { provider: "rss", title: rssChosen.title, url: rssChosen.url, published_at: rssChosen.published_at, query }
       : article

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings 10000",
     "n8n:ensure": "node scripts/ensure-n8n-workflow-ready.mjs",
     "smoke:prod": "node scripts/smoke-prod.mjs",
     "smoke:auto-publish:prod": "node scripts/smoke-auto-publish-prod.mjs",
