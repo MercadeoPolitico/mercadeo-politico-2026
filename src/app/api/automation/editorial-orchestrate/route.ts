@@ -121,6 +121,72 @@ function severityScoreFromTitle(title: string): number {
   return severeHits * 3 - viralHits;
 }
 
+function keywordsFromTitle(title: string): string[] {
+  const t = String(title || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replaceAll(/[\u0300-\u036f]/g, "")
+    .replaceAll(/[^a-z0-9\s-]+/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+  if (!t) return [];
+  const stop = new Set([
+    "el",
+    "la",
+    "los",
+    "las",
+    "un",
+    "una",
+    "unos",
+    "unas",
+    "de",
+    "del",
+    "al",
+    "y",
+    "o",
+    "u",
+    "en",
+    "por",
+    "para",
+    "con",
+    "sin",
+    "sobre",
+    "ante",
+    "tras",
+    "durante",
+    "entre",
+    "hacia",
+    "a",
+    "se",
+    "su",
+    "sus",
+    "que",
+    "como",
+    "mas",
+    "más",
+    "ya",
+    "hoy",
+    "ayer",
+    "manana",
+    "mañana",
+    "colombia",
+  ]);
+  const toks = t
+    .split(" ")
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 4 && !stop.has(x));
+  // de-dupe, keep order, cap
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const w of toks) {
+    if (seen.has(w)) continue;
+    seen.add(w);
+    out.push(w);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
 function isViralTitle(title: string): boolean {
   const t = String(title || "").toLowerCase();
   return ["viral", "tendencia", "concierto", "música", "musica", "fútbol", "futbol", "festival", "show", "entreten"].some((k) => t.includes(k));
@@ -1651,7 +1717,10 @@ export async function POST(req: Request) {
   const ogRefImageUrl =
     og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
 
+  const newsTitleHint = rssChosen?.title ?? article?.title ?? lastPublished?.title ?? "";
+  const titleTokens = keywordsFromTitle(newsTitleHint);
   const imageQueryPrimary = [
+    ...titleTokens,
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
     ...(winner.data.seo_keywords?.slice(0, 2) ?? []),
     pol.region,
@@ -1687,7 +1756,6 @@ export async function POST(req: Request) {
 
   // If we couldn't find a CC image, generate a first-party image (MSI/OpenAI) and store it in Supabase Storage.
   // This avoids hotlinking and improves reliability/performance.
-  const newsTitleHint = rssChosen?.title ?? article?.title ?? lastPublished?.title ?? "";
   const aiPrompt = [
     "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
     "Requisitos: sin texto, sin logos, sin marcas de agua, sin banderas explícitas, sin símbolos partidistas.",

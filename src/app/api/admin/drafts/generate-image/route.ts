@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { isAdminSession } from "@/lib/auth/adminSession";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { pickWikimediaImage } from "@/lib/media/wikimedia";
+import { generateAndStoreNewsImage } from "@/lib/media/aiEditorialImage";
+import crypto from "node:crypto";
 
 export const runtime = "nodejs";
 
@@ -260,6 +263,11 @@ async function tryOpenAiImage(args: {
   }
 }
 
+function titleFromText(text: string): string {
+  const lines = String(text || "").split("\n").map((l) => l.trim());
+  return (lines.find((l) => l.length > 0) ?? "").slice(0, 160);
+}
+
 export async function POST(req: Request) {
   if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
@@ -290,56 +298,95 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .slice(0, 16);
 
+  const draftTitle = titleFromText(draft.generated_text || "") || (draft.topic ? String(draft.topic) : "");
+  const region = pol?.region ? String(pol.region).trim() : "Colombia";
+
+  // 1) Prefer CC image (Wikimedia) for relevance + rights.
+  const wikQueryPrimary = [draftTitle, region, "Colombia"].filter(Boolean).join(" ");
+  const wikQueryFallback = [region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
+  const picked =
+    (await pickWikimediaImage({ query: wikQueryPrimary, avoid_urls: [] })) ?? (await pickWikimediaImage({ query: wikQueryFallback, avoid_urls: [] }));
+
   const prompt = [
-    "Imagen editorial para un blog cívico/político en Colombia.",
-    "Sin texto, sin logos, sin marcas de agua, sin propaganda agresiva.",
-    "Estilo: fotoperiodístico moderno, sobrio, humano, iluminación natural.",
-    pol?.region ? `Contexto regional: ${pol.region} (Colombia).` : "Contexto: Colombia.",
-    pol?.name ? `Candidato asociado (no retratar rostro real): ${pol.name}.` : "",
-    draft.topic ? `Tema: ${draft.topic}` : "",
+    "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
+    "Requisitos: sin texto, sin logos, sin marcas de agua, sin banderas explícitas, sin símbolos partidistas.",
+    "Sin rostros identificables (si aparecen personas, que sean genéricas y no reconocibles).",
+    "Sin violencia explícita, sin sangre, sin armas visibles. Evitar escenas comprometedoras.",
+    "No recrear hechos reales específicos: evitar que parezca una foto de un incidente real. Representar el tema de forma simbólica/ambiental.",
+    `Contexto regional: ${region}.`,
+    draftTitle ? `Tema/titular (contexto): ${draftTitle}` : "",
     keywords.length ? `Keywords (sugerencia): ${keywords.join(", ")}` : "",
+    "Estilo: ilustración editorial moderna con realismo fotográfico (stock-like), creíble, sobria y atractiva.",
   ]
     .filter(Boolean)
     .join("\n");
 
   console.info("[draft-image] attempt", { requestId, draft_id, candidate_id: draft.candidate_id });
 
-  const attempts: Array<{ provider: ProviderName; ok: boolean; reason?: string }> = [];
-
-  const msi = await tryMsiImage({ prompt, maxMs: 15000, requestId });
-  if (msi.ok) attempts.push({ provider: "MSI", ok: true });
-  else attempts.push({ provider: "MSI", ok: false, reason: msi.reason });
-
-  const oa = !msi.ok ? await tryOpenAiImage({ prompt, maxMs: 15000, requestId }) : null;
-  if (oa && oa.ok) attempts.push({ provider: "OpenAI", ok: true });
-  if (oa && !oa.ok) attempts.push({ provider: "OpenAI", ok: false, reason: oa.reason });
-
-  const winner = msi.ok ? msi : oa && oa.ok ? oa : null;
+  const attempts: Array<{ provider: ProviderName | "Wikimedia"; ok: boolean; reason?: string }> = [];
+  if (picked) attempts.push({ provider: "Wikimedia", ok: true });
+  else attempts.push({ provider: "Wikimedia", ok: false, reason: "no_cc_match" });
 
   const prevMeta = (draft.metadata && typeof draft.metadata === "object" ? (draft.metadata as Record<string, unknown>) : {}) as Record<string, unknown>;
   const nextMeta: Record<string, unknown> = {
     ...prevMeta,
-    image_ready: Boolean(winner),
+    image_ready: Boolean(picked),
     image_provider_attempts: attempts,
     image_last_attempt_at: nowIso(),
     image_request_id: requestId,
   };
 
-  if (winner) {
-    nextMeta.image_url = winner.image_url;
-    nextMeta.image_metadata = { provider: winner.provider, ...winner.meta, generated_at: nowIso(), keywords };
-  } else {
-    // LAST RESORT (no AI): generate a local abstract SVG (no text) and attach it.
-    const svg = localAbstractSvg({ seed: `${draft.id}:${draft.candidate_id}:${draft.topic}:${keywords.join(",")}` });
-    const stored = await storeSvgInSupabase({ admin, candidateId: draft.candidate_id, draftId: draft.id, svg });
-    const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
-    const finalUrl = stored || dataUrl;
-
-    attempts.push({ provider: "Local", ok: true });
-    nextMeta.image_ready = true;
+  if (picked) {
+    const finalUrl = picked.thumb_url ?? picked.image_url;
+    // Normalize into the same shape the rest of the system uses.
+    nextMeta.media = {
+      type: "image",
+      image_url: finalUrl,
+      page_url: picked.page_url,
+      license_short: picked.license_short,
+      attribution: picked.attribution,
+      author: picked.author,
+      source: picked.source,
+    };
+    // Backward-compatible fields used by the Admin UI.
     nextMeta.image_url = finalUrl;
-    nextMeta.image_metadata = { provider: "Local", generated_at: nowIso(), keywords, request_id: requestId };
-    nextMeta.image_last_error = safeFailure((oa && !oa.ok && oa.reason) || (!msi.ok && msi.reason) || "ai_unavailable_local_fallback");
+    nextMeta.image_metadata = { provider: "Wikimedia", generated_at: nowIso(), keywords, request_id: requestId };
+    nextMeta.image_ready = true;
+  } else {
+    // 2) Fallback: generate a first-party image and store in Supabase Storage (reliable URLs).
+    const stored = await generateAndStoreNewsImage({
+      admin,
+      candidateId: draft.candidate_id,
+      seed: `draft-${draft.id}-${requestId}`,
+      prompt,
+      maxMs: 18_000,
+    });
+    if (stored.ok) {
+      nextMeta.media = {
+        type: "image",
+        image_url: stored.public_url,
+        page_url: null,
+        license_short: "first_party_ai",
+        attribution: `Imagen ilustrativa generada por ${stored.provider} (first-party) · MarketBrain Technology™.`,
+        author: null,
+        source: "first_party_ai",
+      };
+      nextMeta.image_url = stored.public_url;
+      nextMeta.image_metadata = { provider: stored.provider, generated_at: nowIso(), keywords, request_id: requestId, ...(stored.meta ?? {}) };
+      nextMeta.image_ready = true;
+    } else {
+      // LAST RESORT: local abstract SVG (no text) and attach it.
+      const svg = localAbstractSvg({ seed: `${draft.id}:${draft.candidate_id}:${draft.topic}:${keywords.join(",")}` });
+      const storedSvg = await storeSvgInSupabase({ admin, candidateId: draft.candidate_id, draftId: draft.id, svg });
+      const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg, "utf8").toString("base64")}`;
+      const finalUrl = storedSvg || dataUrl;
+
+      attempts.push({ provider: "Local", ok: true });
+      nextMeta.image_ready = true;
+      nextMeta.image_url = finalUrl;
+      nextMeta.image_metadata = { provider: "Local", generated_at: nowIso(), keywords, request_id: requestId };
+      nextMeta.image_last_error = safeFailure(stored.reason || "ai_unavailable_local_fallback");
+    }
   }
 
   const { error: upErr } = await admin
@@ -353,12 +400,13 @@ export async function POST(req: Request) {
 
   if (upErr) return NextResponse.json({ error: "db_error" }, { status: 500 });
 
-  if (!winner) {
-    console.warn("[draft-image] ai_failed_local_fallback", { requestId, draft_id, attempts });
-    return NextResponse.json({ ok: true, request_id: requestId, image_url: String(nextMeta.image_url), provider: "Local", fallback: true });
+  if (picked) {
+    console.info("[draft-image] success_wikimedia", { requestId, draft_id });
+    return NextResponse.json({ ok: true, request_id: requestId, image_url: String((nextMeta as any).image_url), provider: "Wikimedia" });
   }
 
-  console.info("[draft-image] success", { requestId, draft_id, provider: winner.provider });
-  return NextResponse.json({ ok: true, request_id: requestId, image_url: winner.image_url, provider: winner.provider });
+  const provider = (nextMeta.image_metadata as any)?.provider ?? "Local";
+  console.info("[draft-image] done", { requestId, draft_id, provider });
+  return NextResponse.json({ ok: true, request_id: requestId, image_url: String(nextMeta.image_url), provider });
 }
 

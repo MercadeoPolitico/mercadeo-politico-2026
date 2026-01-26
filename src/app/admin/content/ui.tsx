@@ -246,7 +246,13 @@ export function AdminContentPanel() {
   function isImageReady(d: Draft): boolean {
     const meta = (d.metadata ?? null) as any;
     if (meta && meta.image_ready === true) return true;
-    const url = meta && (typeof meta.image_url === "string" ? meta.image_url : meta?.image_metadata?.url);
+    const url =
+      meta &&
+      (typeof meta.image_url === "string"
+        ? meta.image_url
+        : typeof meta?.media?.image_url === "string"
+          ? meta.media.image_url
+          : meta?.image_metadata?.url);
     return typeof url === "string" && url.trim().length > 0;
   }
 
@@ -254,6 +260,7 @@ export function AdminContentPanel() {
     const meta = (d.metadata ?? null) as any;
     const url =
       (meta && typeof meta.image_url === "string" && meta.image_url) ||
+      (meta && typeof meta?.media?.image_url === "string" && meta.media.image_url) ||
       (meta && typeof meta?.image_metadata?.url === "string" && meta.image_metadata.url) ||
       null;
     return url ? String(url).trim() : null;
@@ -540,8 +547,22 @@ export function AdminContentPanel() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ draft_id: draft.id, allow_no_image: allowNoImage(draft) }),
     });
-    if (!res.ok) return;
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as any;
+      const err = typeof j?.error === "string" ? j.error : "upstream_error";
+      const msg =
+        err === "missing_title"
+          ? "No se pudo publicar: falta título (primera línea del texto)."
+          : err === "missing_author"
+            ? "No se pudo publicar: falta autor/medio (source_name o source_url en metadata)."
+            : err === "missing_image"
+              ? "No se pudo publicar: falta imagen (o autoriza “sin imagen”)."
+              : `No se pudo publicar: ${err}`;
+      window.alert(msg);
+      return;
+    }
     await refresh();
+    window.alert("Publicado en Centro Informativo.");
   }
 
   const selectedIds = useMemo(() => Object.keys(checked).filter((k) => checked[k]), [checked]);

@@ -229,8 +229,7 @@ body::before {
   0% {
     opacity: 0;
     transform: translate3d(0, 92px, 0) scale(0.975);
-    filter: blur(8px) saturate(1.05);
-    filter: saturate(1.05);
+    filter: blur(8px) saturate(1.08);
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.06) inset,
       0 14px 40px rgba(0, 0, 0, 0.14);
@@ -257,6 +256,16 @@ body::before {
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.08) inset,
       0 28px 80px rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* Reduced-motion fallback: fade only (no movement) */
+@keyframes mp26CardFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
   }
 }
 
@@ -313,18 +322,16 @@ body::before {
 
 @media (prefers-reduced-motion: reduce) {
   .landing-animate .glass-card {
-    animation: none !important;
+    animation: mp26CardFadeIn 220ms ease-out both !important;
     transform: none !important;
-    opacity: 1 !important;
   }
   .landing-animate .glass-card::after {
     animation: none !important;
     opacity: 0 !important;
   }
   .landing-animate .glass-hero {
-    animation: none !important;
+    animation: mp26CardFadeIn 220ms ease-out both !important;
     transform: none !important;
-    opacity: 1 !important;
   }
 }
 
