@@ -173,7 +173,7 @@ async function fetchBestNewsArticle(args: {
     // eslint-disable-next-line no-await-in-loop
     const a = await fetchTopGdeltArticle(q, {
       preferred_url_hints: args.regional_hints,
-      prefer_sensational: true,
+      prefer_sensational: false,
       exclude_urls: args.avoid_urls ?? [],
     });
     if (!a) continue;
@@ -1062,7 +1062,7 @@ export async function POST(req: Request) {
         ? "persuasivo_suave"
         : inclinationRaw === "correctivo"
           ? "correctivo"
-          : "persuasivo_suave";
+          : "informativo";
   const styleRaw = typeof b.editorial_style === "string" ? b.editorial_style.trim().toLowerCase() : "";
   const editorial_style: "noticiero_portada" | "sobrio" = styleRaw === "sobrio" ? "sobrio" : "noticiero_portada";
 
@@ -1656,14 +1656,15 @@ export async function POST(req: Request) {
   // This avoids hotlinking and improves reliability/performance.
   const newsTitleHint = rssChosen?.title ?? article?.title ?? lastPublished?.title ?? "";
   const aiPrompt = [
-    "Imagen editorial realista para una nota cívica en Colombia (no propaganda).",
+    "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
     "Requisitos: sin texto, sin logos, sin marcas de agua, sin banderas explícitas, sin símbolos partidistas.",
     "Sin rostros identificables (si aparecen personas, que sean genéricas y no reconocibles).",
     "Sin violencia explícita, sin sangre, sin armas visibles. Evitar escenas comprometedoras.",
+    "No recrear hechos reales específicos: evitar que parezca una foto de un incidente real. Representar el tema de forma simbólica/ambiental.",
     `Contexto regional: ${pol.region || "Colombia"}.`,
     newsTitleHint ? `Tema/titular (contexto): ${newsTitleHint}` : "",
-    "Estilo: fotoperiodístico moderno, creíble, sobrio, atractivo, luz natural/cinemática.",
-    "Composición: sujeto humano/urbano/institucional relacionado con el tema (ej. ciudad, institución, reunión comunitaria, servicio público).",
+    "Estilo: ilustración editorial moderna con realismo fotográfico (stock-like), creíble, sobria y atractiva; luz natural/cinemática suave.",
+    "Composición: regla de tercios, profundidad de campo suave, sujeto urbano/institucional relacionado con el tema (ciudad, institución, servicio público, reunión comunitaria).",
   ]
     .filter(Boolean)
     .join("\n");
@@ -1713,7 +1714,7 @@ export async function POST(req: Request) {
     has_rss_image: rssChosen ? Boolean(rssChosen.rss_image_urls?.length) : false,
     // RSS images are reference-only, never published.
     rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
-    image_source: rssChosen && (rssChosen.rss_image_urls?.length ?? 0) > 0 ? "rss_reference" : "ai_generated",
+    image_source: pickedImage ? "wikimedia_commons" : aiStored && aiStored.ok ? "first_party_ai" : "fallback_svg",
     reference_media: ogRefImageUrl
       ? {
           type: "image",
@@ -1739,7 +1740,7 @@ export async function POST(req: Request) {
             image_url: aiStored.public_url,
             page_url: null,
             license_short: "first_party_ai",
-            attribution: `Imagen generada por ${aiStored.provider} (first-party) · MarketBrain Technology™.`,
+            attribution: `Imagen ilustrativa generada por ${aiStored.provider} (first-party) · MarketBrain Technology™.`,
             author: null,
             source: "first_party_ai",
           }
@@ -1748,7 +1749,7 @@ export async function POST(req: Request) {
             image_url: finalImageUrlSafe,
             page_url: sourceUrl ?? null,
             license_short: "fallback_svg",
-            attribution: "Imagen generada localmente (placeholder editorial).",
+            attribution: "Imagen ilustrativa local (placeholder editorial).",
             author: null,
             source: "fallback_svg",
           },

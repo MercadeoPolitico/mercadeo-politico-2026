@@ -78,7 +78,9 @@ async function tryMsiImage(args: {
         system:
           "Generador de imagen editorial (first-party). Devuelve un JSON con {\"image_url\":string,\"prompt\":string} " +
           "o al menos una URL de imagen. Reglas estrictas: sin texto, sin logos, sin marcas, sin propaganda, sin violencia explícita, " +
-          "sin rostros reales de personas (si aparecen, que sean genéricos/no-identificables). Estilo: fotoperiodístico realista, sobrio y atractivo.",
+          "sin rostros reales de personas (si aparecen, que sean genéricos/no-identificables). " +
+          "No recrear eventos reales específicos (sin escenas que parezcan 'foto de un incidente real'); preferir escenas simbólicas/representativas. " +
+          "Estilo: ilustración editorial moderna con realismo fotográfico (stock-like), sobria, contextual y atractiva.",
         user: args.prompt,
         constraints: { content_type: "image", max_output_chars: 1400 },
       }),

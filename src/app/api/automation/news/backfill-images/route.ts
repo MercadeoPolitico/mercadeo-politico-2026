@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       (await pickWikimediaImage({ query: queryPrimary, avoid_urls: [] })) ?? (await pickWikimediaImage({ query: queryGeo, avoid_urls: [] }));
 
     const imageUrl = picked?.thumb_url ?? picked?.image_url ?? null;
-    const creditLine = (() => {
+    let creditLine: string | null = (() => {
       if (picked?.image_url) {
         const creditBits = [
           typeof picked.attribution === "string" ? picked.attribution : null,
@@ -149,12 +149,13 @@ export async function POST(req: Request) {
       ? imageUrl
       : await (async () => {
           const aiPrompt = [
-            "Imagen editorial realista para una nota cívica en Colombia (no propaganda).",
+            "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
             "Requisitos: sin texto, sin logos, sin marcas de agua, sin banderas explícitas, sin símbolos partidistas.",
             "Sin rostros identificables. Sin violencia explícita.",
             `Contexto regional: ${region}.`,
             title ? `Tema/titular (contexto): ${title}` : "",
-            "Estilo: fotoperiodístico moderno, creíble, sobrio y atractivo.",
+            "No recrear hechos reales específicos: evitar que parezca una foto de un incidente real. Representar el tema de forma simbólica/ambiental.",
+            "Estilo: ilustración editorial moderna con realismo fotográfico (stock-like), creíble, sobria y atractiva.",
           ]
             .filter(Boolean)
             .join("\n");
@@ -166,6 +167,9 @@ export async function POST(req: Request) {
             prompt: aiPrompt,
             maxMs: 18_000,
           });
+          if (stored.ok) {
+            creditLine = `Crédito imagen: Imagen ilustrativa generada por ${stored.provider} (first-party) · MarketBrain Technology™.`;
+          }
           return stored.ok ? stored.public_url : null;
         })();
 
