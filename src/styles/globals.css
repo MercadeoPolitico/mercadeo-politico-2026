@@ -228,7 +228,8 @@ body::before {
 @keyframes mp26CardEnter {
   0% {
     opacity: 0;
-    transform: translate3d(0, 28px, 0) scale(0.985);
+    transform: translate3d(0, 92px, 0) scale(0.975);
+    filter: blur(8px) saturate(1.05);
     filter: saturate(1.05);
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.06) inset,

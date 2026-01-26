@@ -27,6 +27,14 @@ function normalizeQuery(q: string): string {
     .slice(0, 180);
 }
 
+function enforceBitmapFiletype(query: string): string {
+  const q = normalizeQuery(query);
+  if (!q) return q;
+  // MediaWiki search supports `filetype:`. Bitmap avoids PDFs/djvu and most vectors.
+  if (/\bfiletype\s*:/i.test(q)) return q;
+  return `${q} filetype:bitmap`.slice(0, 200);
+}
+
 function isAllowedLicenseShort(s: string | null): boolean {
   if (!s) return false;
   const t = s.toLowerCase();
@@ -130,7 +138,7 @@ export async function pickWikimediaImage(args: {
   query: string;
   avoid_urls?: string[];
 }): Promise<WikimediaImage | null> {
-  const q = normalizeQuery(args.query);
+  const q = enforceBitmapFiletype(args.query);
   if (!q) return null;
 
   const avoid = new Set((args.avoid_urls ?? []).filter(isNonEmptyString).map((u) => u.trim()));

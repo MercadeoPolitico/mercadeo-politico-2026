@@ -84,12 +84,19 @@ async function main() {
   let failCount = 0;
 
   for (const c of candidates) {
-    for (let i = 0; i < 2; i++) {
+    // 2 posts per candidate: one viral + one grave
+    for (const news_mode of ["viral", "grave"]) {
       // eslint-disable-next-line no-await-in-loop
       const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-automation-token": token },
-        body: JSON.stringify({ candidate_id: c.id, max_items: 1, editorial_style: "noticiero_portada", editorial_inclination: "persuasivo_suave" }),
+        body: JSON.stringify({
+          candidate_id: c.id,
+          max_items: 1,
+          news_mode,
+          editorial_style: "noticiero_portada",
+          editorial_inclination: "informativo",
+        }),
         cache: "no-store",
       });
       if (r.ok) okCount++;

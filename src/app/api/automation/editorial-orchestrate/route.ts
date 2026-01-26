@@ -894,6 +894,18 @@ async function recentUsedNewsUrls(args: {
   if (!admin) return [];
   const urls: string[] = [];
   try {
+    // Global recent posts (avoid cross-candidate duplicates)
+    const { data: globalPosts } = await admin
+      .from("citizen_news_posts")
+      .select("source_url")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(140);
+    for (const r of globalPosts ?? []) {
+      const u = (r as any)?.source_url;
+      if (typeof u === "string" && u.trim()) urls.push(u.trim());
+    }
+
     // Recent published posts for this candidate
     const { data: posts } = await admin
       .from("citizen_news_posts")
@@ -936,6 +948,18 @@ async function recentUsedMediaUrls(args: {
   if (!admin) return [];
   const urls: string[] = [];
   try {
+    // Global recent media (avoid repeating the same visuals across candidates)
+    const { data: globalPosts } = await admin
+      .from("citizen_news_posts")
+      .select("media_urls")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(140);
+    for (const r of globalPosts ?? []) {
+      const arr = Array.isArray((r as any)?.media_urls) ? ((r as any).media_urls as unknown[]) : [];
+      for (const u of arr) if (typeof u === "string" && u.trim()) urls.push(u.trim());
+    }
+
     // Published posts (candidate)
     const { data: posts } = await admin
       .from("citizen_news_posts")
@@ -1640,7 +1664,9 @@ export async function POST(req: Request) {
   // Strategy:
   // 1) Try the semantic query (keywords + geo).
   // 2) If no CC image found, retry with a geo/photo-biased query for consistent visuals.
-  const imageQueryGeoFallback = [pol.region, "Colombia", "paisaje", "fotografía", "foto"].filter(Boolean).join(" ");
+  // Keep fallbacks intentionally broad; over-constraining Commons search can yield zero hits.
+  const imageQueryGeoFallback = [pol.region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
+  const imageQueryCivicPhotoFallback = [pol.region, "Colombia", "ciudad", "calle", "gente", "fotografía"].filter(Boolean).join(" ");
 
   let pickedImage = await pickWikimediaImage({ query: imageQueryPrimary, avoid_urls: avoidUrls });
   let imageQueryUsed: string = imageQueryPrimary;
@@ -1649,6 +1675,13 @@ export async function POST(req: Request) {
     if (retry) {
       pickedImage = retry;
       imageQueryUsed = imageQueryGeoFallback;
+    }
+  }
+  if (!pickedImage) {
+    const retry2 = await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: avoidUrls });
+    if (retry2) {
+      pickedImage = retry2;
+      imageQueryUsed = imageQueryCivicPhotoFallback;
     }
   }
 

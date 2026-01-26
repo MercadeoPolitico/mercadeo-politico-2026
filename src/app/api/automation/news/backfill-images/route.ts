@@ -126,10 +126,14 @@ export async function POST(req: Request) {
     const title = String(row.title || "").trim().slice(0, 180);
 
     const queryPrimary = [region, "Colombia", title].filter(Boolean).join(" ");
-    const queryGeo = [region, "Colombia", "paisaje", "fotografía", "foto"].filter(Boolean).join(" ");
+    // Keep fallbacks broad to avoid empty result sets.
+    const queryGeo = [region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
+    const queryCivic = [region, "Colombia", "ciudad", "calle", "gente", "fotografía"].filter(Boolean).join(" ");
 
     const picked =
-      (await pickWikimediaImage({ query: queryPrimary, avoid_urls: [] })) ?? (await pickWikimediaImage({ query: queryGeo, avoid_urls: [] }));
+      (await pickWikimediaImage({ query: queryPrimary, avoid_urls: [] })) ??
+      (await pickWikimediaImage({ query: queryGeo, avoid_urls: [] })) ??
+      (await pickWikimediaImage({ query: queryCivic, avoid_urls: [] }));
 
     const imageUrl = picked?.thumb_url ?? picked?.image_url ?? null;
     let creditLine: string | null = (() => {
