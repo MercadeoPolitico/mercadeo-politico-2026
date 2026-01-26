@@ -9,7 +9,7 @@ import { RotatingSeoMicrocopy } from "@/components/RotatingSeoMicrocopy";
 export default function Home() {
   const candidates = getCandidates();
   return (
-    <PublicPageShell className="space-y-14">
+    <PublicPageShell className="space-y-14 landing-animate">
       <Section>
         <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
           <div className="space-y-5">

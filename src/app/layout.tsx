@@ -46,9 +46,6 @@ export const metadata: Metadata = {
     shortcut: ["/icons/icon-192.png"],
     apple: [{ url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" }],
   },
-  alternates: {
-    canonical: "/",
-  },
   openGraph: {
     type: "website",
     locale: "es_CO",
@@ -56,11 +53,20 @@ export const metadata: Metadata = {
     title: siteConfig.name,
     description: siteConfig.description,
     siteName: siteConfig.name,
+    images: [
+      {
+        url: "/icons/marketbrain-seal.png",
+        width: 512,
+        height: 512,
+        alt: siteConfig.name,
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: siteConfig.name,
     description: siteConfig.description,
+    images: ["/icons/marketbrain-seal.png"],
   },
 };
 

@@ -31,6 +31,21 @@ function isLocalHostUrl(u: string): boolean {
   }
 }
 
+function isSafeDirectImageHost(u: string): boolean {
+  try {
+    const host = new URL(u).host.toLowerCase();
+    if (!host) return false;
+    if (host.endsWith("vercel.app") || host === "localhost") return true;
+    // CC images we publish from Wikimedia.
+    if (host === "upload.wikimedia.org" || host === "commons.wikimedia.org") return true;
+    // Public Supabase storage URLs (faster + more reliable than proxying).
+    if (host.endsWith(".supabase.co") || host.endsWith(".supabase.in") || host === "supabase.co" || host === "supabase.in") return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeLineBreaks(input: string): string {
   // Some AI engines may output HTML breaks. Centro Informativo stores/render as plain text.
   return String(input || "")
@@ -163,7 +178,7 @@ export default async function CitizenInfoCenterPage() {
                 const mediaUrl = p.media_urls?.[0] ? String(p.media_urls[0]) : "";
                 const showMedia = Boolean(mediaUrl && !isLikelyDocumentImageUrl(mediaUrl));
                 const displayMediaUrl =
-                  showMedia && mediaUrl && !isLocalHostUrl(mediaUrl) ? `/api/public/media-proxy?url=${encodeURIComponent(mediaUrl)}` : mediaUrl;
+                  showMedia && mediaUrl && !isSafeDirectImageHost(mediaUrl) ? `/api/public/media-proxy?url=${encodeURIComponent(mediaUrl)}` : mediaUrl;
 
                 return (
                   <div className="grid gap-4 lg:grid-cols-[220px_1fr] lg:items-start">

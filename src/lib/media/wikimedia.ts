@@ -7,6 +7,7 @@ type WikimediaImage = {
   license_short: string | null;
   attribution: string | null;
   author: string | null;
+  mime: string | null;
   source: "wikimedia_commons";
 };
 
@@ -34,6 +35,8 @@ function isAllowedLicenseShort(s: string | null): boolean {
     t.includes("cc-by") ||
     t.includes("cc by-sa") ||
     t.includes("cc-by-sa") ||
+    t.includes("creative commons attribution") ||
+    t.includes("attribution-sharealike") ||
     t.includes("public domain") ||
     t.includes("pd-") ||
     t.includes("cc0")
@@ -74,11 +77,53 @@ function isLikelyDocumentImageTitleOrUrl(input: string): boolean {
   return bad.some((b) => s.includes(b));
 }
 
-function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>): WikimediaImage | null {
+function isPhotoMime(mime: string | null): boolean {
+  const m = String(mime || "").toLowerCase();
+  return m === "image/jpeg" || m === "image/jpg" || m === "image/png" || m === "image/webp" || m === "image/avif";
+}
+
+function scoreCandidate(c: WikimediaImage, query: string): number {
+  const title = `${c.page_url} ${c.image_url}`.toLowerCase();
+  const q = String(query || "").toLowerCase();
+
+  let score = 0;
+  // Prefer real photos over icons/vectors.
+  if (isPhotoMime(c.mime)) score += 6;
+  if (String(c.mime || "").toLowerCase() === "image/svg+xml") score -= 2;
+
+  // Avoid coats of arms and flags when we can.
+  if (title.includes("escudo")) score -= 3;
+  if (title.includes("bandera")) score -= 2;
+  if (title.includes("logo")) score -= 3;
+
+  // Prefer things that match query tokens (helps keep relevance).
+  const tokens = q
+    .split(/[\s,;|]+/g)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 4)
+    .slice(0, 10);
+  for (const tok of tokens) {
+    if (title.includes(tok)) score += 1;
+  }
+
+  // Slightly prefer higher-res original URLs (Commons URLs often embed width in thumb URLs).
+  if (c.thumb_url && /\/\d+px-/.test(c.thumb_url)) score += 1;
+
+  return score;
+}
+
+function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, query: string): WikimediaImage | null {
   const filtered = cands.filter((c) => !avoidUrls.has(c.image_url));
   const pool = filtered.length ? filtered : cands;
   if (!pool.length) return null;
-  return pool[Math.floor(Math.random() * pool.length)] ?? null;
+
+  const scored = pool
+    .map((c) => ({ c, s: scoreCandidate(c, query) }))
+    .sort((a, b) => b.s - a.s);
+
+  // Take a top slice to keep variety without selecting low-quality items.
+  const top = scored.slice(0, Math.min(6, scored.length)).map((x) => x.c);
+  return top[Math.floor(Math.random() * top.length)] ?? null;
 }
 
 export async function pickWikimediaImage(args: {
@@ -101,7 +146,7 @@ export async function pickWikimediaImage(args: {
   url.searchParams.set("gsrlimit", "18");
   url.searchParams.set("gsrnamespace", "6"); // File:
   url.searchParams.set("prop", "imageinfo");
-  url.searchParams.set("iiprop", "url|extmetadata");
+  url.searchParams.set("iiprop", "url|mime|extmetadata");
   url.searchParams.set("iiurlwidth", "1400");
 
   const resp = await fetch(url.toString(), {
@@ -124,7 +169,10 @@ export async function pickWikimediaImage(args: {
     const info = infos[0];
     const image_url = safeText(info?.url);
     const thumb_url = safeText(info?.thumburl);
+    const mime = safeText(info?.mime);
     if (!title || !image_url) continue;
+    // Must be an actual image; Commons search can return PDFs/djvu.
+    if (!mime || !mime.toLowerCase().startsWith("image/")) continue;
     if (isLikelyDocumentImageTitleOrUrl(`${title} ${image_url}`)) continue;
 
     const page_url = `https://commons.wikimedia.org/wiki/${encodeURIComponent(title.replaceAll(" ", "_"))}`;
@@ -146,10 +194,11 @@ export async function pickWikimediaImage(args: {
       license_short,
       attribution,
       author,
+      mime,
       source: "wikimedia_commons",
     });
   }
 
-  return pickFromCandidates(candidates, avoid);
+  return pickFromCandidates(candidates, avoid, q);
 }
 

@@ -9,6 +9,7 @@ import { regionalProvidersForCandidate } from "@/lib/news/providers";
 import { submitToN8n } from "@/lib/automation/n8n";
 import { getSiteUrlString } from "@/lib/site";
 import { pickWikimediaImage } from "@/lib/media/wikimedia";
+import { generateAndStoreNewsImage } from "@/lib/media/aiEditorialImage";
 import { fetchOpenGraphMedia } from "@/lib/media/opengraph";
 import { pickTopRssItem, type RssPickMode, type RssSource, type RssItem } from "@/lib/news/rss";
 import { ensureSocialVariants } from "@/lib/automation/socialVariants";
@@ -1102,23 +1103,26 @@ export async function POST(req: Request) {
   // - uploaded media references from Storage (no scraping)
   // These are included as preferred embed references in prompts/metadata.
   let recentMediaUrls: string[] = [];
-  try {
-    const { data: objs } = await admin.storage.from("politician-media").list(pol.id, {
-      limit: 8,
-      sortBy: { column: "created_at", order: "desc" },
-    });
-    recentMediaUrls =
-      (objs ?? [])
-        .filter((o) => o?.name && !String(o.name).endsWith("/"))
-        .slice(0, 5)
-        .map((o) => {
-          const path = `${pol.id}/${o.name}`;
-          const { data } = admin.storage.from("politician-media").getPublicUrl(path);
-          return data.publicUrl;
-        })
-        .filter((u) => typeof u === "string" && u.startsWith("http"));
-  } catch {
-    // ignore (best-effort only)
+  const includeRecentMedia = String(process.env.MP26_INCLUDE_RECENT_MEDIA ?? "").trim().toLowerCase() === "true";
+  if (includeRecentMedia) {
+    try {
+      const { data: objs } = await admin.storage.from("politician-media").list(pol.id, {
+        limit: 8,
+        sortBy: { column: "created_at", order: "desc" },
+      });
+      recentMediaUrls =
+        (objs ?? [])
+          .filter((o) => o?.name && !String(o.name).endsWith("/"))
+          .slice(0, 5)
+          .map((o) => {
+            const path = `${pol.id}/${o.name}`;
+            const { data } = admin.storage.from("politician-media").getPublicUrl(path);
+            return data.publicUrl;
+          })
+          .filter((u) => typeof u === "string" && u.startsWith("http"));
+    } catch {
+      // ignore (best-effort only)
+    }
   }
 
   // TEST MODE: generate exactly ONE draft, bypass external APIs.
@@ -1623,7 +1627,7 @@ export async function POST(req: Request) {
   const ogRefImageUrl =
     og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
 
-  const imageQuery = [
+  const imageQueryPrimary = [
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
     ...(winner.data.seo_keywords?.slice(0, 2) ?? []),
     pol.region,
@@ -1632,8 +1636,51 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join(" ");
 
-  const pickedImage = await pickWikimediaImage({ query: imageQuery, avoid_urls: avoidUrls });
-  const finalImageUrl = pickedImage?.thumb_url ?? pickedImage?.image_url ?? fallbackPublicImageUrl(`${pol.id}-${imageQuery}-${Date.now()}`);
+  // Commons search is sensitive: policy keywords can bias results towards PDFs/scans.
+  // Strategy:
+  // 1) Try the semantic query (keywords + geo).
+  // 2) If no CC image found, retry with a geo/photo-biased query for consistent visuals.
+  const imageQueryGeoFallback = [pol.region, "Colombia", "paisaje", "fotografía", "foto"].filter(Boolean).join(" ");
+
+  let pickedImage = await pickWikimediaImage({ query: imageQueryPrimary, avoid_urls: avoidUrls });
+  let imageQueryUsed: string = imageQueryPrimary;
+  if (!pickedImage) {
+    const retry = await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: avoidUrls });
+    if (retry) {
+      pickedImage = retry;
+      imageQueryUsed = imageQueryGeoFallback;
+    }
+  }
+
+  // If we couldn't find a CC image, generate a first-party image (MSI/OpenAI) and store it in Supabase Storage.
+  // This avoids hotlinking and improves reliability/performance.
+  const newsTitleHint = rssChosen?.title ?? article?.title ?? lastPublished?.title ?? "";
+  const aiPrompt = [
+    "Imagen editorial realista para una nota cívica en Colombia (no propaganda).",
+    "Requisitos: sin texto, sin logos, sin marcas de agua, sin banderas explícitas, sin símbolos partidistas.",
+    "Sin rostros identificables (si aparecen personas, que sean genéricas y no reconocibles).",
+    "Sin violencia explícita, sin sangre, sin armas visibles. Evitar escenas comprometedoras.",
+    `Contexto regional: ${pol.region || "Colombia"}.`,
+    newsTitleHint ? `Tema/titular (contexto): ${newsTitleHint}` : "",
+    "Estilo: fotoperiodístico moderno, creíble, sobrio, atractivo, luz natural/cinemática.",
+    "Composición: sujeto humano/urbano/institucional relacionado con el tema (ej. ciudad, institución, reunión comunitaria, servicio público).",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const aiStored =
+    !pickedImage && admin
+      ? await generateAndStoreNewsImage({
+          admin,
+          candidateId: pol.id,
+          seed: `${pol.slug}-${requestId}`,
+          prompt: aiPrompt,
+          maxMs: 18_000,
+        })
+      : null;
+
+  const finalImageUrl = pickedImage?.thumb_url ?? pickedImage?.image_url ?? (aiStored && aiStored.ok ? aiStored.public_url : null);
+  const finalImageUrlSafe = finalImageUrl || fallbackPublicImageUrl(`${pol.id}-${imageQueryUsed}-${Date.now()}`);
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -1675,25 +1722,36 @@ export async function POST(req: Request) {
           source: "article_og_reference_only",
         }
       : null,
+    image_query: imageQueryUsed,
     media: pickedImage
       ? {
           type: "image",
-          image_url: finalImageUrl,
+          image_url: finalImageUrlSafe,
           page_url: pickedImage.page_url,
           license_short: pickedImage.license_short,
           attribution: pickedImage.attribution,
           author: pickedImage.author,
           source: pickedImage.source,
         }
-      : {
-          type: "image",
-          image_url: finalImageUrl,
-          page_url: sourceUrl ?? null,
-          license_short: "fallback_svg",
-          attribution: "Imagen generada localmente (placeholder editorial).",
-          author: null,
-          source: "fallback_svg",
-        },
+      : aiStored && aiStored.ok
+        ? {
+            type: "image",
+            image_url: aiStored.public_url,
+            page_url: null,
+            license_short: "first_party_ai",
+            attribution: `Imagen generada por ${aiStored.provider} (first-party) · MarketBrain Technology™.`,
+            author: null,
+            source: "first_party_ai",
+          }
+        : {
+            type: "image",
+            image_url: finalImageUrlSafe,
+            page_url: sourceUrl ?? null,
+            license_short: "fallback_svg",
+            attribution: "Imagen generada localmente (placeholder editorial).",
+            author: null,
+            source: "fallback_svg",
+          },
     news: rssChosen
       ? { provider: "rss", title: rssChosen.title, url: rssChosen.url, published_at: rssChosen.published_at, query }
       : article

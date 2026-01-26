@@ -141,7 +141,7 @@ export async function GET(req: Request) {
           max_items: 1,
           news_mode,
           editorial_style: "noticiero_portada",
-          editorial_inclination: "persuasivo_suave",
+          editorial_inclination: "informativo",
         }),
         cache: "no-store",
       });
