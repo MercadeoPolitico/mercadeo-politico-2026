@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth/admin";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { PoliticianWorkspaceClient } from "./ui";
+import { eduardBuitrago } from "@/content/candidates/eduard-buitrago";
+import { joseAngelMartinez } from "@/content/candidates/jose-angel-martinez";
 
 export const runtime = "nodejs";
 
@@ -32,9 +34,23 @@ export default async function PoliticianWorkspacePage({ params }: { params: Prom
 
   if (!politician) notFound();
 
+  // Ensure the admin sees the same content shown publicly when DB fields are still empty.
+  // Admin edits remain the source of truth once saved (monodirectional).
+  const fallbackById = new Map<string, any>([
+    [eduardBuitrago.id, eduardBuitrago],
+    [joseAngelMartinez.id, joseAngelMartinez],
+  ]);
+  const fb = fallbackById.get(String(politician.id)) ?? null;
+  const hydrated = {
+    ...politician,
+    biography: String((politician as any).biography ?? "").trim() ? (politician as any).biography : (fb?.biography ?? ""),
+    proposals: String((politician as any).proposals ?? "").trim() ? (politician as any).proposals : (fb?.proposal ?? ""),
+    party: String((politician as any).party ?? "").trim() ? (politician as any).party : (fb?.party ?? null),
+  };
+
   return (
     <PoliticianWorkspaceClient
-      politician={politician}
+      politician={hydrated as any}
       links={links ?? []}
       publications={publications ?? []}
     />

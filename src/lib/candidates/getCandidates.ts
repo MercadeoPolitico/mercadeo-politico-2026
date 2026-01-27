@@ -23,6 +23,17 @@ function publicPhotoUrlFor(politicianId: string): string | null {
   return `/api/candidates/photo?id=${encodeURIComponent(politicianId)}`;
 }
 
+function shortExcerpt(text: string, max = 240): string {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  if (!t) return "";
+  if (t.length <= max) return t;
+  // Prefer ending at a sentence boundary if possible.
+  const head = t.slice(0, max);
+  const cut = Math.max(head.lastIndexOf(". "), head.lastIndexOf("."));
+  if (cut > Math.floor(max * 0.55)) return head.slice(0, cut + 1).trim();
+  return `${head.trim()}…`;
+}
+
 export async function getCandidates(): Promise<Candidate[]> {
   // Candidates are admin-edited frequently; do not cache server-rendered results.
   noStore();
@@ -50,6 +61,8 @@ export async function getCandidates(): Promise<Candidate[]> {
     const fallback = fallbackById.get(id) ?? null;
     const role = roleFromOffice(String(p.office || ""));
     const ballotNumber = typeof p.ballot_number === "number" && Number.isFinite(p.ballot_number) ? p.ballot_number : fallback?.ballotNumber ?? 0;
+    const biography = typeof p.biography === "string" && p.biography.trim().length ? p.biography : fallback?.biography ?? "";
+    const proposal = typeof p.proposals === "string" && p.proposals.trim().length ? p.proposals : fallback?.proposal ?? "";
     return {
       id,
       slug: String(p.slug || id),
@@ -59,9 +72,10 @@ export async function getCandidates(): Promise<Candidate[]> {
       region: String(p.region || fallback?.region || ""),
       party: typeof p.party === "string" && p.party.trim() ? p.party.trim() : fallback?.party,
       photoUrl: publicPhotoUrlFor(id),
-      biography: typeof p.biography === "string" && p.biography.trim().length ? p.biography : fallback?.biography ?? "",
-      shortBio: fallback?.shortBio ?? "",
-      proposal: typeof p.proposals === "string" && p.proposals.trim().length ? p.proposals : fallback?.proposal ?? "",
+      biography,
+      // Landing cards should reflect admin edits: use an excerpt of biography when present.
+      shortBio: biography.trim() ? shortExcerpt(biography, 260) : (fallback?.shortBio ?? ""),
+      proposal,
     } as Candidate;
   });
 

@@ -59,63 +59,6 @@ const OAUTH_PROVIDERS = [
 type OAuthProviderKey = (typeof OAUTH_PROVIDERS)[number]["key"];
 type OAuthProviderOption = (typeof OAUTH_PROVIDERS)[number];
 
-function hostOf(u: string): string | null {
-  try {
-    return new URL(u).host;
-  } catch {
-    return null;
-  }
-}
-
-function oauthProviderLabel(p: OAuthProviderKey): string {
-  if (p === "meta") return "Meta (Facebook/Instagram)";
-  if (p === "x") return "X (Twitter)";
-  return "Reddit";
-}
-
-function buildOauthWhatsappMessage(args: { provider: OAuthProviderKey; link: string; siteBase: string }): string {
-  const provider = args.provider;
-  const host = hostOf(args.siteBase) ?? args.siteBase;
-  const redirectUri =
-    provider === "meta"
-      ? `${args.siteBase.replace(/\/+$/, "")}/api/public/oauth/meta/callback`
-      : provider === "x"
-        ? `${args.siteBase.replace(/\/+$/, "")}/api/public/oauth/x/callback`
-        : `${args.siteBase.replace(/\/+$/, "")}/api/public/oauth/reddit/callback`;
-
-  const common = [
-    "Hola. Para conectar tu cuenta oficial al sistema (desde tu celular), sigue estos pasos:",
-    "",
-    `1) Abre el enlace de conexión OAuth (más abajo).`,
-    `2) Inicia sesión y acepta permisos de ${oauthProviderLabel(provider)}.`,
-    "3) Al finalizar verás la confirmación y puedes cerrar la página.",
-    "",
-  ];
-
-  const metaFix =
-    provider === "meta"
-      ? [
-          "Si aparece este error en Meta: “Can't load URL / App Domains…”, haz esto en Meta Developers:",
-          "",
-          "A) Ve a: Settings → Basic",
-          `   - En “App Domains” agrega: ${host}`,
-          "   - Guarda los cambios",
-          "",
-          "B) Ve a: Facebook Login → Settings",
-          `   - En “Valid OAuth Redirect URIs” pega EXACTAMENTE:`,
-          `     ${redirectUri}`,
-          "   - Guarda los cambios",
-          "",
-          "Luego vuelve a abrir el enlace de conexión.",
-          "",
-        ]
-      : [];
-
-  const linkBlock = ["ENLACE DE CONEXIÓN (OAuth):", args.link].join("\n");
-
-  return [...common, ...metaFix, linkBlock].join("\n").trim();
-}
-
 function guessNetworkKey(name: string, url: string): NetworkKey | "" {
   const hay = `${name} ${url}`.toLowerCase();
   if (hay.includes("facebook") || hay.includes("fb.com") || hay.includes("facebook.com")) return "facebook";
@@ -172,7 +115,6 @@ export function NetworksPanel() {
   const [oauthProvider, setOauthProvider] = useState<OAuthProviderKey>("meta");
   const [oauthCandidateId, setOauthCandidateId] = useState<string>("");
   const [oauthLink, setOauthLink] = useState<string>("");
-  const [oauthWhatsappText, setOauthWhatsappText] = useState<string>("");
   const [oauthStatus, setOauthStatus] = useState<{ loaded: boolean; providers?: any; has_encryption_key?: boolean; counts?: any }>({ loaded: false });
 
   const oauthProvidersAvailable = useMemo<OAuthProviderOption[]>(() => {
@@ -773,60 +715,24 @@ export function NetworksPanel() {
                   const base = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `https://${rawBase}`;
                   const link = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
                   setOauthLink(link);
-                  setOauthWhatsappText(buildOauthWhatsappMessage({ provider: oauthProvider, link, siteBase: base }));
                   try {
-                    await navigator.clipboard.writeText(buildOauthWhatsappMessage({ provider: oauthProvider, link, siteBase: base }));
-                    setMsg("Instrucciones + enlace OAuth copiados. Pégalos en WhatsApp y envíalos al dueño.");
+                    await navigator.clipboard.writeText(link);
+                    setMsg("Enlace OAuth generado y copiado. Envíalo por WhatsApp al dueño para conectar su cuenta.");
                   } catch {
-                    setMsg("Instrucciones generadas. Cópialas y envíalas por WhatsApp al dueño.");
+                    setMsg("Enlace OAuth generado. Cópialo y envíalo por WhatsApp al dueño.");
                   }
                 }}
                 disabled={!oauthCandidateId || !oauthProvidersAvailable.length}
               >
-                Generar instrucciones + enlace (copiar)
+                Generar enlace OAuth (copiar)
               </button>
             </div>
           </div>
 
           {oauthLink ? (
             <div className="mt-4 rounded-xl border border-border bg-background p-3">
-              <p className="text-xs font-semibold text-muted">WhatsApp (copia y envía)</p>
-              <textarea
-                className="mt-2 min-h-[160px] w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs text-muted"
-                value={oauthWhatsappText || oauthLink}
-                readOnly
-              />
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  className="glass-button"
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(oauthWhatsappText || oauthLink);
-                      setMsg("Copiado.");
-                    } catch {
-                      setMsg("No fue posible copiar automáticamente. Copia manualmente el texto del cuadro.");
-                    }
-                  }}
-                >
-                  Copiar
-                </button>
-                <button
-                  className="glass-button"
-                  type="button"
-                  onClick={async () => {
-                    const rawBase = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/+$/, "");
-                    const base = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `https://${rawBase}`;
-                    const link = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
-                    setOauthLink(link);
-                    setOauthWhatsappText(buildOauthWhatsappMessage({ provider: oauthProvider, link, siteBase: base }));
-                    setMsg("Texto actualizado.");
-                  }}
-                  title="Regenera usando el dominio actual"
-                >
-                  Regenerar
-                </button>
-              </div>
+              <p className="text-xs font-semibold text-muted">Enlace OAuth</p>
+              <p className="mt-2 break-all text-xs text-muted">{oauthLink}</p>
             </div>
           ) : null}
         </details>

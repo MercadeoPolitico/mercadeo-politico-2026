@@ -234,14 +234,12 @@ export function PoliticianWorkspaceClient({
 
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+  const [photoVersion, setPhotoVersion] = useState(0);
 
   const profilePhotoUrl = useMemo(() => {
-    const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
-    if (!base) return null;
-    // We can't know extension ahead of time; show the canonical "no-ext" URL by trying common ones on the server is expensive.
-    // In UI we use the published deterministic URL from getCandidates; here we show that same base (without assuming ext).
-    return `${base}/storage/v1/object/public/politician-media/${encodeURIComponent(politician.id)}/profile/profile`;
-  }, [politician.id]);
+    // Show the same public URL the landing uses (redirects to storage if present).
+    return `/api/candidates/photo?id=${encodeURIComponent(politician.id)}&v=${photoVersion}`;
+  }, [photoVersion, politician.id]);
 
   async function uploadProfilePhoto(file: File) {
     setPhotoMsg(null);
@@ -257,6 +255,7 @@ export function PoliticianWorkspaceClient({
       setPhotoMsg(`No fue posible subir la foto: ${err}`);
       return;
     }
+    setPhotoVersion((v) => v + 1);
     setPhotoMsg("Foto guardada. Se reflejará en el landing/candidatos.");
   }
 
@@ -275,6 +274,7 @@ export function PoliticianWorkspaceClient({
       setPhotoMsg("No fue posible eliminar la foto.");
       return;
     }
+    setPhotoVersion((v) => v + 1);
     setPhotoMsg("Foto eliminada.");
   }
 
@@ -600,6 +600,18 @@ export function PoliticianWorkspaceClient({
               <p className="text-sm font-semibold">Foto del candidato</p>
               <p className="mt-1 text-xs text-muted">Se publica en landing y en /candidates. Sin logos/texto agregado.</p>
               <div className="mt-3 grid gap-2">
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={profilePhotoUrl}
+                    alt={`Foto de ${politician.name}`}
+                    className="h-20 w-20 rounded-full border border-border bg-background object-contain p-1"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted">Vista previa (lo mismo que ve el público).</p>
+                    <p className="text-[11px] text-muted">Tip: si no actualiza, recarga con Ctrl+F5.</p>
+                  </div>
+                </div>
                 <input
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                   type="file"
@@ -615,11 +627,9 @@ export function PoliticianWorkspaceClient({
                   <button className="glass-button" type="button" onClick={() => void deleteProfilePhoto()} disabled={photoUploading}>
                     Eliminar foto
                   </button>
-                  {profilePhotoUrl ? (
-                    <a className="glass-button inline-flex items-center justify-center" href={profilePhotoUrl} target="_blank" rel="noreferrer">
-                      Ver (debug)
-                    </a>
-                  ) : null}
+                  <a className="glass-button inline-flex items-center justify-center" href={profilePhotoUrl} target="_blank" rel="noreferrer">
+                    Abrir URL pública
+                  </a>
                 </div>
                 {photoMsg ? <p className="text-xs text-muted">{photoMsg}</p> : null}
               </div>

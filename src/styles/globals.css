@@ -292,12 +292,14 @@ body::before {
 }
 
 .candidate-photo-wrap {
-  width: 72px;
-  height: 72px;
+  /* Responsive so faces don't get cramped on wide cards */
+  width: clamp(72px, 9vw, 104px);
+  height: clamp(72px, 9vw, 104px);
   border-radius: 9999px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(255, 255, 255, 0.10);
+  padding: 6px; /* allows object-fit:contain without cropping heads */
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.06) inset,
     0 22px 55px rgba(56, 189, 248, 0.14),
@@ -321,9 +323,11 @@ body::before {
 .candidate-photo {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  /* Show the whole photo (no "head cut") */
+  object-fit: contain;
   object-position: center;
   display: block;
+  border-radius: 9999px;
 }
 
 @keyframes mp26CardGlowSweep {
