@@ -100,6 +100,10 @@ export function NetworksPanel() {
     usage_policy: "unknown",
   });
 
+  const [rssImportText, setRssImportText] = useState<string>("");
+  const [rssImportState, setRssImportState] = useState<"idle" | "importing" | "done" | "error">("idle");
+  const [rssImportMsg, setRssImportMsg] = useState<string>("");
+
   const [newFor, setNewFor] = useState<string>("");
   const [newName, setNewName] = useState("");
   const [newKey, setNewKey] = useState<NetworkKey | "">("");
@@ -115,6 +119,7 @@ export function NetworksPanel() {
   const [oauthProvider, setOauthProvider] = useState<OAuthProviderKey>("meta");
   const [oauthCandidateId, setOauthCandidateId] = useState<string>("");
   const [oauthLink, setOauthLink] = useState<string>("");
+  const [oauthAppLink, setOauthAppLink] = useState<string>("");
   const [oauthStatus, setOauthStatus] = useState<{ loaded: boolean; providers?: any; has_encryption_key?: boolean; counts?: any }>({ loaded: false });
 
   const oauthProvidersAvailable = useMemo<OAuthProviderOption[]>(() => {
@@ -384,6 +389,26 @@ export function NetworksPanel() {
     await refresh();
   }
 
+  async function importRssList() {
+    if (!rssImportText.trim()) return;
+    setRssImportState("importing");
+    setRssImportMsg("");
+    const r = await fetch("/api/admin/rss/import", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: rssImportText, default_region: rssForm.region_key, active: true }),
+    }).catch(() => null);
+    const j = (await r?.json().catch(() => null)) as any;
+    if (!r || !r.ok || !j?.ok) {
+      setRssImportState("error");
+      setRssImportMsg("No se pudo importar. Revisa el formato (debe incluir URLs https://...).");
+      return;
+    }
+    setRssImportState("done");
+    setRssImportMsg(`Importadas: ${j.inserted ?? 0} · ya existentes: ${j.skipped_existing ?? 0}`);
+    await refresh();
+  }
+
   async function updateRss(
     src: RssSource,
     patch: Partial<Pick<RssSource, "name" | "region_key" | "rss_url" | "active" | "license_confirmed" | "usage_policy">>,
@@ -512,6 +537,25 @@ export function NetworksPanel() {
           </div>
         </div>
 
+        <div className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
+          <p className="text-sm font-semibold">Importar lista (pegar)</p>
+          <p className="mt-1 text-xs text-muted">
+            Pega aquí tu listado. El sistema detecta URLs y usa el título anterior como nombre. Las fuentes se crean como “sin licencia” por defecto (a menos que sea dominio .gov), y puedes confirmar licencia en la lista.
+          </p>
+          <textarea
+            className="mt-3 min-h-[140px] w-full rounded-xl border border-border bg-background px-3 py-2 text-xs"
+            value={rssImportText}
+            onChange={(e) => setRssImportText(e.target.value)}
+            placeholder="Pega lista aquí (incluye URLs https://...)"
+          />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button className="glass-button" type="button" onClick={() => void importRssList()} disabled={rssImportState === "importing" || !rssImportText.trim()}>
+              {rssImportState === "importing" ? "Importando…" : "Importar"}
+            </button>
+            {rssImportMsg ? <span className="text-xs text-muted">{rssImportMsg}</span> : null}
+          </div>
+        </div>
+
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           {(["meta", "colombia", "otra"] as const).map((rk) => {
             const rows = rssSources.filter((s) => s.region_key === rk);
@@ -547,6 +591,9 @@ export function NetworksPanel() {
                           {typeof s.last_item_count === "number" ? ` · items=${s.last_item_count}` : ""}
                           {s.usage_policy ? ` · ${String(s.usage_policy)}` : ""}
                         </p>
+                        {s.active && (s.last_health_status ?? null) === "down" ? (
+                          <p className="mt-1 text-[11px] text-amber-200">Recomiendo confirmar red o borrar.</p>
+                        ) : null}
                       </div>
                       <div className="flex shrink-0 items-center gap-2">
                         <SignalIcon status={s.last_health_status ?? null} active={s.active} />
@@ -713,26 +760,31 @@ export function NetworksPanel() {
                 onClick={async () => {
                   const rawBase = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/+$/, "");
                   const base = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `https://${rawBase}`;
-                  const link = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
-                  setOauthLink(link);
+                  const linkWeb = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
+                  const linkApp = `${base}/connect/${encodeURIComponent(oauthProvider)}/app?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
+                  setOauthLink(linkWeb);
+                  setOauthAppLink(linkApp);
                   try {
-                    await navigator.clipboard.writeText(link);
-                    setMsg("Enlace OAuth generado y copiado. Envíalo por WhatsApp al dueño para conectar su cuenta.");
+                    await navigator.clipboard.writeText(`APP:\n${linkApp}\n\nWEB:\n${linkWeb}`);
+                    setMsg("Enlaces OAuth (APP + WEB) copiados. Envíalos por WhatsApp al dueño.");
                   } catch {
-                    setMsg("Enlace OAuth generado. Cópialo y envíalo por WhatsApp al dueño.");
+                    setMsg("Enlaces OAuth generados. Cópialos y envíalos por WhatsApp al dueño.");
                   }
                 }}
                 disabled={!oauthCandidateId || !oauthProvidersAvailable.length}
               >
-                Generar enlace OAuth (copiar)
+                Generar enlace OAuth (APP + WEB)
               </button>
             </div>
           </div>
 
           {oauthLink ? (
             <div className="mt-4 rounded-xl border border-border bg-background p-3">
-              <p className="text-xs font-semibold text-muted">Enlace OAuth</p>
-              <p className="mt-2 break-all text-xs text-muted">{oauthLink}</p>
+              <p className="text-xs font-semibold text-muted">Enlaces OAuth</p>
+              <p className="mt-2 text-[11px] text-muted">APP (abre la app si está instalada; si no, hace fallback a web)</p>
+              <p className="mt-1 break-all text-xs text-muted">{oauthAppLink || oauthLink}</p>
+              <p className="mt-3 text-[11px] text-muted">WEB</p>
+              <p className="mt-1 break-all text-xs text-muted">{oauthLink}</p>
             </div>
           ) : null}
         </details>

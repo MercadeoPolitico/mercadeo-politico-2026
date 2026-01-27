@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 
 type WikimediaImage = {
   image_url: string;
@@ -90,6 +91,47 @@ function isPhotoMime(mime: string | null): boolean {
   return m === "image/jpeg" || m === "image/jpg" || m === "image/png" || m === "image/webp" || m === "image/avif";
 }
 
+function isProbablyAbstractOrIrrelevant(input: string): boolean {
+  const s = String(input || "").toLowerCase();
+  if (!s) return false;
+  const bad = [
+    "abstract",
+    "abstrac",
+    "texture",
+    "textura",
+    "pattern",
+    "patron",
+    "fondo",
+    "background",
+    "wallpaper",
+    "gradient",
+    "degrad",
+    "rainbow",
+    "arcoiris",
+    "spectrum",
+    "color wheel",
+    "colormap",
+    "noise",
+    "fractal",
+    "diagram",
+    "diagrama",
+    "chart",
+    "grafica",
+    "gráfica",
+    "mapa",
+    "map",
+    "icon",
+    "icono",
+    "escudo",
+    "bandera",
+    "flag",
+    "logo",
+    "vector",
+    "svg",
+  ];
+  return bad.some((b) => s.includes(b));
+}
+
 function scoreCandidate(c: WikimediaImage, query: string): number {
   const title = `${c.page_url} ${c.image_url}`.toLowerCase();
   const q = String(query || "").toLowerCase();
@@ -103,6 +145,7 @@ function scoreCandidate(c: WikimediaImage, query: string): number {
   if (title.includes("escudo")) score -= 3;
   if (title.includes("bandera")) score -= 2;
   if (title.includes("logo")) score -= 3;
+  if (isProbablyAbstractOrIrrelevant(title)) score -= 6;
 
   // Prefer things that match query tokens (helps keep relevance).
   const tokens = q
@@ -130,8 +173,12 @@ function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, que
     .sort((a, b) => b.s - a.s);
 
   // Take a top slice to keep variety without selecting low-quality items.
-  const top = scored.slice(0, Math.min(6, scored.length)).map((x) => x.c);
-  return top[Math.floor(Math.random() * top.length)] ?? null;
+  const top = scored.slice(0, Math.min(8, scored.length)).map((x) => x.c);
+  if (!top.length) return null;
+  // Deterministic pick (stable per query) to avoid "random weird" images like textures.
+  const h = createHash("sha256").update(String(query || "")).digest("hex").slice(0, 8);
+  const n = parseInt(h, 16) >>> 0;
+  return top[n % top.length] ?? top[0] ?? null;
 }
 
 export async function pickWikimediaImage(args: {

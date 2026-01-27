@@ -605,7 +605,7 @@ export function PoliticianWorkspaceClient({
                   <img
                     src={profilePhotoUrl}
                     alt={`Foto de ${politician.name}`}
-                    className="h-20 w-20 rounded-full border border-border bg-background object-contain p-1"
+                    className="h-24 w-24 rounded-2xl border border-border bg-background object-contain p-2"
                   />
                   <div className="min-w-0">
                     <p className="text-xs text-muted">Vista previa (lo mismo que ve el público).</p>

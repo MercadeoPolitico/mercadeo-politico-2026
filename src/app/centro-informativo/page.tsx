@@ -168,9 +168,19 @@ export default async function CitizenInfoCenterPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-4">
-          {posts.map((p) => (
-            <article key={p.id} id={p.slug} className="glass-card p-6">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {posts.map((p, idx) => (
+            <article
+              key={p.id}
+              id={p.slug}
+              className={[
+                "glass-card p-6",
+                idx === 0 ? "md:col-span-2 xl:col-span-2" : "",
+                idx === 1 ? "xl:row-span-2" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
               {(() => {
                 const bodyParts = splitPublicText(p.body);
                 const excerptParts = splitPublicText(p.excerpt);
@@ -181,22 +191,23 @@ export default async function CitizenInfoCenterPage() {
                   showMedia && mediaUrl && !isSafeDirectImageHost(mediaUrl) ? `/api/public/media-proxy?url=${encodeURIComponent(mediaUrl)}` : mediaUrl;
 
                 return (
-                  <div className="grid gap-4 lg:grid-cols-[220px_1fr] lg:items-start">
+                  <div className="grid gap-4">
                     {showMedia ? (
                       <figure className="overflow-hidden rounded-2xl border border-border bg-background/40">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={displayMediaUrl}
                           alt=""
-                          className="h-[180px] w-full object-cover"
+                          className={[
+                            "w-full object-cover",
+                            idx === 0 ? "aspect-[16/9]" : idx === 1 ? "aspect-[4/3]" : "aspect-[3/2]",
+                          ].join(" ")}
                           loading="lazy"
                         />
                       </figure>
-                    ) : (
-                      <div className="hidden lg:block" />
-                    )}
+                    ) : null}
 
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                           <h2 className="text-balance text-lg font-semibold">{p.title}</h2>

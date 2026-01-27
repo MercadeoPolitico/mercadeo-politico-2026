@@ -5,6 +5,7 @@ import { Section } from "@/components/Section";
 import { getCandidates } from "@/lib/candidates/getCandidates";
 import { TrackedExternalLink } from "@/components/analytics/TrackedExternalLink";
 import { RotatingSeoMicrocopy } from "@/components/RotatingSeoMicrocopy";
+import { Mp26EnterOnView } from "@/components/Mp26EnterOnView";
 
 export default async function Home() {
   const candidates = await getCandidates();
@@ -113,7 +114,7 @@ export default async function Home() {
       </Section>
 
       <Section title="Candidatos (Colombia, 2026)" subtitle="Perfiles públicos con biografía, propuesta y enlaces oficiales.">
-        <div className="grid gap-4 md:grid-cols-2">
+        <Mp26EnterOnView className="grid gap-4 md:grid-cols-2" replayKey="home-candidates">
           {candidates.map((c, idx) => (
             <CandidateCard
               key={c.id}
@@ -129,7 +130,7 @@ export default async function Home() {
               proposalHref={`/candidates/${c.slug}#propuesta`}
             />
           ))}
-        </div>
+        </Mp26EnterOnView>
         <div className="mt-4 text-sm text-muted">
           <p>
             Esta plataforma se diseña para comunicación política{" "}

@@ -3,6 +3,7 @@ import { CandidateCard } from "@/components/CandidateCard";
 import { Section } from "@/components/Section";
 import { PublicPageShell } from "@/components/PublicPageShell";
 import { getCandidates } from "@/lib/candidates/getCandidates";
+import { Mp26EnterOnView } from "@/components/Mp26EnterOnView";
 
 export const metadata = {
   title: "Candidatos",
@@ -24,7 +25,7 @@ export default async function CandidatesPage() {
         <div className="space-y-8">
           <div className="space-y-3">
             <h2 className="text-lg font-semibold">Senado de la República</h2>
-            <div className="grid gap-4 md:grid-cols-2">
+            <Mp26EnterOnView className="grid gap-4 md:grid-cols-2" replayKey="candidates-senate">
               {senate.map((c, idx) => (
                 <CandidateCard
                   key={c.id}
@@ -40,12 +41,12 @@ export default async function CandidatesPage() {
                   proposalHref={`/candidates/${c.slug}#propuesta`}
                 />
               ))}
-            </div>
+            </Mp26EnterOnView>
           </div>
 
           <div className="space-y-3">
             <h2 className="text-lg font-semibold">Cámara de Representantes</h2>
-            <div className="grid gap-4 md:grid-cols-2">
+            <Mp26EnterOnView className="grid gap-4 md:grid-cols-2" replayKey="candidates-house">
               {house.map((c, idx) => (
                 <CandidateCard
                   key={c.id}
@@ -61,7 +62,7 @@ export default async function CandidatesPage() {
                   proposalHref={`/candidates/${c.slug}#propuesta`}
                 />
               ))}
-            </div>
+            </Mp26EnterOnView>
           </div>
         </div>
 

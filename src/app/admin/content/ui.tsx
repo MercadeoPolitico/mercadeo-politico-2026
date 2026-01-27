@@ -441,8 +441,15 @@ export function AdminContentPanel() {
       body: JSON.stringify({ id: draft.id }),
     });
     if (!res.ok) return;
+    // Immediately remove from UI (avoid "deleted ghost" rows).
+    setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
+    setChecked((prev) => {
+      const next = { ...prev };
+      delete next[draft.id];
+      return next;
+    });
+    if (selected?.id === draft.id) setSelected(null);
     await refresh();
-    setSelected(null);
   }
 
   function getPublishedRef(draft: Draft): { post_id: string | null; slug: string | null } {
@@ -633,10 +640,15 @@ export function AdminContentPanel() {
     if (!bulkHasSelection) return;
     const ok = window.confirm(`Vas a ELIMINAR ${selectedIds.length} borradores. Esta acción no se puede deshacer. ¿Continuar?`);
     if (!ok) return;
+    const toDelete = new Set(selectedIds);
     for (const id of selectedIds) {
       // eslint-disable-next-line no-await-in-loop
       await fetch("/api/admin/drafts", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
     }
+    // Optimistic UI: remove immediately.
+    setDrafts((prev) => prev.filter((d) => !toDelete.has(d.id)));
+    setChecked({});
+    if (selected && toDelete.has(selected.id)) setSelected(null);
     clearSelection();
     await refresh();
   }
