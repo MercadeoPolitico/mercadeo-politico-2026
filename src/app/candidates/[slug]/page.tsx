@@ -69,20 +69,36 @@ export default async function CandidatePage({ params, searchParams }: PageProps)
     ref === "shared" ? ("shared" as const) : ref === "social" ? ("social" as const) : ref === "direct" ? ("direct" as const) : undefined;
 
   const proposalText = "proposal" in view ? (view.proposal as string) : "";
+  const candidateId = "id" in view ? String((view as any).id) : String(candidate.id);
+  const photoUrl = `/api/candidates/photo?id=${encodeURIComponent(candidateId)}`;
 
   return (
     <PublicPageShell className="space-y-10">
       <PixelFire candidateSlug={view.slug} eventType={ref === "shared" ? "shared_link_visit" : "profile_view"} refType={refType} />
       <Section>
-        <header className="space-y-2">
-          <h1 className="text-balance text-3xl font-semibold tracking-tight md:text-4xl">{view.name}</h1>
-          <div className="text-sm text-muted">
-            <p>
-              {"role" in view ? view.role : candidate.role}
-              {"party" in view && view.party ? ` · ${view.party}` : candidate.party ? ` · ${candidate.party}` : ""}
-            </p>
-            <p>Región: {"region" in view ? view.region : candidate.region}</p>
-            <p>No. {"ballotNumber" in view ? view.ballotNumber : candidate.ballotNumber}</p>
+        <header className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-start gap-3">
+                <h1 className="min-w-0 text-balance text-3xl font-semibold tracking-tight md:text-4xl">{view.name}</h1>
+                <div className="candidate-photo-wrap hidden sm:block">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt={`Foto de ${view.name}`} className="candidate-photo" loading="lazy" />
+                </div>
+              </div>
+              <div className="mt-2 text-sm text-muted">
+                <p>
+                  {"role" in view ? view.role : candidate.role}
+                  {"party" in view && view.party ? ` · ${view.party}` : candidate.party ? ` · ${candidate.party}` : ""}
+                </p>
+                <p>Región: {"region" in view ? view.region : candidate.region}</p>
+                <p>No. {"ballotNumber" in view ? view.ballotNumber : candidate.ballotNumber}</p>
+              </div>
+            </div>
+          </div>
+          <div className="candidate-photo-wrap sm:hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoUrl} alt={`Foto de ${view.name}`} className="candidate-photo" loading="lazy" />
           </div>
         </header>
 

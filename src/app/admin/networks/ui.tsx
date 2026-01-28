@@ -409,6 +409,21 @@ export function NetworksPanel() {
     await refresh();
   }
 
+  async function seedRecommendedRss() {
+    setRssImportState("importing");
+    setRssImportMsg("");
+    const r = await fetch("/api/admin/rss/seed-recommended", { method: "POST" }).catch(() => null);
+    const j = (await r?.json().catch(() => null)) as any;
+    if (!r || !r.ok || !j?.ok) {
+      setRssImportState("error");
+      setRssImportMsg("No fue posible agregar la lista recomendada.");
+      return;
+    }
+    setRssImportState("done");
+    setRssImportMsg(`Agregadas: ${j.inserted ?? 0} · ya existentes: ${j.already_present ?? 0}`);
+    await refresh();
+  }
+
   async function updateRss(
     src: RssSource,
     patch: Partial<Pick<RssSource, "name" | "region_key" | "rss_url" | "active" | "license_confirmed" | "usage_policy">>,
@@ -551,6 +566,9 @@ export function NetworksPanel() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button className="glass-button" type="button" onClick={() => void importRssList()} disabled={rssImportState === "importing" || !rssImportText.trim()}>
               {rssImportState === "importing" ? "Importando…" : "Importar"}
+            </button>
+            <button className="glass-button" type="button" onClick={() => void seedRecommendedRss()} disabled={rssImportState === "importing"}>
+              Agregar RSS recomendadas
             </button>
             {rssImportMsg ? <span className="text-xs text-muted">{rssImportMsg}</span> : null}
           </div>

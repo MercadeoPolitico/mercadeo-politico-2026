@@ -27,43 +27,67 @@ export function CandidateCard({ name, role, ballotNumber, region, party, shortBi
   })();
   return (
     <article className="glass-card p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-4">
-          {photoUrl ? (
-            <div
-              className="candidate-photo-wrap"
-              style={
-                {
-                  // Used by CSS keyframes to animate the photo in.
-                  ["--mp26-photo-from-x" as any]: `${from.x}px`,
-                  ["--mp26-photo-from-y" as any]: `${from.y}px`,
-                  ["--mp26-photo-from-r" as any]: `${from.r}deg`,
-                  ["--mp26-photo-delay" as any]: `${idx * 90}ms`,
-                } as any
-              }
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={photoUrl} alt={`Foto de ${name}`} className="candidate-photo" loading="lazy" />
+      <header className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-start gap-3">
+              <h3 className="min-w-0 text-lg font-semibold">
+                {href ? (
+                  <Link className="underline-offset-4 hover:underline" href={href}>
+                    {name}
+                  </Link>
+                ) : (
+                  name
+                )}
+              </h3>
+
+              {/* Desktop: photo right next to the name */}
+              {photoUrl ? (
+                <div
+                  className="candidate-photo-wrap hidden sm:block"
+                  style={
+                    {
+                      // Used by CSS keyframes to animate the photo in.
+                      ["--mp26-photo-from-x" as any]: `${from.x}px`,
+                      ["--mp26-photo-from-y" as any]: `${from.y}px`,
+                      ["--mp26-photo-from-r" as any]: `${from.r}deg`,
+                      ["--mp26-photo-delay" as any]: `${idx * 90}ms`,
+                    } as any
+                  }
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt={`Foto de ${name}`} className="candidate-photo" loading="lazy" />
+                </div>
+              ) : null}
             </div>
-          ) : null}
-          <div className="min-w-0 space-y-1">
-          <h3 className="text-lg font-semibold">
-            {href ? (
-              <Link className="underline-offset-4 hover:underline" href={href}>
-                {name}
-              </Link>
-            ) : (
-              name
-            )}
-          </h3>
-          <p className="text-sm text-muted">{role + (party ? ` · ${party}` : "")}</p>
-          <p className="text-xs text-muted">Región: {region}</p>
+
+            <p className="mt-1 text-sm text-muted">{role + (party ? ` · ${party}` : "")}</p>
+            <p className="mt-1 text-xs text-muted">Región: {region}</p>
+          </div>
+
+          <div className="shrink-0 rounded-full bg-foreground px-3 py-1 text-xs font-semibold text-background">
+            No. {ballotNumber}
+          </div>
         </div>
-        </div>
-        <div className="rounded-full bg-foreground px-3 py-1 text-xs font-semibold text-background">
-          No. {ballotNumber}
-        </div>
-      </div>
+
+        {/* Mobile: name first, then photo below */}
+        {photoUrl ? (
+          <div
+            className="candidate-photo-wrap sm:hidden"
+            style={
+              {
+                ["--mp26-photo-from-x" as any]: `${from.x}px`,
+                ["--mp26-photo-from-y" as any]: `${from.y}px`,
+                ["--mp26-photo-from-r" as any]: `${from.r}deg`,
+                ["--mp26-photo-delay" as any]: `${idx * 90}ms`,
+              } as any
+            }
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoUrl} alt={`Foto de ${name}`} className="candidate-photo" loading="lazy" />
+          </div>
+        ) : null}
+      </header>
       {shortBio ? <p className="mt-4 text-sm text-muted">{shortBio}</p> : null}
 
       <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:items-center">
