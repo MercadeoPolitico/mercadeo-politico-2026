@@ -10,7 +10,7 @@ type Props = {
  */
 export function PublicPageShell({ children, className }: Props) {
   return (
-    <div className={["relative isolate", className].filter(Boolean).join(" ")}>
+    <div className={["relative isolate public-animate", className].filter(Boolean).join(" ")}>
       <div aria-hidden className="public-backdrop-layer" />
       <div aria-hidden className="public-stars-layer" />
       <div aria-hidden className="public-vignette-layer" />

@@ -168,18 +168,13 @@ export default async function CitizenInfoCenterPage() {
           </div>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {/* “Diagrama periódico”: mínimo 2 por fila en desktop, sin tarjetas gigantes */}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-2">
           {posts.map((p, idx) => (
             <article
               key={p.id}
               id={p.slug}
-              className={[
-                "glass-card p-6",
-                idx === 0 ? "md:col-span-2 xl:col-span-2" : "",
-                idx === 1 ? "xl:row-span-2" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
+              className="glass-card p-6"
             >
               {(() => {
                 const bodyParts = splitPublicText(p.body);
@@ -198,10 +193,7 @@ export default async function CitizenInfoCenterPage() {
                         <img
                           src={displayMediaUrl}
                           alt=""
-                          className={[
-                            "w-full object-cover",
-                            idx === 0 ? "aspect-[16/9]" : idx === 1 ? "aspect-[4/3]" : "aspect-[3/2]",
-                          ].join(" ")}
+                          className="w-full object-cover aspect-[16/9]"
                           loading="lazy"
                         />
                       </figure>
