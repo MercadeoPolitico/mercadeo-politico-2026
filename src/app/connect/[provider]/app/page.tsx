@@ -36,6 +36,17 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
 
   const [state, setState] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [err, setErr] = useState<string>("");
+  const [urls, setUrls] = useState<{ appUrl: string; fallbackUrl: string } | null>(null);
+
+  function tryOpen(next: { appUrl: string; fallbackUrl: string }) {
+    // Attempt app first; fallback to web.
+    // Note: browsers don't reliably tell us if the app opened, so we use a short timer.
+    const started = Date.now();
+    window.location.href = next.appUrl;
+    window.setTimeout(() => {
+      if (Date.now() - started < 2500) window.location.href = next.fallbackUrl;
+    }, 1200);
+  }
 
   useEffect(() => {
     if (!isProvider(providerRaw as any)) {
@@ -52,6 +63,7 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
     let cancelled = false;
     setState("loading");
     setErr("");
+    setUrls(null);
 
     void (async () => {
       const url = `/api/public/oauth/${encodeURIComponent(providerRaw)}/link?candidate_id=${encodeURIComponent(candidateId)}`;
@@ -72,14 +84,10 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
       }
 
       const { appUrl, fallbackUrl } = buildAppDeepLink(providerRaw as Provider, authUrl);
+      setUrls({ appUrl, fallbackUrl });
 
-      // Attempt app first; fallback to web.
-      // Note: browsers don't reliably tell us if the app opened, so we use a short timer.
-      const started = Date.now();
-      window.location.href = appUrl;
-      window.setTimeout(() => {
-        if (Date.now() - started < 2500) window.location.href = fallbackUrl;
-      }, 1200);
+      // Auto-attempt (best-effort). Some in-app browsers (WhatsApp/IG) may block auto deep-linking.
+      tryOpen({ appUrl, fallbackUrl });
 
       setState("done");
     })();
@@ -94,7 +102,36 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
       <p className="text-sm font-semibold">Conectar cuenta</p>
       {state === "loading" ? <p className="mt-2 text-sm text-muted">Abriendo la app… si no está instalada, abriremos la web.</p> : null}
       {state === "error" ? <p className="mt-2 text-sm text-amber-300">{err}</p> : null}
-      {state === "done" ? <p className="mt-2 text-sm text-muted">Si no abrió automáticamente, vuelve atrás y usa el enlace web.</p> : null}
+      {state === "done" ? (
+        <div className="mt-3 space-y-3">
+          <p className="text-sm text-muted">Si no abrió automáticamente, usa los botones:</p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <button
+              className="glass-button"
+              type="button"
+              onClick={() => {
+                if (!urls) return;
+                tryOpen(urls);
+              }}
+              disabled={!urls}
+            >
+              Abrir app (reintentar)
+            </button>
+            <a
+              className="glass-button"
+              href={urls?.fallbackUrl || "#"}
+              onClick={(e) => {
+                if (!urls?.fallbackUrl) e.preventDefault();
+              }}
+            >
+              Continuar en web
+            </a>
+          </div>
+          <p className="text-xs text-muted">
+            Nota: algunos navegadores dentro de WhatsApp bloquean abrir apps automáticamente; por eso dejamos el reintento manual.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }

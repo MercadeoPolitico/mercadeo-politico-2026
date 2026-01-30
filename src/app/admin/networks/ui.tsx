@@ -778,20 +778,23 @@ export function NetworksPanel() {
                 onClick={async () => {
                   const rawBase = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/+$/, "");
                   const base = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `https://${rawBase}`;
-                  const linkWeb = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
+                  // WhatsApp-friendly: use APP link as the primary one.
+                  // It attempts to open the native app first and falls back to web automatically.
                   const linkApp = `${base}/connect/${encodeURIComponent(oauthProvider)}/app?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
+                  // Optional explicit web fallback (rarely needed).
+                  const linkWeb = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
                   setOauthLink(linkWeb);
                   setOauthAppLink(linkApp);
                   try {
-                    await navigator.clipboard.writeText(`APP:\n${linkApp}\n\nWEB:\n${linkWeb}`);
-                    setMsg("Enlaces OAuth (APP + WEB) copiados. Envíalos por WhatsApp al dueño.");
+                    await navigator.clipboard.writeText(linkApp);
+                    setMsg("Enlace OAuth (APP) copiado. Envíalo por WhatsApp al dueño (abre la app primero y si no, abre web).");
                   } catch {
-                    setMsg("Enlaces OAuth generados. Cópialos y envíalos por WhatsApp al dueño.");
+                    setMsg("Enlace OAuth (APP) generado. Cópialo y envíalo por WhatsApp al dueño.");
                   }
                 }}
                 disabled={!oauthCandidateId || !oauthProvidersAvailable.length}
               >
-                Generar enlace OAuth (APP + WEB)
+                Generar enlace OAuth (APP)
               </button>
             </div>
           </div>
@@ -799,9 +802,44 @@ export function NetworksPanel() {
           {oauthLink ? (
             <div className="mt-4 rounded-xl border border-border bg-background p-3">
               <p className="text-xs font-semibold text-muted">Enlaces OAuth</p>
-              <p className="mt-2 text-[11px] text-muted">APP (abre la app si está instalada; si no, hace fallback a web)</p>
-              <p className="mt-1 break-all text-xs text-muted">{oauthAppLink || oauthLink}</p>
-              <p className="mt-3 text-[11px] text-muted">WEB</p>
+              <p className="mt-2 text-[11px] text-muted">APP (WhatsApp‑ready: intenta abrir la app primero; si no, abre web)</p>
+              <p className="mt-1 break-all text-xs text-muted">{oauthAppLink || ""}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={async () => {
+                    if (!oauthAppLink) return;
+                    try {
+                      await navigator.clipboard.writeText(oauthAppLink);
+                      setMsg("Enlace OAuth (APP) copiado. Envíalo por WhatsApp al dueño.");
+                    } catch {
+                      setMsg("No fue posible copiar. Selecciona el enlace y copia manualmente.");
+                    }
+                  }}
+                  disabled={!oauthAppLink}
+                >
+                  Copiar enlace APP
+                </button>
+                <button
+                  className="glass-button"
+                  type="button"
+                  onClick={async () => {
+                    if (!oauthLink) return;
+                    try {
+                      await navigator.clipboard.writeText(oauthLink);
+                      setMsg("Enlace OAuth (WEB) copiado (fallback).");
+                    } catch {
+                      setMsg("No fue posible copiar. Selecciona el enlace y copia manualmente.");
+                    }
+                  }}
+                  disabled={!oauthLink}
+                  title="Fallback manual si el navegador bloquea deep links"
+                >
+                  Copiar enlace WEB (fallback)
+                </button>
+              </div>
+              <p className="mt-3 text-[11px] text-muted">WEB (fallback manual)</p>
               <p className="mt-1 break-all text-xs text-muted">{oauthLink}</p>
             </div>
           ) : null}
