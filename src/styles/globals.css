@@ -500,9 +500,11 @@ body::before {
 /* Reduced motion: keep glow/flash but remove movement/rotation. */
 @media (prefers-reduced-motion: reduce) {
   .public-animate .glass-card {
-    animation: mp26CardFadeIn 420ms ease-out both !important;
-    transform: none !important;
-    filter: none !important;
+    /* Keep motion (user requested), but soften it. */
+    --mp26-enter-x: 0px !important;
+    --mp26-enter-y: -68px !important; /* 92px base -> ~24px */
+    --mp26-enter-r: -3deg !important;
+    animation: mp26CardEnter 2.2s cubic-bezier(0.2, 0.9, 0.2, 1) both !important;
   }
   .public-animate .glass-card::after {
     animation-duration: 1400ms !important;
@@ -517,16 +519,19 @@ body::before {
 
 @media (prefers-reduced-motion: reduce) {
   .landing-animate .glass-card {
-    animation: mp26CardFadeIn 220ms ease-out both !important;
-    transform: none !important;
+    --mp26-enter-x: 0px !important;
+    --mp26-enter-y: -68px !important;
+    --mp26-enter-r: -3deg !important;
+    animation: mp26CardEnter 2.0s cubic-bezier(0.2, 0.9, 0.2, 1) both !important;
   }
   .landing-animate .glass-card::after {
-    animation: none !important;
-    opacity: 0 !important;
+    animation-duration: 1400ms !important;
   }
   .landing-animate .glass-hero {
-    animation: mp26CardFadeIn 220ms ease-out both !important;
-    transform: none !important;
+    --mp26-enter-x: 0px !important;
+    --mp26-enter-y: -68px !important;
+    --mp26-enter-r: -3deg !important;
+    animation: mp26CardEnter 2.0s cubic-bezier(0.2, 0.9, 0.2, 1) both !important;
   }
   .candidates-animate .candidate-photo-wrap {
     animation: mp26CardFadeIn 160ms ease-out both !important;
