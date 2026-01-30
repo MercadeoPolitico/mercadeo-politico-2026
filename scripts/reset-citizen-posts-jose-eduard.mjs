@@ -42,6 +42,48 @@ function normalizeName(s) {
     .trim();
 }
 
+async function publishedCountByCandidate(sb, candidateId) {
+  const r = await sb
+    .from("citizen_news_posts")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "published")
+    .eq("candidate_id", candidateId);
+  return r.count ?? 0;
+}
+
+async function callOrchestrateOnce(args) {
+  const { base, token, candidate_id, news_mode } = args;
+  const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-automation-token": token },
+    body: JSON.stringify({
+      candidate_id,
+      max_items: 1,
+      news_mode,
+      editorial_style: "noticiero_portada",
+      editorial_inclination: "informativo",
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+  return Boolean(r && r.ok);
+}
+
+async function pruneToTwoLatest(sb, candidateId) {
+  const { data } = await sb
+    .from("citizen_news_posts")
+    .select("id,published_at")
+    .eq("status", "published")
+    .eq("candidate_id", candidateId)
+    .order("published_at", { ascending: false })
+    .limit(50);
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length <= 2) return { deleted: 0, kept: rows.length };
+  const toDelete = rows.slice(2).map((r) => String(r.id));
+  // Delete extras
+  await sb.from("citizen_news_posts").delete().in("id", toDelete);
+  return { deleted: toDelete.length, kept: 2 };
+}
+
 async function main() {
   const envLocal = fs.existsSync(".env.local") ? parseDotenv(fs.readFileSync(".env.local", "utf8")) : {};
 
@@ -85,29 +127,33 @@ async function main() {
   await sb.from("politicians").update({ auto_publish_enabled: false, auto_blog_enabled: false, updated_at: new Date().toISOString() }).neq("id", "");
   await sb.from("politicians").update({ auto_publish_enabled: true, auto_blog_enabled: true, updated_at: new Date().toISOString() }).in("id", targets);
 
-  // 3) Generate 2 posts per target: viral + grave, newspaper-like style.
+  // 3) Generate 2 posts per target: viral + grave.
+  // IMPORTANT: Do NOT blindly retry: the orchestrator can publish even if the response errors.
+  // Instead: call once, then validate counts and prune to exactly 2.
   let ok = 0;
   let fail = 0;
   for (const id of targets) {
     for (const news_mode of ["viral", "grave"]) {
-      // eslint-disable-next-line no-await-in-loop
-      const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-automation-token": token },
-        body: JSON.stringify({
-          candidate_id: id,
-          max_items: 1,
-          news_mode,
-          editorial_style: "noticiero_portada",
-          editorial_inclination: "informativo",
-        }),
-        cache: "no-store",
-      }).catch(() => null);
-      if (r && r.ok) ok++;
+      const before = await publishedCountByCandidate(sb, id);
+      const didOk = await callOrchestrateOnce({ base, token, candidate_id: id, news_mode });
+      await sleep(1200);
+      const after = await publishedCountByCandidate(sb, id);
+      if (didOk || after > before) ok++;
       else fail++;
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(750);
     }
+    // If still <2, try up to 2 extra "any" calls, but stop if count increases.
+    for (let extra = 1; extra <= 2; extra++) {
+      const before = await publishedCountByCandidate(sb, id);
+      if (before >= 2) break;
+      const didOk = await callOrchestrateOnce({ base, token, candidate_id: id, news_mode: "any" });
+      await sleep(1200);
+      const after = await publishedCountByCandidate(sb, id);
+      if (didOk || after > before) ok++;
+      else fail++;
+    }
+    const pruned = await pruneToTwoLatest(sb, id);
+    const finalCount = await publishedCountByCandidate(sb, id);
+    console.log("[reset-ci] candidate", { id, final: finalCount, pruned });
   }
 
   // 4) Final counts (safe).
