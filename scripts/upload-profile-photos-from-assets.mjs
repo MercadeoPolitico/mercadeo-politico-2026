@@ -42,7 +42,12 @@ async function maybeOptimizeToWebpSquare(buf) {
   try {
     const mod = await import("sharp");
     const sharp = mod.default ?? mod;
-    const out = await sharp(buf).rotate().resize(512, 512, { fit: "cover", position: "attention" }).webp({ quality: 84 }).toBuffer();
+    const out = await sharp(buf)
+      .rotate()
+      // CRITICAL: never crop faces/heads. Keep full image and pad to square.
+      .resize(512, 512, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .webp({ quality: 84 })
+      .toBuffer();
     return { buf: out, contentType: "image/webp" };
   } catch {
     return { buf, contentType: null };

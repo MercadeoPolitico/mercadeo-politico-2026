@@ -40,7 +40,11 @@ export async function POST(req: Request) {
     const sharp = (mod as any).default ?? (mod as any);
     const out = await sharp(Buffer.from(raw))
       .rotate()
-      .resize(512, 512, { fit: "cover", position: "attention" })
+      // CRITICAL: never crop faces/heads. Keep full image and pad to square.
+      .resize(512, 512, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
       .webp({ quality: 84 })
       .toBuffer();
     bytes = new Uint8Array(out);
