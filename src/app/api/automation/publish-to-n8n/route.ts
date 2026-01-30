@@ -120,7 +120,22 @@ export async function POST(req: Request) {
 
   const approved = (destinations ?? []).filter((d: any) => d && typeof d.profile_or_page_url === "string");
   if (!approved.length) {
-    return NextResponse.json({ ok: false, error: "no_approved_networks" }, { status: 409 });
+    // Provide safe diagnostics for Admin UX (no secrets).
+    const { data: allActive } = await admin
+      .from("politician_social_destinations")
+      .select("authorization_status")
+      .eq("politician_id", draft.candidate_id)
+      .eq("active", true);
+    const stats = { active_total: (allActive ?? []).length, approved: 0, pending: 0, expired: 0, revoked: 0, other: 0 };
+    for (const r of allActive ?? []) {
+      const s = String((r as any)?.authorization_status ?? "").toLowerCase();
+      if (s === "approved") stats.approved++;
+      else if (s === "pending") stats.pending++;
+      else if (s === "expired") stats.expired++;
+      else if (s === "revoked") stats.revoked++;
+      else stats.other++;
+    }
+    return NextResponse.json({ ok: false, error: "no_approved_networks", stats }, { status: 409 });
   }
 
   const now = new Date().toISOString();

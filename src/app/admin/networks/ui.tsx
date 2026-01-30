@@ -724,9 +724,9 @@ export function NetworksPanel() {
       </div>
 
       <div className="glass-card p-6">
-        <p className="text-sm font-semibold">Conectar redes por enlace (OAuth) · WhatsApp</p>
+        <p className="text-sm font-semibold">Conectar redes por enlace (OAuth) (enviar por WhatsApp)</p>
         <p className="mt-1 text-xs text-muted">
-          Este flujo es opcional y no reemplaza la autorización por enlace. Sirve para que el dueño conecte su cuenta oficial (Meta/X/Reddit) desde el celular.
+          Este flujo es opcional y no reemplaza la autorización por enlace. Sirve para que el dueño conecte su cuenta oficial (Meta/X/Reddit) desde el celular; tú solo envías el enlace por WhatsApp.
         </p>
         <details className="mt-4 rounded-2xl border border-border bg-background/60 p-4">
           <summary className="cursor-pointer text-sm font-semibold">Generar enlace de conexión</summary>

@@ -127,22 +127,23 @@ export async function POST(req: Request) {
 
     const queryPrimary = [region, "Colombia", title].filter(Boolean).join(" ");
     // Keep fallbacks broad to avoid empty result sets.
-    const queryGeo = [region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
-    const queryCivic = [region, "Colombia", "ciudad", "calle", "gente", "fotografía"].filter(Boolean).join(" ");
+    const queryGeo = [region, "Colombia", "ciudad", "fotografía"].filter(Boolean).join(" ");
+    const queryCivic = [region, "Colombia", "servicio público", "institución", "ciudad", "fotografía"].filter(Boolean).join(" ");
 
     const picked =
       (await pickWikimediaImage({ query: queryPrimary, avoid_urls: [] })) ??
       (await pickWikimediaImage({ query: queryGeo, avoid_urls: [] })) ??
       (await pickWikimediaImage({ query: queryCivic, avoid_urls: [] }));
+    const pickedOk = picked && (picked.relevance_score ?? 0) >= 8 ? picked : null;
 
-    const imageUrl = picked?.thumb_url ?? picked?.image_url ?? null;
+    const imageUrl = pickedOk?.thumb_url ?? pickedOk?.image_url ?? null;
     let creditLine: string | null = (() => {
-      if (picked?.image_url) {
+      if (pickedOk?.image_url) {
         const creditBits = [
-          typeof picked.attribution === "string" ? picked.attribution : null,
-          typeof picked.author === "string" && picked.author.trim() ? `Autor: ${picked.author.trim()}` : null,
-          typeof picked.license_short === "string" && picked.license_short.trim() ? `Licencia: ${picked.license_short.trim()}` : null,
-          picked.page_url ? `Fuente imagen: ${picked.page_url}` : null,
+          typeof pickedOk.attribution === "string" ? pickedOk.attribution : null,
+          typeof pickedOk.author === "string" && pickedOk.author.trim() ? `Autor: ${pickedOk.author.trim()}` : null,
+          typeof pickedOk.license_short === "string" && pickedOk.license_short.trim() ? `Licencia: ${pickedOk.license_short.trim()}` : null,
+          pickedOk.page_url ? `Fuente imagen: ${pickedOk.page_url}` : null,
         ].filter(Boolean);
         return creditBits.length ? `Crédito imagen: ${creditBits.join(" · ")}` : null;
       }

@@ -1734,8 +1734,10 @@ export async function POST(req: Request) {
   // 1) Try the semantic query (keywords + geo).
   // 2) If no CC image found, retry with a geo/photo-biased query for consistent visuals.
   // Keep fallbacks intentionally broad; over-constraining Commons search can yield zero hits.
-  const imageQueryGeoFallback = [pol.region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
-  const imageQueryCivicPhotoFallback = [pol.region, "Colombia", "ciudad", "calle", "gente", "fotografía"].filter(Boolean).join(" ");
+  const imageQueryGeoFallback = [pol.region, "Colombia", "ciudad", "fotografía"].filter(Boolean).join(" ");
+  const imageQueryCivicPhotoFallback = [pol.region, "Colombia", "servicio público", "institución", "ciudad", "fotografía"]
+    .filter(Boolean)
+    .join(" ");
 
   let pickedImage = await pickWikimediaImage({ query: imageQueryPrimary, avoid_urls: avoidUrls });
   let imageQueryUsed: string = imageQueryPrimary;
@@ -1752,6 +1754,12 @@ export async function POST(req: Request) {
       pickedImage = retry2;
       imageQueryUsed = imageQueryCivicPhotoFallback;
     }
+  }
+
+  // Prefer relevance over "any CC image": if Commons result seems generic, use a first-party AI image instead.
+  const MIN_COMMONS_RELEVANCE = 8;
+  if (pickedImage && (pickedImage.relevance_score ?? 0) < MIN_COMMONS_RELEVANCE) {
+    pickedImage = null;
   }
 
   // If we couldn't find a CC image, generate a first-party image (MSI/OpenAI) and store it in Supabase Storage.

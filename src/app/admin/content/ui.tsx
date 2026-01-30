@@ -88,6 +88,17 @@ export function AdminContentPanel() {
   const [imageErrorMsg, setImageErrorMsg] = useState<string>("");
 
   const canGenerate = useMemo(() => topic.trim().length > 0 && candidateId.trim().length > 0, [topic, candidateId]);
+  const candidateOptions = useMemo(() => {
+    const rows = Object.entries(polById).map(([id, info]) => ({ id, ...info }));
+    rows.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }) || a.id.localeCompare(b.id));
+    return rows;
+  }, [polById]);
+  const selectedCandidateLabel = useMemo(() => {
+    const info = polById[candidateId];
+    if (!info) return null;
+    const bits = [info.name, info.office, info.region].map((s) => String(s || "").trim()).filter(Boolean);
+    return bits.length ? `${bits.join(" · ")} (${candidateId})` : candidateId;
+  }, [candidateId, polById]);
 
   async function refresh() {
     setLoadState("loading");
@@ -659,20 +670,26 @@ export function AdminContentPanel() {
     if (!ok) return;
     let okCount = 0;
     let skipCount = 0;
+    const reasons: Record<string, number> = {};
     for (const d of selectedDrafts) {
       if (d.content_type !== "blog") {
         skipCount++;
+        reasons.not_blog = (reasons.not_blog ?? 0) + 1;
         // eslint-disable-next-line no-continue
         continue;
       }
       if (d.status !== "approved" && d.status !== "edited") {
         skipCount++;
+        reasons.not_approved = (reasons.not_approved ?? 0) + 1;
         // eslint-disable-next-line no-continue
         continue;
       }
       const v = validateForPublish(d, { allow_no_image: bulkAllowNoImage });
       if (!v.ok) {
         skipCount++;
+        const key =
+          v.reason.includes("título") ? "missing_title" : v.reason.includes("autor") ? "missing_author" : v.reason.includes("imagen") ? "missing_image" : "invalid";
+        reasons[key] = (reasons[key] ?? 0) + 1;
         // eslint-disable-next-line no-continue
         continue;
       }
@@ -683,9 +700,17 @@ export function AdminContentPanel() {
         body: JSON.stringify({ draft_id: d.id, allow_no_image: bulkAllowNoImage }),
       });
       if (res.ok) okCount++;
-      else skipCount++;
+      else {
+        skipCount++;
+        const j = (await res.json().catch(() => null)) as any;
+        const err = typeof j?.error === "string" ? j.error : "publish_failed";
+        reasons[err] = (reasons[err] ?? 0) + 1;
+      }
     }
-    window.alert(`Centro Informativo: publicados=${okCount} · omitidos=${skipCount}`);
+    const detail = Object.keys(reasons).length ? `\n\nDetalle (safe): ${Object.entries(reasons)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" · ")}` : "";
+    window.alert(`Centro Informativo: publicados=${okCount} · omitidos=${skipCount}${detail}`);
     await refresh();
   }
 
@@ -695,15 +720,20 @@ export function AdminContentPanel() {
     if (!ok) return;
     let okCount = 0;
     let skipCount = 0;
+    const reasons: Record<string, number> = {};
     for (const d of selectedDrafts) {
       if (d.status !== "approved" && d.status !== "edited") {
         skipCount++;
+        reasons.not_approved = (reasons.not_approved ?? 0) + 1;
         // eslint-disable-next-line no-continue
         continue;
       }
       const v = validateForPublish(d, { allow_no_image: bulkAllowNoImage });
       if (!v.ok) {
         skipCount++;
+        const key =
+          v.reason.includes("título") ? "missing_title" : v.reason.includes("autor") ? "missing_author" : v.reason.includes("imagen") ? "missing_image" : "invalid";
+        reasons[key] = (reasons[key] ?? 0) + 1;
         // eslint-disable-next-line no-continue
         continue;
       }
@@ -715,9 +745,18 @@ export function AdminContentPanel() {
       });
       const j = (await res.json().catch(() => null)) as any;
       if (res.ok && j?.ok) okCount++;
-      else skipCount++;
+      else {
+        skipCount++;
+        const err = typeof j?.error === "string" ? j.error : "send_failed";
+        reasons[err] = (reasons[err] ?? 0) + 1;
+      }
     }
-    window.alert(`Redes (aprobadas): enviados=${okCount} · omitidos=${skipCount}`);
+    const detail = Object.keys(reasons).length
+      ? `\n\nDetalle (safe): ${Object.entries(reasons)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(" · ")}`
+      : "";
+    window.alert(`Redes (aprobadas): enviados=${okCount} · omitidos=${skipCount}${detail}`);
     await refresh();
   }
 
@@ -783,7 +822,22 @@ export function AdminContentPanel() {
                 className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
                 value={candidateId}
                 onChange={(e) => setCandidateId(e.target.value)}
+                list="mp26-candidate-id-list"
               />
+              <datalist id="mp26-candidate-id-list">
+                {candidateOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {`${c.name}${c.region ? ` · ${c.region}` : ""}${c.office ? ` · ${c.office}` : ""}`}
+                  </option>
+                ))}
+              </datalist>
+              <p className="text-xs text-muted">
+                {selectedCandidateLabel ? (
+                  <span>Seleccionado: {selectedCandidateLabel}</span>
+                ) : (
+                  <span>Tip: escribe o abre la lista para seleccionar.</span>
+                )}
+              </p>
             </div>
             <div className="grid gap-1">
               <label className="text-sm font-medium">Tipo</label>

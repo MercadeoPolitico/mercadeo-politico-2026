@@ -338,9 +338,10 @@ export async function POST(req: Request) {
   // 1) Prefer CC image (Wikimedia) for relevance + rights.
   const avoid_urls = await recentMediaUrls(admin, draft.candidate_id);
   const wikQueryPrimary = [draftTitle, region, "Colombia"].filter(Boolean).join(" ");
-  const wikQueryFallback = [region, "Colombia", "paisaje", "fotografía"].filter(Boolean).join(" ");
+  const wikQueryFallback = [region, "Colombia", "ciudad", "institución", "fotografía"].filter(Boolean).join(" ");
   const picked =
     (await pickWikimediaImage({ query: wikQueryPrimary, avoid_urls })) ?? (await pickWikimediaImage({ query: wikQueryFallback, avoid_urls }));
+  const pickedOk = picked && (picked.relevance_score ?? 0) >= 8 ? picked : null;
 
   const prompt = [
     "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
@@ -359,29 +360,29 @@ export async function POST(req: Request) {
   console.info("[draft-image] attempt", { requestId, draft_id, candidate_id: draft.candidate_id });
 
   const attempts: Array<{ provider: ProviderName | "Wikimedia"; ok: boolean; reason?: string }> = [];
-  if (picked) attempts.push({ provider: "Wikimedia", ok: true });
-  else attempts.push({ provider: "Wikimedia", ok: false, reason: "no_cc_match" });
+  if (pickedOk) attempts.push({ provider: "Wikimedia", ok: true });
+  else attempts.push({ provider: "Wikimedia", ok: false, reason: picked ? "low_relevance" : "no_cc_match" });
 
   const prevMeta = (draft.metadata && typeof draft.metadata === "object" ? (draft.metadata as Record<string, unknown>) : {}) as Record<string, unknown>;
   const nextMeta: Record<string, unknown> = {
     ...prevMeta,
-    image_ready: Boolean(picked),
+    image_ready: Boolean(pickedOk),
     image_provider_attempts: attempts,
     image_last_attempt_at: nowIso(),
     image_request_id: requestId,
   };
 
-  if (picked) {
-    const finalUrl = picked.thumb_url ?? picked.image_url;
+  if (pickedOk) {
+    const finalUrl = pickedOk.thumb_url ?? pickedOk.image_url;
     // Normalize into the same shape the rest of the system uses.
     nextMeta.media = {
       type: "image",
       image_url: finalUrl,
-      page_url: picked.page_url,
-      license_short: picked.license_short,
-      attribution: picked.attribution,
-      author: picked.author,
-      source: picked.source,
+      page_url: pickedOk.page_url,
+      license_short: pickedOk.license_short,
+      attribution: pickedOk.attribution,
+      author: pickedOk.author,
+      source: pickedOk.source,
     };
     // Backward-compatible fields used by the Admin UI.
     nextMeta.image_url = finalUrl;

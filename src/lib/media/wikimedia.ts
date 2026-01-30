@@ -10,6 +10,8 @@ type WikimediaImage = {
   author: string | null;
   mime: string | null;
   source: "wikimedia_commons";
+  // Safe diagnostic score (higher = more relevant to query).
+  relevance_score?: number;
 };
 
 function isNonEmptyString(v: unknown): v is string {
@@ -91,6 +93,23 @@ function isPhotoMime(mime: string | null): boolean {
   return m === "image/jpeg" || m === "image/jpg" || m === "image/png" || m === "image/webp" || m === "image/avif";
 }
 
+function commonsFileKeyFromUrl(u: string): string | null {
+  try {
+    const url = new URL(u);
+    const host = url.host.toLowerCase();
+    if (!(host === "upload.wikimedia.org" || host.endsWith(".wikimedia.org"))) return null;
+    const path = url.pathname || "";
+    if (!path.toLowerCase().includes("/wikipedia/commons/")) return null;
+    const last = path.split("/").filter(Boolean).slice(-1)[0] ?? "";
+    if (!last) return null;
+    const m = last.match(/^\d+px-(.+)$/i);
+    const name = (m?.[1] ?? last).trim();
+    return name ? name.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 function isProbablyAbstractOrIrrelevant(input: string): boolean {
   const s = String(input || "").toLowerCase();
   if (!s) return false;
@@ -163,8 +182,16 @@ function scoreCandidate(c: WikimediaImage, query: string): number {
   return score;
 }
 
-function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, query: string): WikimediaImage | null {
-  const filtered = cands.filter((c) => !avoidUrls.has(c.image_url));
+function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, avoidKeys: Set<string>, query: string): WikimediaImage | null {
+  const filtered = cands.filter((c) => {
+    if (avoidUrls.has(c.image_url)) return false;
+    if (c.thumb_url && avoidUrls.has(c.thumb_url)) return false;
+    const k1 = commonsFileKeyFromUrl(c.image_url);
+    const k2 = c.thumb_url ? commonsFileKeyFromUrl(c.thumb_url) : null;
+    if (k1 && avoidKeys.has(k1)) return false;
+    if (k2 && avoidKeys.has(k2)) return false;
+    return true;
+  });
   const pool = filtered.length ? filtered : cands;
   if (!pool.length) return null;
 
@@ -178,7 +205,9 @@ function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, que
   // Deterministic pick (stable per query) to avoid "random weird" images like textures.
   const h = createHash("sha256").update(String(query || "")).digest("hex").slice(0, 8);
   const n = parseInt(h, 16) >>> 0;
-  return top[n % top.length] ?? top[0] ?? null;
+  const picked = top[n % top.length] ?? top[0] ?? null;
+  if (!picked) return null;
+  return { ...picked, relevance_score: scoreCandidate(picked, query) };
 }
 
 export async function pickWikimediaImage(args: {
@@ -189,6 +218,11 @@ export async function pickWikimediaImage(args: {
   if (!q) return null;
 
   const avoid = new Set((args.avoid_urls ?? []).filter(isNonEmptyString).map((u) => u.trim()));
+  const avoidKeys = new Set<string>();
+  for (const u of avoid) {
+    const k = commonsFileKeyFromUrl(u);
+    if (k) avoidKeys.add(k);
+  }
 
   // Commons API (no key). We intentionally keep it conservative.
   // Docs: https://www.mediawiki.org/wiki/API:Search
@@ -254,6 +288,6 @@ export async function pickWikimediaImage(args: {
     });
   }
 
-  return pickFromCandidates(candidates, avoid, q);
+  return pickFromCandidates(candidates, avoid, avoidKeys, q);
 }
 
