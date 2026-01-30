@@ -228,7 +228,10 @@ body::before {
 @keyframes mp26CardEnter {
   0% {
     opacity: 0;
-    transform: translate3d(0, 92px, 0) scale(0.975);
+    transform:
+      translate3d(var(--mp26-enter-x, 0px), calc(92px + var(--mp26-enter-y, 0px)), 0)
+      rotate(var(--mp26-enter-r, -8deg))
+      scale(0.975);
     filter: blur(8px) saturate(1.08);
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.06) inset,
@@ -236,26 +239,69 @@ body::before {
   }
   35% {
     opacity: 1;
-    transform: translate3d(0, -6px, 0) scale(1.01);
+    transform:
+      translate3d(0, -8px, 0)
+      rotate(1.2deg)
+      scale(1.01);
   }
   55% {
-    transform: translate3d(0, 0, 0) scale(1);
+    transform:
+      translate3d(0, 0, 0)
+      rotate(-0.6deg)
+      scale(1);
   }
   72% {
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.10) inset,
       0 28px 80px rgba(0, 0, 0, 0.18),
-      0 0 42px rgba(34, 197, 94, 0.22),
-      0 0 54px rgba(56, 189, 248, 0.18);
-    filter: saturate(1.16);
+      /* “Rayos” tipo bandera (neón) */
+      0 0 64px rgba(250, 204, 21, 0.28),
+      0 0 58px rgba(56, 189, 248, 0.26),
+      0 0 54px rgba(239, 68, 68, 0.22);
+    filter: saturate(1.22) contrast(1.06);
+  }
+  78% {
+    /* Flash final */
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+      0 32px 88px rgba(0, 0, 0, 0.20),
+      0 0 92px rgba(250, 204, 21, 0.40),
+      0 0 78px rgba(56, 189, 248, 0.36),
+      0 0 72px rgba(239, 68, 68, 0.30);
+    filter: saturate(1.32) contrast(1.10);
   }
   100% {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform:
+      translate3d(0, 0, 0)
+      rotate(0deg)
+      scale(1);
     filter: none;
     box-shadow:
       0 0 0 1px rgba(255, 255, 255, 0.08) inset,
       0 28px 80px rgba(0, 0, 0, 0.18);
+  }
+}
+
+/* Flag rays sweep overlay (yellow/blue/red) */
+@keyframes mp26FlagRaysSweep {
+  0% {
+    opacity: 0;
+    transform: translate3d(-18%, -12%, 0) rotate(16deg) scale(1);
+    filter: blur(14px);
+  }
+  22% {
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.85;
+    transform: translate3d(18%, 10%, 0) rotate(16deg) scale(1.02);
+    filter: blur(10px);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(44%, 22%, 0) rotate(16deg) scale(1.02);
+    filter: blur(14px);
   }
 }
 
@@ -365,13 +411,29 @@ body::before {
   inset: -40%;
   pointer-events: none;
   background:
-    radial-gradient(36% 28% at 28% 22%, rgba(34, 197, 94, 0.48), transparent 64%),
-    radial-gradient(34% 26% at 74% 28%, rgba(56, 189, 248, 0.48), transparent 64%),
-    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.22) 42%, transparent 70%);
-  filter: blur(12px);
+    radial-gradient(34% 26% at 22% 24%, rgba(250, 204, 21, 0.70), transparent 64%),
+    radial-gradient(34% 26% at 52% 20%, rgba(56, 189, 248, 0.62), transparent 66%),
+    radial-gradient(34% 26% at 82% 26%, rgba(239, 68, 68, 0.56), transparent 66%),
+    linear-gradient(116deg, transparent 0%, rgba(250, 204, 21, 0.30) 30%, rgba(56, 189, 248, 0.22) 44%, rgba(239, 68, 68, 0.18) 56%, transparent 74%);
   mix-blend-mode: screen;
   opacity: 0;
-  animation: mp26CardGlowSweep 3.9s ease-out both;
+  animation: mp26FlagRaysSweep 3.2s ease-out both;
+}
+
+/* On-view animations (when sections enter viewport) */
+.mp26-enter.mp26-enter-active .glass-card::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  pointer-events: none;
+  background:
+    radial-gradient(34% 26% at 22% 24%, rgba(250, 204, 21, 0.66), transparent 64%),
+    radial-gradient(34% 26% at 52% 20%, rgba(56, 189, 248, 0.58), transparent 66%),
+    radial-gradient(34% 26% at 82% 26%, rgba(239, 68, 68, 0.52), transparent 66%),
+    linear-gradient(116deg, transparent 0%, rgba(250, 204, 21, 0.26) 30%, rgba(56, 189, 248, 0.20) 44%, rgba(239, 68, 68, 0.16) 56%, transparent 74%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: mp26FlagRaysSweep 2.6s ease-out both;
 }
 
 /* Stagger when cards are direct children of a grid */
@@ -385,6 +447,18 @@ body::before {
 .landing-animate .grid > .glass-card:nth-child(6) { animation-delay: 450ms; }
 .landing-animate .grid > .glass-card:nth-child(7) { animation-delay: 540ms; }
 .landing-animate .grid > .glass-card:nth-child(8) { animation-delay: 630ms; }
+
+/* Deterministic “fly-in” directions (no randomness, stable) */
+.landing-animate .grid > .glass-card:nth-child(4n + 1) { --mp26-enter-x: -34px; --mp26-enter-y: 18px; --mp26-enter-r: -9deg; }
+.landing-animate .grid > .glass-card:nth-child(4n + 2) { --mp26-enter-x: 42px; --mp26-enter-y: 10px; --mp26-enter-r: 10deg; }
+.landing-animate .grid > .glass-card:nth-child(4n + 3) { --mp26-enter-x: -22px; --mp26-enter-y: -6px; --mp26-enter-r: 7deg; }
+.landing-animate .grid > .glass-card:nth-child(4n + 4) { --mp26-enter-x: 30px; --mp26-enter-y: -16px; --mp26-enter-r: -11deg; }
+
+/* Mp26EnterOnView wrappers are often the grid themselves */
+.mp26-enter > .glass-card:nth-child(4n + 1) { --mp26-enter-x: -34px; --mp26-enter-y: 18px; --mp26-enter-r: -9deg; }
+.mp26-enter > .glass-card:nth-child(4n + 2) { --mp26-enter-x: 42px; --mp26-enter-y: 10px; --mp26-enter-r: 10deg; }
+.mp26-enter > .glass-card:nth-child(4n + 3) { --mp26-enter-x: -22px; --mp26-enter-y: -6px; --mp26-enter-r: 7deg; }
+.mp26-enter > .glass-card:nth-child(4n + 4) { --mp26-enter-x: 30px; --mp26-enter-y: -16px; --mp26-enter-r: -11deg; }
 
 /* Landing: hero enters too (no markup changes, no JS) */
 .landing-animate .glass-hero {
