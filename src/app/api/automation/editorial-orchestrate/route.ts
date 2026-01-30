@@ -1740,6 +1740,7 @@ export async function POST(req: Request) {
     .join(" ");
 
   let pickedImage = await pickWikimediaImage({ query: imageQueryPrimary, avoid_urls: avoidUrls });
+  let lowRelevanceFallback: typeof pickedImage | null = null;
   let imageQueryUsed: string = imageQueryPrimary;
   if (!pickedImage) {
     const retry = await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: avoidUrls });
@@ -1756,9 +1757,10 @@ export async function POST(req: Request) {
     }
   }
 
-  // Prefer relevance over "any CC image": if Commons result seems generic, use a first-party AI image instead.
+  // Prefer relevance over "any CC image", but NEVER fall back to placeholder if AI is unavailable.
   const MIN_COMMONS_RELEVANCE = 8;
   if (pickedImage && (pickedImage.relevance_score ?? 0) < MIN_COMMONS_RELEVANCE) {
+    lowRelevanceFallback = pickedImage;
     pickedImage = null;
   }
 
@@ -1789,7 +1791,11 @@ export async function POST(req: Request) {
         })
       : null;
 
-  const finalImageUrl = pickedImage?.thumb_url ?? pickedImage?.image_url ?? (aiStored && aiStored.ok ? aiStored.public_url : null);
+  const finalImageUrl =
+    pickedImage?.thumb_url ??
+    pickedImage?.image_url ??
+    (aiStored && aiStored.ok ? aiStored.public_url : null) ??
+    (lowRelevanceFallback?.thumb_url ?? lowRelevanceFallback?.image_url ?? null);
   const finalImageUrlSafe = finalImageUrl || fallbackPublicImageUrl(`${pol.id}-${imageQueryUsed}-${Date.now()}`);
 
   const metadata = {

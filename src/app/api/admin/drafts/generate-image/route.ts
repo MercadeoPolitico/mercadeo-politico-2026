@@ -342,6 +342,7 @@ export async function POST(req: Request) {
   const picked =
     (await pickWikimediaImage({ query: wikQueryPrimary, avoid_urls })) ?? (await pickWikimediaImage({ query: wikQueryFallback, avoid_urls }));
   const pickedOk = picked && (picked.relevance_score ?? 0) >= 8 ? picked : null;
+  const pickedLow = picked && !pickedOk ? picked : null;
 
   const prompt = [
     "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
@@ -411,6 +412,22 @@ export async function POST(req: Request) {
       nextMeta.image_metadata = { provider: stored.provider, generated_at: nowIso(), keywords, request_id: requestId, ...(stored.meta ?? {}) };
       nextMeta.image_ready = true;
     } else {
+      // If AI is unavailable, prefer a low-relevance CC image over a placeholder.
+      if (pickedLow) {
+        const finalUrl = pickedLow.thumb_url ?? pickedLow.image_url;
+        nextMeta.media = {
+          type: "image",
+          image_url: finalUrl,
+          page_url: pickedLow.page_url,
+          license_short: pickedLow.license_short,
+          attribution: pickedLow.attribution,
+          author: pickedLow.author,
+          source: pickedLow.source,
+        };
+        nextMeta.image_url = finalUrl;
+        nextMeta.image_metadata = { provider: "Wikimedia", generated_at: nowIso(), keywords, request_id: requestId, low_relevance_ok: true };
+        nextMeta.image_ready = true;
+      } else {
       // LAST RESORT: local abstract SVG (no text) and attach it.
       const svg = localAbstractSvg({ seed: `${draft.id}:${draft.candidate_id}:${draft.topic}:${keywords.join(",")}` });
       const storedSvg = await storeSvgInSupabase({ admin, candidateId: draft.candidate_id, draftId: draft.id, svg });
@@ -422,6 +439,7 @@ export async function POST(req: Request) {
       nextMeta.image_url = finalUrl;
       nextMeta.image_metadata = { provider: "Local", generated_at: nowIso(), keywords, request_id: requestId };
       nextMeta.image_last_error = safeFailure(stored.reason || "ai_unavailable_local_fallback");
+      }
     }
   }
 

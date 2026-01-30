@@ -135,6 +135,7 @@ export async function POST(req: Request) {
       (await pickWikimediaImage({ query: queryGeo, avoid_urls: [] })) ??
       (await pickWikimediaImage({ query: queryCivic, avoid_urls: [] }));
     const pickedOk = picked && (picked.relevance_score ?? 0) >= 8 ? picked : null;
+    const pickedLow = picked && !pickedOk ? picked : null;
 
     const imageUrl = pickedOk?.thumb_url ?? pickedOk?.image_url ?? null;
     let creditLine: string | null = (() => {
@@ -175,7 +176,9 @@ export async function POST(req: Request) {
           if (stored.ok) {
             creditLine = `Crédito imagen: Imagen ilustrativa generada por ${stored.provider} (first-party) · MarketBrain Technology™.`;
           }
-          return stored.ok ? stored.public_url : null;
+          if (stored.ok) return stored.public_url;
+          // If AI is unavailable, prefer a low-relevance CC image over placeholder.
+          return pickedLow?.thumb_url ?? pickedLow?.image_url ?? null;
         })();
 
     if (!finalUrl) {

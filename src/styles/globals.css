@@ -460,12 +460,13 @@ body::before {
 .mp26-enter > .glass-card:nth-child(4n + 3) { --mp26-enter-x: -22px; --mp26-enter-y: -6px; --mp26-enter-r: 7deg; }
 .mp26-enter > .glass-card:nth-child(4n + 4) { --mp26-enter-x: 30px; --mp26-enter-y: -16px; --mp26-enter-r: -11deg; }
 
-/* Global public pages: animate ALL glass cards (not admin) */
-.mp26-boot .public-animate .glass-card {
+/* Global public pages: animate ALL glass cards (not admin)
+   NOTE: not gated by mp26-boot so it always runs in Inicio. */
+.public-animate .glass-card {
   animation: mp26CardEnter 3.4s cubic-bezier(0.2, 0.9, 0.2, 1) both;
   will-change: transform, opacity, filter, box-shadow;
 }
-.mp26-boot .public-animate .glass-card::after {
+.public-animate .glass-card::after {
   content: "";
   position: absolute;
   inset: -40%;
@@ -481,29 +482,29 @@ body::before {
 }
 
 /* Stagger in grids */
-.mp26-boot .public-animate .grid > .glass-card { animation-delay: 0ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(2) { animation-delay: 90ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(3) { animation-delay: 180ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(4) { animation-delay: 270ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(5) { animation-delay: 360ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(6) { animation-delay: 450ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(7) { animation-delay: 540ms; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(8) { animation-delay: 630ms; }
+.public-animate .grid > .glass-card { animation-delay: 0ms; }
+.public-animate .grid > .glass-card:nth-child(2) { animation-delay: 90ms; }
+.public-animate .grid > .glass-card:nth-child(3) { animation-delay: 180ms; }
+.public-animate .grid > .glass-card:nth-child(4) { animation-delay: 270ms; }
+.public-animate .grid > .glass-card:nth-child(5) { animation-delay: 360ms; }
+.public-animate .grid > .glass-card:nth-child(6) { animation-delay: 450ms; }
+.public-animate .grid > .glass-card:nth-child(7) { animation-delay: 540ms; }
+.public-animate .grid > .glass-card:nth-child(8) { animation-delay: 630ms; }
 
 /* Deterministic “fly-in” directions */
-.mp26-boot .public-animate .grid > .glass-card:nth-child(4n + 1) { --mp26-enter-x: -34px; --mp26-enter-y: 18px; --mp26-enter-r: -9deg; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(4n + 2) { --mp26-enter-x: 42px; --mp26-enter-y: 10px; --mp26-enter-r: 10deg; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(4n + 3) { --mp26-enter-x: -22px; --mp26-enter-y: -6px; --mp26-enter-r: 7deg; }
-.mp26-boot .public-animate .grid > .glass-card:nth-child(4n + 4) { --mp26-enter-x: 30px; --mp26-enter-y: -16px; --mp26-enter-r: -11deg; }
+.public-animate .grid > .glass-card:nth-child(4n + 1) { --mp26-enter-x: -34px; --mp26-enter-y: 18px; --mp26-enter-r: -9deg; }
+.public-animate .grid > .glass-card:nth-child(4n + 2) { --mp26-enter-x: 42px; --mp26-enter-y: 10px; --mp26-enter-r: 10deg; }
+.public-animate .grid > .glass-card:nth-child(4n + 3) { --mp26-enter-x: -22px; --mp26-enter-y: -6px; --mp26-enter-r: 7deg; }
+.public-animate .grid > .glass-card:nth-child(4n + 4) { --mp26-enter-x: 30px; --mp26-enter-y: -16px; --mp26-enter-r: -11deg; }
 
 /* Reduced motion: keep glow/flash but remove movement/rotation. */
 @media (prefers-reduced-motion: reduce) {
-  .mp26-boot .public-animate .glass-card {
+  .public-animate .glass-card {
     animation: mp26CardFadeIn 420ms ease-out both !important;
     transform: none !important;
     filter: none !important;
   }
-  .mp26-boot .public-animate .glass-card::after {
+  .public-animate .glass-card::after {
     animation-duration: 1400ms !important;
   }
 }
