@@ -962,6 +962,19 @@ function ensureCandidateAlignmentInBlog(args: {
 function isBadOgImageUrl(u: string): boolean {
   const s = String(u || "").toLowerCase();
   if (!s) return true;
+  // Allow first-party inline SVG fallbacks (used when Storage upload isn't available).
+  if (s.startsWith("data:image/svg+xml")) return false;
+  // Allow first-party stored SVGs in our own Supabase Storage fallback paths.
+  try {
+    const url = new URL(s);
+    const host = url.host.toLowerCase();
+    if (host.endsWith(".supabase.co") || host.endsWith(".supabase.in") || host === "supabase.co" || host === "supabase.in") {
+      const p = url.pathname.toLowerCase();
+      if (p.includes("/storage/v1/object/public/") && (p.includes("/news-fallback/") || p.includes("/draft-images/"))) return false;
+    }
+  } catch {
+    // ignore
+  }
   // Avoid obvious site assets / logos / icons.
   const badBits = [
     "logo",
@@ -1004,6 +1017,7 @@ function isBadOgImageUrl(u: string): boolean {
     "carta",
   ];
   if (docBits.some((b) => s.includes(b))) return true;
+  // SVGs are often icons/logos in OG metadata; keep blocking them unless first-party allowlist above matched.
   if (s.endsWith(".svg")) return true;
   return false;
 }

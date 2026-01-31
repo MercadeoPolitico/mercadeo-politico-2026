@@ -32,6 +32,19 @@ async function sleep(ms) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+async function waitForPublishIncrease(sb, candidateId, beforeN, maxMs = 70_000) {
+  const started = Date.now();
+  let n = beforeN;
+  while (Date.now() - started < maxMs) {
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(2000);
+    // eslint-disable-next-line no-await-in-loop
+    n = await publishedCountByCandidate(sb, candidateId);
+    if (n > beforeN) return n;
+  }
+  return n;
+}
+
 async function publishedCountByCandidate(sb, candidateId) {
   const r = await sb
     .from("citizen_news_posts")
@@ -65,20 +78,44 @@ function stableIndexFromId(id, mod) {
 
 async function callOrchestrateOnce(args) {
   const { base, token, candidate_id, news_mode, news_focus } = args;
-  const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-automation-token": token },
-    body: JSON.stringify({
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 25_000);
+  try {
+    const started = Date.now();
+    console.log("[orchestrate:call]", {
       candidate_id,
-      max_items: 1,
       news_mode,
-      ...(news_focus ? { news_focus } : {}),
-      editorial_style: "noticiero_portada",
-      editorial_inclination: "informativo",
-    }),
-    cache: "no-store",
-  }).catch(() => null);
-  return Boolean(r && r.ok);
+      news_focus: news_focus ? String(news_focus).slice(0, 80) : null,
+    });
+    const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-automation-token": token },
+      body: JSON.stringify({
+        candidate_id,
+        max_items: 1,
+        news_mode,
+        ...(news_focus ? { news_focus } : {}),
+        editorial_style: "noticiero_portada",
+        editorial_inclination: "informativo",
+      }),
+      cache: "no-store",
+      signal: ctrl.signal,
+    }).catch(() => null);
+    console.log("[orchestrate:done]", {
+      candidate_id,
+      news_mode,
+      ok: Boolean(r && r.ok),
+      status: r ? r.status : null,
+      ms: Date.now() - started,
+    });
+    return Boolean(r && r.ok);
+  } catch (e) {
+    const name = typeof e?.name === "string" ? e.name : "";
+    console.log("[orchestrate:error]", { candidate_id, news_mode, error: name || "unknown" });
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 async function main() {
@@ -154,6 +191,7 @@ async function main() {
 
   for (const c of candidates) {
     const candidateId = String(c.id);
+    console.log("[candidate:start]", { candidate_id: candidateId, office: String(c.office || ""), region: String(c.region || "") });
     const i0v = stableIndexFromId(candidateId, focusViral.length);
     const i0g = stableIndexFromId(candidateId, focusGrave.length);
     const focuses = [
@@ -168,9 +206,8 @@ async function main() {
       // eslint-disable-next-line no-await-in-loop
       const didOk = await callOrchestrateOnce({ base, token, candidate_id: candidateId, news_mode: f.mode, news_focus: f.focus });
       // eslint-disable-next-line no-await-in-loop
-      await sleep(900);
-      // eslint-disable-next-line no-await-in-loop
-      const afterN = await publishedCountByCandidate(sb, candidateId);
+      const afterN = await waitForPublishIncrease(sb, candidateId, beforeN, 70_000);
+      console.log("[orchestrate:delta]", { candidate_id: candidateId, mode: f.mode, before: beforeN, after: afterN, didOk });
       if (didOk || afterN > beforeN) okCount++;
       else failCount++;
     }
@@ -186,12 +223,17 @@ async function main() {
       // eslint-disable-next-line no-await-in-loop
       const didOk = await callOrchestrateOnce({ base, token, candidate_id: candidateId, news_mode: "any", news_focus: focus });
       // eslint-disable-next-line no-await-in-loop
-      await sleep(900);
-      // eslint-disable-next-line no-await-in-loop
-      const afterN = await publishedCountByCandidate(sb, candidateId);
+      const afterN = await waitForPublishIncrease(sb, candidateId, beforeN, 70_000);
+      console.log("[orchestrate:delta]", { candidate_id: candidateId, mode: "any", before: beforeN, after: afterN, didOk });
       if (didOk || afterN > beforeN) okCount++;
       else failCount++;
     }
+
+    // Settle window: orchestrator can finish after our timeout. Wait briefly and re-prune.
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(6000);
+    // eslint-disable-next-line no-await-in-loop
+    await pruneToTwoLatest(sb, candidateId);
 
     // Enforce exactly 2 (delete extras if any).
     // eslint-disable-next-line no-await-in-loop
