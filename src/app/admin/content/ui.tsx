@@ -695,10 +695,11 @@ export function AdminContentPanel() {
     const ok = window.confirm(`Vas a ELIMINAR ${selectedIds.length} borradores. Esta acción no se puede deshacer. ¿Continuar?`);
     if (!ok) return;
     const toDelete = new Set(selectedIds);
+    // POST bulk_delete (some proxies strip DELETE body; POST is reliable)
     const res = await fetch("/api/admin/drafts", {
-      method: "DELETE",
+      method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids: selectedIds }),
+      body: JSON.stringify({ action: "bulk_delete", ids: selectedIds }),
       credentials: "include",
     });
     const j = (await res.json().catch(() => null)) as { error?: string; deleted?: number } | null;

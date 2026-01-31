@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const candidate_id = String(url.searchParams.get("candidate_id") ?? "").trim();
-  const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? "50") || 50));
+  const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? "200") || 200));
 
   let q = admin
     .from("ai_drafts")
@@ -43,6 +43,21 @@ export async function POST(req: Request) {
   if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
 
   const b = body.data as Record<string, unknown>;
+
+  // Bulk delete (avoids DELETE-with-body issues in some proxies)
+  const action = typeof b.action === "string" ? b.action.trim() : "";
+  if (action === "bulk_delete") {
+    const idsRaw = Array.isArray(b.ids) ? b.ids : null;
+    const ids = idsRaw
+      ? (idsRaw.filter((x) => typeof x === "string").map((x) => String(x).trim()) as string[]).filter(Boolean)
+      : [];
+    if (ids.length === 0) return NextResponse.json({ error: "ids_required" }, { status: 400 });
+    const limit = 200;
+    const toDelete = ids.slice(0, limit);
+    const { error } = await admin.from("ai_drafts").delete().in("id", toDelete);
+    if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
+    return NextResponse.json({ ok: true, deleted: toDelete.length });
+  }
 
   const candidate_id = typeof b.candidate_id === "string" ? b.candidate_id.trim() : "";
   const content_type = typeof b.content_type === "string" ? b.content_type : "";
