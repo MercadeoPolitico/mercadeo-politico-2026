@@ -690,12 +690,81 @@ export function AdminContentPanel() {
     setChecked({});
   }
 
+  /** Borrar todos: server deletes all drafts (no ids sent). Use "Borrar todos" button. */
+  async function deleteAllDraftsServer() {
+    const ok = window.confirm(
+      "Vas a ELIMINAR TODOS los borradores de la base de datos. Esta acción no se puede deshacer. ¿Continuar?"
+    );
+    if (!ok) return;
+    const res = await fetch("/api/admin/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "delete_all" }),
+      credentials: "include",
+    });
+    const j = (await res.json().catch(() => null)) as { error?: string; deleted?: number } | null;
+    if (!res.ok) {
+      const err = typeof j?.error === "string" ? j.error : "unknown";
+      const msg =
+        err === "unauthorized" || err === "forbidden"
+          ? "Sesión expirada o sin permisos. Cierra sesión y vuelve a entrar al Admin."
+          : `No se pudieron eliminar (${err}). Verifica sesión e intenta de nuevo.`;
+      window.alert(msg);
+      await refresh();
+      return;
+    }
+    const deleted = typeof j?.deleted === "number" ? j.deleted : 0;
+    setDrafts([]);
+    setChecked({});
+    setSelected(null);
+    await refresh();
+    window.alert(`Eliminados: ${deleted} borrador${deleted !== 1 ? "es" : ""}.`);
+  }
+
+  /** Delete all currently visible drafts by ids (fallback). */
+  async function deleteAllVisible() {
+    if (drafts.length === 0) {
+      window.alert("No hay borradores visibles. Pulsa Actualizar para recargar.");
+      return;
+    }
+    const ok = window.confirm(
+      `Vas a ELIMINAR todos los borradores visibles (${drafts.length}). Esta acción no se puede deshacer. ¿Continuar?`
+    );
+    if (!ok) return;
+    const ids = drafts.map((d) => d.id);
+    const res = await fetch("/api/admin/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "bulk_delete", ids }),
+      credentials: "include",
+    });
+    const j = (await res.json().catch(() => null)) as { error?: string; deleted?: number } | null;
+    if (!res.ok) {
+      const err = typeof j?.error === "string" ? j.error : "unknown";
+      const msg =
+        err === "unauthorized" || err === "forbidden"
+          ? "Sesión expirada o sin permisos. Cierra sesión y vuelve a entrar al Admin."
+          : `No se pudieron eliminar (${err}). Verifica sesión e intenta de nuevo.`;
+      window.alert(msg);
+      await refresh();
+      return;
+    }
+    const deleted = typeof j?.deleted === "number" ? j.deleted : ids.length;
+    setDrafts([]);
+    setChecked({});
+    setSelected(null);
+    await refresh();
+    window.alert(`Eliminados: ${deleted} borrador${deleted !== 1 ? "es" : ""}.`);
+  }
+
   async function bulkDelete() {
-    if (!bulkHasSelection) return;
+    if (!bulkHasSelection) {
+      window.alert("Ningún borrador seleccionado. Usa «Seleccionar todos» y luego «Eliminar», o «Borrar todos».");
+      return;
+    }
     const ok = window.confirm(`Vas a ELIMINAR ${selectedIds.length} borradores. Esta acción no se puede deshacer. ¿Continuar?`);
     if (!ok) return;
     const toDelete = new Set(selectedIds);
-    // POST bulk_delete (some proxies strip DELETE body; POST is reliable)
     const res = await fetch("/api/admin/drafts", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1059,9 +1128,14 @@ export function AdminContentPanel() {
           <h3 className="text-base font-semibold">Cola de revisión</h3>
           <div className="flex flex-wrap gap-2">
             {drafts.length > 0 ? (
-              <button className="glass-button" type="button" onClick={selectAllDrafts}>
-                Seleccionar todos
-              </button>
+              <>
+                <button className="glass-button" type="button" onClick={selectAllDrafts}>
+                  Seleccionar todos
+                </button>
+                <button className="glass-button" type="button" onClick={() => void deleteAllDraftsServer()}>
+                  Borrar todos
+                </button>
+              </>
             ) : null}
             <button className="glass-button" type="button" onClick={refresh}>
               Actualizar

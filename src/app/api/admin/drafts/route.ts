@@ -44,8 +44,19 @@ export async function POST(req: Request) {
 
   const b = body.data as Record<string, unknown>;
 
-  // Bulk delete (avoids DELETE-with-body issues in some proxies)
+  // delete_all: server deletes all drafts (no ids from client; avoids large payload / proxy issues)
   const action = typeof b.action === "string" ? b.action.trim() : "";
+  if (action === "delete_all") {
+    const limit = 500;
+    const { data: rows } = await admin.from("ai_drafts").select("id").limit(limit);
+    const ids = (rows ?? []).map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) return NextResponse.json({ ok: true, deleted: 0 });
+    const { error } = await admin.from("ai_drafts").delete().in("id", ids);
+    if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
+    return NextResponse.json({ ok: true, deleted: ids.length });
+  }
+
+  // Bulk delete (avoids DELETE-with-body issues in some proxies)
   if (action === "bulk_delete") {
     const idsRaw = Array.isArray(b.ids) ? b.ids : null;
     const ids = idsRaw
