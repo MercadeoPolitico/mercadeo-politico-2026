@@ -2010,12 +2010,15 @@ export async function POST(req: Request) {
   }
 
   const imageSeedBase = `${pol.slug}|${sourceUrl || "no_source"}|${newsTitleHint || ""}`.slice(0, 600);
-  const aiStored = !pickedImage && admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
+  // Prefer first-party images for Centro Informativo to guarantee uniqueness and reliability.
+  // Wikimedia remains as a fallback when AI is unavailable.
+  const aiStored = admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
+  const useAiImage = Boolean(aiStored && aiStored.ok);
+  const useWikimediaImage = Boolean(!useAiImage && pickedImage);
 
   const finalImageUrl =
-    pickedImage?.thumb_url ??
-    pickedImage?.image_url ??
-    (aiStored && aiStored.ok ? aiStored.public_url : null) ??
+    (useAiImage ? aiStored!.public_url : null) ??
+    (useWikimediaImage ? pickedImage!.thumb_url ?? pickedImage!.image_url : null) ??
     (lowRelevanceFallback?.thumb_url ?? lowRelevanceFallback?.image_url ?? null);
   const finalImageUrlSafe = finalImageUrl || fallbackPublicImageUrl(`${pol.id}-${imageQueryUsed}-${Date.now()}`);
 
@@ -2050,7 +2053,7 @@ export async function POST(req: Request) {
     has_rss_image: rssChosen ? Boolean(rssChosen.rss_image_urls?.length) : false,
     // RSS images are reference-only, never published.
     rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
-    image_source: pickedImage ? "wikimedia_commons" : aiStored && aiStored.ok ? "first_party_ai" : "fallback_svg",
+    image_source: useAiImage ? "first_party_ai" : useWikimediaImage ? "wikimedia_commons" : "fallback_svg",
     reference_media: ogRefImageUrl
       ? {
           type: "image",
@@ -2060,23 +2063,23 @@ export async function POST(req: Request) {
         }
       : null,
     image_query: imageQueryUsed,
-    media: pickedImage
+    media: useWikimediaImage
       ? {
           type: "image",
           image_url: finalImageUrlSafe,
-          page_url: pickedImage.page_url,
-          license_short: pickedImage.license_short,
-          attribution: pickedImage.attribution,
-          author: pickedImage.author,
-          source: pickedImage.source,
+          page_url: pickedImage!.page_url,
+          license_short: pickedImage!.license_short,
+          attribution: pickedImage!.attribution,
+          author: pickedImage!.author,
+          source: pickedImage!.source,
         }
-      : aiStored && aiStored.ok
+      : useAiImage
         ? {
             type: "image",
-            image_url: aiStored.public_url,
+            image_url: aiStored!.public_url,
             page_url: null,
             license_short: "first_party_ai",
-            attribution: `Imagen ilustrativa generada por ${aiStored.provider} (first-party) · MarketBrain Technology™.`,
+            attribution: `Imagen ilustrativa generada por ${aiStored!.provider} (first-party) · MarketBrain Technology™.`,
             author: null,
             source: "first_party_ai",
           }
@@ -2276,7 +2279,23 @@ export async function POST(req: Request) {
 
       // Hard dedupe for images (global): avoid repeating the same photo across posts,
       // especially when consecutive runs happen close together.
-      if (avoidUrls.includes(mediaOkFinal) && admin) {
+      const freshAvoidMedia = new Set<string>();
+      try {
+        const { data: recentGlobalPosts2 } = await admin
+          .from("citizen_news_posts")
+          .select("media_urls")
+          .eq("status", "published")
+          .order("published_at", { ascending: false })
+          .limit(160);
+        for (const row of recentGlobalPosts2 ?? []) {
+          const urls = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];
+          for (const u of urls) if (typeof u === "string" && u.trim()) freshAvoidMedia.add(u.trim());
+        }
+      } catch {
+        // ignore
+      }
+
+      if ((avoidUrls.includes(mediaOkFinal) || freshAvoidMedia.has(mediaOkFinal)) && admin) {
         // Prefer generating a first-party image (safe + unique).
         const altSeed = createHash("sha256").update(`${pol.slug}|${sourceUrl || "no_source"}|alt|${requestId}`).digest("hex").slice(0, 24);
         const alt = await generateAndStoreNewsImage({
