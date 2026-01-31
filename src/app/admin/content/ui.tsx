@@ -686,11 +686,19 @@ export function AdminContentPanel() {
     const ok = window.confirm(`Vas a ELIMINAR ${selectedIds.length} borradores. Esta acción no se puede deshacer. ¿Continuar?`);
     if (!ok) return;
     const toDelete = new Set(selectedIds);
-    for (const id of selectedIds) {
-      // eslint-disable-next-line no-await-in-loop
-      await fetch("/api/admin/drafts", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }), credentials: "include" });
+    const res = await fetch("/api/admin/drafts", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ids: selectedIds }),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      const j = (await res.json().catch(() => null)) as { error?: string } | null;
+      const err = typeof j?.error === "string" ? j.error : "unknown";
+      window.alert(`No se pudieron eliminar (${err}). Verifica sesión e intenta de nuevo.`);
+      await refresh();
+      return;
     }
-    // Optimistic UI: remove immediately.
     setDrafts((prev) => prev.filter((d) => !toDelete.has(d.id)));
     setChecked({});
     if (selected && toDelete.has(selected.id)) setSelected(null);

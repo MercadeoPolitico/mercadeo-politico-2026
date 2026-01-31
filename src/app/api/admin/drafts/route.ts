@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
-import { isAdminSession } from "@/lib/auth/adminSession";
+import { requireAdminApi } from "@/lib/auth/adminApi";
 
 export const runtime = "nodejs";
 
 type DraftStatus = "pending_review" | "approved" | "rejected" | "edited" | "sent_to_n8n";
 
 export async function GET(req: Request) {
-  if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
@@ -32,7 +33,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
@@ -88,7 +90,8 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
@@ -118,7 +121,8 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!(await isAdminSession())) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "supabase_not_configured" }, { status: 503 });
 
@@ -127,6 +131,22 @@ export async function DELETE(req: Request) {
   if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
 
   const b = body.data as Record<string, unknown>;
+
+  // Bulk delete: body.ids = string[]
+  const idsRaw = Array.isArray(b.ids) ? b.ids : null;
+  const ids = idsRaw
+    ? (idsRaw.filter((x) => typeof x === "string").map((x) => String(x).trim()) as string[]).filter(Boolean)
+    : null;
+
+  if (ids && ids.length > 0) {
+    const limit = 200;
+    const toDelete = ids.slice(0, limit);
+    const { error } = await admin.from("ai_drafts").delete().in("id", toDelete);
+    if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
+    return NextResponse.json({ ok: true, deleted: toDelete.length });
+  }
+
+  // Single delete: body.id = string
   const id = typeof b.id === "string" ? b.id.trim() : "";
   if (!id) return NextResponse.json({ error: "id_required" }, { status: 400 });
 
