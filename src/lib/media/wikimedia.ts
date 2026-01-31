@@ -182,7 +182,13 @@ function scoreCandidate(c: WikimediaImage, query: string): number {
   return score;
 }
 
-function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, avoidKeys: Set<string>, query: string): WikimediaImage | null {
+function pickFromCandidates(
+  cands: WikimediaImage[],
+  avoidUrls: Set<string>,
+  avoidKeys: Set<string>,
+  query: string,
+  strictAvoid: boolean,
+): WikimediaImage | null {
   const filtered = cands.filter((c) => {
     if (avoidUrls.has(c.image_url)) return false;
     if (c.thumb_url && avoidUrls.has(c.thumb_url)) return false;
@@ -192,7 +198,7 @@ function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, avo
     if (k2 && avoidKeys.has(k2)) return false;
     return true;
   });
-  const pool = filtered.length ? filtered : cands;
+  const pool = filtered.length ? filtered : strictAvoid ? [] : cands;
   if (!pool.length) return null;
 
   const scored = pool
@@ -213,11 +219,13 @@ function pickFromCandidates(cands: WikimediaImage[], avoidUrls: Set<string>, avo
 export async function pickWikimediaImage(args: {
   query: string;
   avoid_urls?: string[];
+  strict_avoid?: boolean;
 }): Promise<WikimediaImage | null> {
   const q = enforceBitmapFiletype(args.query);
   if (!q) return null;
 
   const avoid = new Set((args.avoid_urls ?? []).filter(isNonEmptyString).map((u) => u.trim()));
+  const strictAvoid = args.strict_avoid === true;
   const avoidKeys = new Set<string>();
   for (const u of avoid) {
     const k = commonsFileKeyFromUrl(u);
@@ -288,6 +296,6 @@ export async function pickWikimediaImage(args: {
     });
   }
 
-  return pickFromCandidates(candidates, avoid, avoidKeys, q);
+  return pickFromCandidates(candidates, avoid, avoidKeys, q, strictAvoid);
 }
 

@@ -2338,9 +2338,14 @@ export async function POST(req: Request) {
         const isDup = usedMediaUrls.has(mediaOkFinal) || (k0 ? usedMediaKeys.has(k0) : false);
         if (!isDup) break;
         const avoidAll = Array.from(usedMediaUrls);
-        const alt1 = await pickWikimediaImage({ query: imageQueryUsed, avoid_urls: [...avoidAll, mediaOkFinal] });
-        const alt2 = !alt1 ? await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: [...avoidAll, mediaOkFinal] }) : null;
-        const alt3 = !alt1 && !alt2 ? await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: [...avoidAll, mediaOkFinal] }) : null;
+        const alt1 = await pickWikimediaImage({ query: imageQueryUsed, avoid_urls: [...avoidAll, mediaOkFinal], strict_avoid: true });
+        const alt2 = !alt1
+          ? await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: [...avoidAll, mediaOkFinal], strict_avoid: true })
+          : null;
+        const alt3 =
+          !alt1 && !alt2
+            ? await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: [...avoidAll, mediaOkFinal], strict_avoid: true })
+            : null;
         const picked = alt1 ?? alt2 ?? alt3;
         if (!picked) break;
         const nextUrl = picked.thumb_url ?? picked.image_url;
