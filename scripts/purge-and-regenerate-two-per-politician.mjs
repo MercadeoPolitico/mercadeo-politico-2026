@@ -32,40 +32,52 @@ async function sleep(ms) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-async function waitForPublishIncrease(sb, candidateId, beforeN, maxMs = 70_000) {
-  const started = Date.now();
-  let n = beforeN;
-  while (Date.now() - started < maxMs) {
-    // eslint-disable-next-line no-await-in-loop
-    await sleep(2000);
-    // eslint-disable-next-line no-await-in-loop
-    n = await publishedCountByCandidate(sb, candidateId);
-    if (n > beforeN) return n;
+async function withTimeout(promise, ms) {
+  let t = null;
+  const timeout = new Promise((_, rej) => {
+    t = setTimeout(() => rej(new Error("timeout")), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (t) clearTimeout(t);
   }
-  return n;
+}
+
+async function settleDelay() {
+  // The orchestrator can take >25s and may finish after the HTTP client times out.
+  // This delay gives Vercel enough time to commit the publish before we prune/validate.
+  await sleep(35_000);
 }
 
 async function publishedCountByCandidate(sb, candidateId) {
-  const r = await sb
-    .from("citizen_news_posts")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "published")
-    .eq("candidate_id", candidateId);
-  return r.count ?? 0;
+  const r = await withTimeout(
+    sb
+      .from("citizen_news_posts")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "published")
+      .eq("candidate_id", candidateId),
+    12_000,
+  ).catch(() => null);
+  return (r && typeof r.count === "number" ? r.count : 0) ?? 0;
 }
 
 async function pruneToTwoLatest(sb, candidateId) {
-  const { data } = await sb
-    .from("citizen_news_posts")
-    .select("id,published_at")
-    .eq("status", "published")
-    .eq("candidate_id", candidateId)
-    .order("published_at", { ascending: false })
-    .limit(50);
+  const r = await withTimeout(
+    sb
+      .from("citizen_news_posts")
+      .select("id,published_at")
+      .eq("status", "published")
+      .eq("candidate_id", candidateId)
+      .order("published_at", { ascending: false })
+      .limit(50),
+    12_000,
+  ).catch(() => null);
+  const data = r && Array.isArray(r.data) ? r.data : null;
   const rows = Array.isArray(data) ? data : [];
   if (rows.length <= 2) return { deleted: 0, kept: rows.length };
   const toDelete = rows.slice(2).map((r) => String(r.id));
-  await sb.from("citizen_news_posts").delete().in("id", toDelete);
+  await withTimeout(sb.from("citizen_news_posts").delete().in("id", toDelete), 12_000).catch(() => null);
   return { deleted: toDelete.length, kept: 2 };
 }
 
@@ -206,7 +218,9 @@ async function main() {
       // eslint-disable-next-line no-await-in-loop
       const didOk = await callOrchestrateOnce({ base, token, candidate_id: candidateId, news_mode: f.mode, news_focus: f.focus });
       // eslint-disable-next-line no-await-in-loop
-      const afterN = await waitForPublishIncrease(sb, candidateId, beforeN, 70_000);
+      await settleDelay();
+      // eslint-disable-next-line no-await-in-loop
+      const afterN = await publishedCountByCandidate(sb, candidateId);
       console.log("[orchestrate:delta]", { candidate_id: candidateId, mode: f.mode, before: beforeN, after: afterN, didOk });
       if (didOk || afterN > beforeN) okCount++;
       else failCount++;
@@ -223,15 +237,17 @@ async function main() {
       // eslint-disable-next-line no-await-in-loop
       const didOk = await callOrchestrateOnce({ base, token, candidate_id: candidateId, news_mode: "any", news_focus: focus });
       // eslint-disable-next-line no-await-in-loop
-      const afterN = await waitForPublishIncrease(sb, candidateId, beforeN, 70_000);
+      await settleDelay();
+      // eslint-disable-next-line no-await-in-loop
+      const afterN = await publishedCountByCandidate(sb, candidateId);
       console.log("[orchestrate:delta]", { candidate_id: candidateId, mode: "any", before: beforeN, after: afterN, didOk });
       if (didOk || afterN > beforeN) okCount++;
       else failCount++;
     }
 
-    // Settle window: orchestrator can finish after our timeout. Wait briefly and re-prune.
+    // Final settle + prune, to catch late publishes.
     // eslint-disable-next-line no-await-in-loop
-    await sleep(6000);
+    await sleep(20_000);
     // eslint-disable-next-line no-await-in-loop
     await pruneToTwoLatest(sb, candidateId);
 
