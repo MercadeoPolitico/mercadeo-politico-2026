@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
+import { readJsonBodyWithLimitBytes } from "@/lib/automation/readBody";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { fetchTopGdeltArticle } from "@/lib/news/gdelt";
 
@@ -264,7 +264,9 @@ async function pickTopNewsFor(office: string, region: string) {
 export async function POST(req: Request) {
   await requireAdmin();
 
-  const body = await readJsonBodyWithLimit(req);
+  // Chat can legitimately have more context than automation endpoints.
+  // Keep an upper bound to avoid abuse, but far above 8KB.
+  const body = await readJsonBodyWithLimitBytes(req, 80_000);
   if (!body.ok) return NextResponse.json({ error: body.error }, { status: 400 });
   if (!body.data || typeof body.data !== "object") return NextResponse.json({ error: "invalid_body" }, { status: 400 });
 
@@ -316,29 +318,33 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
-  // Dual-engine arbiter (parallel), but OpenAI is preferred (user asked OpenAI first if needed).
+  // Dual-engine arbiter (parallel). Prefer MSI when available; fallback to OpenAI rotation.
   const msiP = callMsiChat({ candidateId: pol.id, prompt });
   const oaP = callOpenAiChat({ prompt });
 
   const results: Record<EngineName, EngineResult | null> = { MSI: null, OpenAI: null };
 
-  // Prefer OpenAI: await OA first; if it fails, try MSI; otherwise fallback.
-  // eslint-disable-next-line no-await-in-loop
-  const oa = await oaP;
-  results.OpenAI = oa;
-  let winner: (EngineResult & { ok: true }) | null = oa.ok ? (oa as any) : null;
+  // Prefer MSI, but don't punish UX if MSI is slow/down.
+  // - If MSI succeeds quickly -> use it
+  // - Otherwise use OpenAI rotation, and capture MSI result if/when it arrives.
+  const msiQuick = await withTimeout(msiP, 6500);
+  let winner: (EngineResult & { ok: true }) | null = null;
+  if (msiQuick.ok) {
+    results.MSI = msiQuick.value;
+    if (msiQuick.value.ok) winner = msiQuick.value as any;
+  } else {
+    results.MSI = { ok: false, engine: "MSI", ms: 6500, error: "timeout" };
+  }
 
   if (!winner) {
-    // eslint-disable-next-line no-await-in-loop
-    const msi = await msiP;
-    results.MSI = msi;
-    if (msi.ok) winner = msi as any;
-  } else {
-    // We still want MSI diagnostics without blocking too long.
-    void msiP.then((msi) => {
-      results.MSI = msi;
-    });
+    const oa = await oaP;
+    results.OpenAI = oa;
+    if (oa.ok) winner = oa as any;
   }
+
+  // Capture whichever is still pending for diagnostics (non-blocking).
+  void msiP.then((msi) => (results.MSI = msi));
+  void oaP.then((oa) => (results.OpenAI = oa));
 
   if (!winner) {
     // Continuity fallback (non-AI): still give a useful answer instead of "nada".

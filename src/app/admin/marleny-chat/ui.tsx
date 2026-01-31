@@ -31,6 +31,53 @@ export function MarlenyChatClient() {
 
   const canSend = useMemo(() => input.trim().length > 0 && candidateId.trim().length > 0 && !loading, [input, candidateId, loading]);
 
+  function compactMessagesForSend(all: Msg[], newUserContent: string): Msg[] {
+    // Keep UI history intact, but send a compact context so the request never exceeds server limits.
+    const MAX_MSGS = 8;
+    const MAX_CHARS = 5200;
+    const MAX_PER_MSG = 900;
+
+    const trimmed = (s: string) => {
+      const t = String(s ?? "").trim();
+      if (t.length <= MAX_PER_MSG) return t;
+      return `${t.slice(0, MAX_PER_MSG)}\n\n[...recortado por límite de contexto...]`;
+    };
+
+    const nextAll = [...all, { role: "user" as const, content: newUserContent }];
+
+    // Build from the end backwards until we hit limits.
+    const picked: Msg[] = [];
+    let total = 0;
+    for (let i = nextAll.length - 1; i >= 0; i--) {
+      const m = nextAll[i]!;
+      const c = trimmed(m.content);
+      const cost = c.length + 20;
+      if (picked.length >= MAX_MSGS) break;
+      if (picked.length > 0 && total + cost > MAX_CHARS) break;
+      picked.push({ role: m.role, content: c });
+      total += cost;
+    }
+    picked.reverse();
+
+    // If we dropped earlier context, include a tiny “what we were talking about” hint
+    // from the last few omitted USER messages (no extra API calls).
+    const keptSet = new Set(picked.map((m) => `${m.role}:${m.content.slice(0, 24)}`));
+    const omittedUsers = nextAll
+      .filter((m) => m.role === "user")
+      .filter((m) => !keptSet.has(`${m.role}:${trimmed(m.content).slice(0, 24)}`))
+      .slice(-3)
+      .map((m) => `- ${trimmed(m.content).replaceAll(/\s+/g, " ").slice(0, 140)}`);
+
+    if (omittedUsers.length) {
+      picked.unshift({
+        role: "assistant",
+        content: `Nota: parte del historial anterior se compactó para evitar errores de tamaño.\nContexto omitido (resumen):\n${omittedUsers.join("\n")}`,
+      });
+    }
+
+    return picked;
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -79,21 +126,25 @@ export function MarlenyChatClient() {
     setMessages(nextMessages);
     setLoading(true);
 
+    const payloadMessages = compactMessagesForSend(messages, content);
     const resp = await fetch("/api/admin/marleny-chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ candidate_id: candidateId.trim(), messages: nextMessages }),
+      body: JSON.stringify({ candidate_id: candidateId.trim(), messages: payloadMessages }),
     });
 
     setLoading(false);
     if (!resp.ok) {
       const j = (await resp.json().catch(() => null)) as any;
+      const raw = typeof j?.error === "string" ? j.error : "";
       const reason =
-        typeof j?.error === "string"
-          ? j.error === "unauthorized"
-            ? "Sesión no detectada. Inicia sesión de nuevo."
-            : j.error
-          : null;
+        raw === "unauthorized"
+          ? "Sesión no detectada. Inicia sesión de nuevo."
+          : raw.toLowerCase().includes("request body too large")
+            ? "La conversación excedió el límite. Ya la compacté; intenta enviar de nuevo."
+            : raw
+              ? raw
+              : null;
       setMessages((prev) => [
         ...prev,
         {
