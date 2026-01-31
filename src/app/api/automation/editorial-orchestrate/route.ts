@@ -202,6 +202,61 @@ function isBlockedNewsUrl(url: string): boolean {
   }
 }
 
+function canonicalizeUrlForDedupe(raw: string | null | undefined): string {
+  const v = String(raw || "").trim();
+  if (!v) return "";
+  try {
+    const u = new URL(v);
+    u.hash = "";
+    const dropPrefixes = ["utm_"];
+    const dropKeys = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "cmpid", "igshid"]);
+    const kept: Array<[string, string]> = [];
+    for (const [k, val] of u.searchParams.entries()) {
+      const key = k.toLowerCase();
+      if (dropKeys.has(key)) continue;
+      if (dropPrefixes.some((p) => key.startsWith(p))) continue;
+      kept.push([k, val]);
+    }
+    kept.sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])));
+    u.search = kept.length ? `?${kept.map(([k, val]) => `${encodeURIComponent(k)}=${encodeURIComponent(val)}`).join("&")}` : "";
+    return u.toString().trim();
+  } catch {
+    return v;
+  }
+}
+
+function titleKey(s: string): string {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replaceAll(/[\u0300-\u036f]/g, "")
+    .replaceAll(/[^a-z0-9\s]/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+}
+
+function jaccardSimilarity(a: string, b: string): number {
+  const ta = titleKey(a).split(" ").filter((x) => x.length >= 4);
+  const tb = titleKey(b).split(" ").filter((x) => x.length >= 4);
+  const A = new Set(ta);
+  const B = new Set(tb);
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  const union = A.size + B.size - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+function isDuplicateTitle(title: string, recentTitles: string[]): boolean {
+  const t = titleKey(title);
+  if (!t) return false;
+  for (const r of recentTitles) {
+    const s = jaccardSimilarity(title, r);
+    if (s >= 0.86) return true;
+  }
+  return false;
+}
+
 async function fetchBestNewsArticle(args: {
   office: string;
   region: string;
@@ -1003,7 +1058,14 @@ async function recentUsedNewsUrls(args: {
   } catch {
     // ignore
   }
-  return Array.from(new Set(urls.map((u) => u.trim()).filter(Boolean))).slice(0, 240);
+  const canon = urls
+    .map((u) => String(u || "").trim())
+    .filter(Boolean)
+    .flatMap((u) => {
+      const c = canonicalizeUrlForDedupe(u);
+      return c && c !== u ? [u, c] : [u];
+    });
+  return Array.from(new Set(canon.map((u) => u.trim()).filter(Boolean))).slice(0, 240);
 }
 
 async function recentUsedMediaUrls(args: {
@@ -1267,40 +1329,75 @@ export async function POST(req: Request) {
   const hasAdminInputs = adminProvidedNewsLinks.length > 0 || adminEditorialNotes.length > 0 || recentMediaUrls.length > 0;
 
   const avoidNewsUrls = adminProvidedNewsLinks.length ? [] : await recentUsedNewsUrls({ admin, candidate_id: pol.id });
+  const avoidNewsSet = new Set(avoidNewsUrls.map((u) => canonicalizeUrlForDedupe(u).toLowerCase()).filter(Boolean));
+
+  // Recent titles (to avoid “same story, different outlet” duplicates).
+  const recentTitles: string[] = [];
+  try {
+    const { data } = await admin
+      .from("citizen_news_posts")
+      .select("title")
+      .eq("candidate_id", pol.id)
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(18);
+    for (const r of data ?? []) {
+      const t = (r as any)?.title;
+      if (typeof t === "string" && t.trim()) recentTitles.push(t.trim());
+    }
+  } catch {
+    // ignore
+  }
 
   // RSS additive signal (only when no admin-provided news)
   const regionKey = regionKeyFromCandidate({ office: pol.office, region: pol.region });
   const rssSources = adminProvidedNewsLinks.length ? [] : await fetchActiveRssSources({ admin, region_key: regionKey });
-  const rssItem =
-    adminProvidedNewsLinks.length
+  // Try a few times to avoid duplicates by URL *and* by title similarity.
+  let rssChosen: RssItem | null = null;
+  let article: import("@/lib/news/gdelt").GdeltArticle | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const rssItem =
+      adminProvidedNewsLinks.length
+        ? null
+        : await pickTopRssItem({
+            sources: rssSources,
+            query_terms: [
+              pol.region,
+              pol.office,
+              "Colombia",
+              "seguridad",
+              "corrupción",
+              ...(regionKey === "meta" ? ["Meta", "Villavicencio", "Acacías", "Granada (Meta)"] : []),
+            ]
+              .filter(Boolean)
+              .map(String),
+            avoid_urls: Array.from(avoidNewsSet),
+            mode: news_mode,
+          });
+
+    // eslint-disable-next-line no-await-in-loop
+    const gdeltArticle = adminProvidedNewsLinks.length
       ? null
-      : await pickTopRssItem({
-          sources: rssSources,
-          query_terms: [
-            pol.region,
-            pol.office,
-            "Colombia",
-            "seguridad",
-            "corrupción",
-            ...(regionKey === "meta" ? ["Meta", "Villavicencio", "Acacías", "Granada (Meta)"] : []),
-          ]
-            .filter(Boolean)
-            .map(String),
-          avoid_urls: avoidNewsUrls,
-          mode: news_mode,
-        });
+      : news_mode === "viral"
+        ? await fetchViralNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: Array.from(avoidNewsSet) })
+        : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: Array.from(avoidNewsSet) });
 
-  // 2) News selection (GDELT) only if no admin-provided news links
-  const gdeltArticle = adminProvidedNewsLinks.length
-    ? null
-    : news_mode === "viral"
-      ? await fetchViralNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: avoidNewsUrls })
-      : await fetchBestNewsArticle({ office: pol.office, region: pol.region, regional_hints: regional.url_hints, avoid_urls: avoidNewsUrls });
+    const chosen = chooseNewsSignal({ gdelt: gdeltArticle, rss: rssItem, prefer_rss: Boolean(rssItem) });
+    const nextArticle = chosen?.type === "gdelt" ? chosen.article : null;
+    const nextRss = chosen?.type === "rss" ? chosen.item : null;
+    const nextUrl = canonicalizeUrlForDedupe(nextRss?.url ?? nextArticle?.url ?? "");
+    const nextTitle = nextRss?.title ?? nextArticle?.title ?? "";
 
-  // Decide which signal to use (RSS is additive; never exclusive).
-  const chosen = chooseNewsSignal({ gdelt: gdeltArticle, rss: rssItem, prefer_rss: Boolean(rssItem) });
-  const article = chosen?.type === "gdelt" ? chosen.article : null;
-  const rssChosen = chosen?.type === "rss" ? chosen.item : null;
+    const urlUsed = nextUrl ? avoidNewsSet.has(nextUrl.toLowerCase()) : false;
+    const titleUsed = nextTitle ? isDuplicateTitle(nextTitle, recentTitles) : false;
+    if (!urlUsed && !titleUsed) {
+      rssChosen = nextRss;
+      article = nextArticle;
+      break;
+    }
+    if (nextUrl) avoidNewsSet.add(nextUrl.toLowerCase());
+  }
 
   // 2) If no news, fallback: last published post (for reframing)
   const { data: lastPublished } = await admin
@@ -1712,7 +1809,16 @@ export async function POST(req: Request) {
   // IMPORTANT (rights & reliability):
   // - We do NOT publish/hotlink outlet images (OpenGraph/Twitter cards) because licenses are unclear and hotlinking often fails.
   // - We only publish CC images (Wikimedia) or our own fallback placeholder.
-  const sourceUrl = rssChosen?.url ?? article?.url ?? null;
+  // Canonical source URL (dedupe across tracking params); ensure we always persist one.
+  const sourceUrlRaw =
+    rssChosen?.url ??
+    article?.url ??
+    (typeof (lastPublished as any)?.source_url === "string" ? String((lastPublished as any).source_url) : null) ??
+    (adminProvidedNewsLinks[0] ?? null);
+  const sourceUrl =
+    canonicalizeUrlForDedupe(sourceUrlRaw) ||
+    sourceUrlRaw ||
+    (lastPublished?.id ? `internal:reframe:${String(lastPublished.id)}` : null);
   const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
   const ogRefImageUrl =
     og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
@@ -1780,12 +1886,13 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
+  const imageSeedBase = `${pol.slug}|${sourceUrl || "no_source"}|${newsTitleHint || ""}`.slice(0, 600);
   const aiStored =
     !pickedImage && admin
       ? await generateAndStoreNewsImage({
           admin,
           candidateId: pol.id,
-          seed: `${pol.slug}-${requestId}`,
+          seed: createHash("sha256").update(imageSeedBase).digest("hex").slice(0, 24),
           prompt: aiPrompt,
           maxMs: 18_000,
         })
@@ -2036,6 +2143,22 @@ export async function POST(req: Request) {
         (metadata as any)?.media?.image_url && typeof (metadata as any).media.image_url === "string" ? String((metadata as any).media.image_url) : "";
       // Publish an image whenever possible. If we couldn't find a real image, the fallback SVG is still better than blank.
       const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : fallbackPublicImageUrl(`${pol.id}|${created_at}|fallback`);
+
+      // Hard dedupe: never insert another post for the same canonical source URL.
+      if (sourceUrl && !sourceUrl.startsWith("internal:")) {
+        const { data: dupe } = await admin
+          .from("citizen_news_posts")
+          .select("id")
+          .eq("candidate_id", pol.id)
+          .eq("status", "published")
+          .eq("source_url", sourceUrl)
+          .limit(1)
+          .maybeSingle();
+        if (dupe?.id) {
+          await admin.from("ai_drafts").update({ status: "draft" }).eq("id", inserted.id);
+          return NextResponse.json({ ok: true, id: inserted.id, request_id: requestId, published: false, reason: "duplicate_source_url" });
+        }
+      }
 
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")

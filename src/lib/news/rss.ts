@@ -21,6 +21,30 @@ export type RssItem = {
 
 export type RssPickMode = "grave" | "viral" | "any";
 
+function canonicalizeUrlForDedupe(raw: string): string {
+  const v = String(raw || "").trim();
+  if (!v) return "";
+  try {
+    const u = new URL(v);
+    u.hash = "";
+    // Drop common tracking params
+    const dropPrefixes = ["utm_"];
+    const dropKeys = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "cmpid", "igshid"]);
+    const kept: Array<[string, string]> = [];
+    for (const [k, val] of u.searchParams.entries()) {
+      const key = k.toLowerCase();
+      if (dropKeys.has(key)) continue;
+      if (dropPrefixes.some((p) => key.startsWith(p))) continue;
+      kept.push([k, val]);
+    }
+    kept.sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])));
+    u.search = kept.length ? `?${kept.map(([k, val]) => `${encodeURIComponent(k)}=${encodeURIComponent(val)}`).join("&")}` : "";
+    return u.toString().toLowerCase();
+  } catch {
+    return v.toLowerCase();
+  }
+}
+
 function parseMetaGovJson(text: string, source: RssSource): RssItem[] {
   // meta.gov.co uses a Vue SPA; its backend exposes JSON endpoints like:
   // https://devx.meta.gov.co/api/noticias-inicio/?format=json
@@ -312,12 +336,13 @@ export async function pickTopRssItem(args: {
   // Deduplicate by URL
   const seen = new Set<string>();
   const deduped = all.filter((x) => {
-    if (seen.has(x.url)) return false;
-    seen.add(x.url);
+    const k = canonicalizeUrlForDedupe(x.url);
+    if (seen.has(k)) return false;
+    seen.add(k);
     return true;
   });
-  const avoid = new Set((args.avoid_urls ?? []).map((u) => String(u || "").trim().toLowerCase()).filter(Boolean));
-  const filtered = avoid.size ? deduped.filter((x) => !avoid.has(String(x.url || "").trim().toLowerCase())) : deduped;
+  const avoid = new Set((args.avoid_urls ?? []).map((u) => canonicalizeUrlForDedupe(u)).filter(Boolean));
+  const filtered = avoid.size ? deduped.filter((x) => !avoid.has(canonicalizeUrlForDedupe(x.url))) : deduped;
   const mode: RssPickMode = args.mode ?? "grave";
   return pickTop(filtered.length ? filtered : deduped, args.query_terms, mode);
 }

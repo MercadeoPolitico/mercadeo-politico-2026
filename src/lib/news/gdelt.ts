@@ -27,6 +27,29 @@ export type GdeltPickOptions = {
   exclude_urls?: string[];
 };
 
+function canonicalizeUrlForDedupe(raw: string): string {
+  const v = String(raw || "").trim();
+  if (!v) return "";
+  try {
+    const u = new URL(v);
+    u.hash = "";
+    const dropPrefixes = ["utm_"];
+    const dropKeys = new Set(["fbclid", "gclid", "mc_cid", "mc_eid", "cmpid", "igshid"]);
+    const kept: Array<[string, string]> = [];
+    for (const [k, val] of u.searchParams.entries()) {
+      const key = k.toLowerCase();
+      if (dropKeys.has(key)) continue;
+      if (dropPrefixes.some((p) => key.startsWith(p))) continue;
+      kept.push([k, val]);
+    }
+    kept.sort((a, b) => (a[0] === b[0] ? a[1].localeCompare(b[1]) : a[0].localeCompare(b[0])));
+    u.search = kept.length ? `?${kept.map(([k, val]) => `${encodeURIComponent(k)}=${encodeURIComponent(val)}`).join("&")}` : "";
+    return u.toString().toLowerCase();
+  } catch {
+    return v.toLowerCase();
+  }
+}
+
 function hasOp(q: string, op: string): boolean {
   return new RegExp(`\\b${op}:`, "i").test(q);
 }
@@ -163,7 +186,7 @@ export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOption
   const preferSensational = opts?.prefer_sensational === true;
   const exclude = new Set(
     (opts?.exclude_urls ?? [])
-      .map((u) => String(u || "").trim().toLowerCase())
+      .map((u) => canonicalizeUrlForDedupe(u))
       .filter(Boolean)
       .slice(0, 600),
   );
@@ -200,7 +223,7 @@ export async function fetchTopGdeltArticle(query: string, opts?: GdeltPickOption
         .filter((a) => a.title && a.url);
 
       if (mapped.length === 0) continue;
-      const filtered = exclude.size ? mapped.filter((a) => !exclude.has(String(a.url || "").trim().toLowerCase())) : mapped;
+      const filtered = exclude.size ? mapped.filter((a) => !exclude.has(canonicalizeUrlForDedupe(a.url))) : mapped;
       const candidatesList = filtered.length ? filtered : mapped;
 
       const biasCo = shouldBiasToColombia(qRaw);
