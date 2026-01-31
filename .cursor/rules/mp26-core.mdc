@@ -7,16 +7,24 @@ alwaysApply: true
 
 ## Working style
 - Be decisive and execution-focused; avoid repeating explanations.
-- Prefer real fixes over “mock” or hypothetical changes.
+- Prefer real fixes over "mock" or hypothetical changes.
 - If something is unclear, consult the transcript file referenced by the user instead of guessing.
 
 ## Engineering rules (project expectations)
 - Use the repo tools to verify changes (lint/build) after substantive edits.
 - Keep changes aligned to the existing architecture (Next.js App Router + Supabase + n8n + cron).
-- Don’t weaken security to “make it work” (no broad SSRF proxies, no unsafe scraping).
+- Don't weaken security to "make it work" (no broad SSRF proxies, no unsafe scraping).
+
+## Server-only vs Client Components (Next.js)
+- **Never** import modules that use `import "server-only"` from files that have `"use client"`. The build (Turbopack) will fail on Vercel (`'server-only' cannot be imported from a Client Component`).
+- If a Client Component needs types or pure functions that the server also uses: create a **client-safe** module (no `"server-only"`, no `process.env`) that exports only types and pure functions. The client imports from that module; API routes and Server Components keep importing from the server-only module (which can re-export from the client-safe module and add env-dependent logic).
+- Example in this repo: `src/lib/oauth/provider-keys.ts` (client-safe) vs `src/lib/oauth/providers.ts` (server-only). Rule detallada: `.cursor/rules/mp26-oauth-connect.mdc`.
+
+## Git push (Windows)
+- If `git push` fails with `protocol error: bad line length character: Micr`, use SSH batch mode before pushing: `$env:GIT_SSH_COMMAND = 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'; git push origin main`
+- See `docs/runbooks/RECONNECT.md` for details.
 
 ## Cache / PWA sanity
-- If users report “no styles” or broken UI after deploy, assume stale HTML/assets and apply cache reset mechanisms:
+- If users report "no styles" or broken UI after deploy, assume stale HTML/assets and apply cache reset mechanisms:
   - Ensure `/api/cache/version` changes on deploy and the watcher (`CacheResetWatcher`) can redirect to `/api/cache/clear`.
   - Prefer build-id based versioning + optional admin-triggered bump.
-

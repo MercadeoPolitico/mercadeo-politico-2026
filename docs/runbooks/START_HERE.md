@@ -1,5 +1,11 @@
 ## START HERE — mercadeo-politico-2026 (operación)
 
+### Reglas Cursor (evitar errores de build y push)
+- **Server-only vs Client:** `.cursor/rules/mp26-core.mdc` y `mp26-next-app.mdc`: no importar módulos `server-only` desde `"use client"`; usar módulos client-safe para tipos/funciones puras compartidas.
+- **OAuth/Connect (build Vercel):** `.cursor/rules/mp26-oauth-connect.mdc`: en rutas Connect con `"use client"` importar solo desde `@/lib/oauth/provider-keys`, nunca desde `@/lib/oauth/providers`. Evita el error Turbopack `'server-only' cannot be imported from a Client Component`.
+- **Git push (Windows):** Si falla con `protocol error: bad line length character: Micr`, ver `docs/runbooks/RECONNECT.md` (GIT_SSH_COMMAND).
+- **Params en rutas dinámicas:** Next.js 15+: `params` es Promise; hacer `await params` en Server Components; en Client usar `useParams()`.
+
 ### Objetivo
 Dejar el sistema **deployado y estable** en:
 - Vercel (app)

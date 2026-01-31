@@ -1,0 +1,19 @@
+---
+description: MP26 Next.js App Router (server-only, params, client-safe)
+alwaysApply: true
+---
+
+# MP26: Next.js App Router
+
+## Server-only and Client Components
+- Files with `"use client"` **must not** import from modules that have `import "server-only"`. Turbopack build will fail on Vercel with: `'server-only' cannot be imported from a Client Component`.
+- Shared types or pure functions needed by both client and server: put them in a **client-safe** file (no `"server-only"`, no `process.env`). Client imports from that file; server-only file can re-export from it and add env-dependent logic.
+- **OAuth/Connect:** Client Components under `app/connect/` must import only from `@/lib/oauth/provider-keys`. Never from `@/lib/oauth/providers`. See `.cursor/rules/mp26-oauth-connect.mdc`.
+- Reference in this repo: `src/lib/oauth/provider-keys.ts` (client-safe) and `src/lib/oauth/providers.ts` (server-only).
+
+## Dynamic route params (Next.js 15+)
+- In App Router, `params` in page/layout components is a **Promise**. Type as `Promise<{ slug: string }>` (or similar) and **await** before use: `const { slug } = await params;`
+- In Client Component pages that receive params, use `useParams()` from `next/navigation` instead of props (params may be a Promise and not unwrapped in client).
+
+## Crypto / buffers
+- Before `crypto.timingSafeEqual(a, b)`, ensure both buffers have the **same length**; otherwise it throws. Check `a.length === b.length` and redirect or reject if different.

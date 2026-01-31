@@ -1,0 +1,23 @@
+---
+description: MP26 OAuth / Connect — client-safe imports (evitar error de build Vercel)
+alwaysApply: true
+---
+
+# MP26: OAuth y Connect (evitar error Turbopack en Vercel)
+
+## Error que NO debe repetirse
+- **Síntoma:** Build en Vercel falla con: `'server-only' cannot be imported from a Client Component` y/o `Export normalizeOAuthProvider doesn't exist in target module`.
+- **Causa:** Un archivo con `"use client"` (p. ej. `src/app/connect/[provider]/app/page.tsx`) importa desde `@/lib/oauth/providers`, que tiene `import "server-only"`.
+
+## Regla obligatoria
+- **Cualquier componente o módulo que tenga `"use client"`** (o que sea importado por uno) **NO debe importar** desde `@/lib/oauth/providers`.
+- Para tipos y funciones puras de OAuth (p. ej. `OAuthProvider`, `normalizeOAuthProvider`, `isOAuthProvider`): **usar siempre** `@/lib/oauth/provider-keys`.
+- Solo API routes, Server Components y código que no se empaqueta para el cliente pueden importar `@/lib/oauth/providers` (para `oauthClientConfig` y env).
+
+## Archivos de referencia
+- **Cliente (connect app, etc.):** `src/lib/oauth/provider-keys.ts` — sin `server-only`, sin `process.env`.
+- **Servidor (API, Server Components):** `src/lib/oauth/providers.ts` — puede usar `server-only` y `oauthClientConfig`.
+
+## Checklist antes de tocar Connect / OAuth
+1. ¿El archivo tiene `"use client"` o es hijo de un Client Component? → Importar solo desde `provider-keys`.
+2. ¿Necesitas `oauthClientConfig` o `process.env`? → Usar solo en servidor (API route o Server Component) y importar desde `providers`.
