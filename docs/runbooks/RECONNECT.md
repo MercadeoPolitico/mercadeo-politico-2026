@@ -15,6 +15,14 @@ npm ci
 npm run smoke
 ```
 
+### Si `git push` falla con "protocol error: bad line length character: Micr"
+El Git Credential Manager puede interferir con SSH. Usar:
+
+```powershell
+$env:GIT_SSH_COMMAND = 'ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new'
+git push origin main
+```
+
 Si `smoke:n8n` falla con `401`, ver sección 4.
 
 ## 2) Docker (logout/login) — PowerShell
