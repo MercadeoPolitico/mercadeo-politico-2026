@@ -4,9 +4,14 @@
  * - Uses Supabase service role from .env.local (or process.env)
  * - Uses MP26_BASE_URL + MP26_AUTOMATION_TOKEN to call /api/automation/editorial-orchestrate
  * - Does NOT print any secret values
+ *
+ * Optional: CI_SKIP_PURGE=1 — skip local purge (use after calling POST /api/automation/ci-purge).
+ * Use MP26_BASE_URL=https://mercadeo-politico-2026.vercel.app so the API runs deployed image logic.
  */
 import fs from "node:fs";
-import { createClient } from "@supabase/supabase-js";
+import { createRequire } from "node:module";
+
+const { createClient } = createRequire(import.meta.url)("@supabase/supabase-js");
 
 function parseDotenv(raw) {
   const env = {};
@@ -159,19 +164,18 @@ async function main() {
     if (error) throw new Error(`politicians_update_failed:${error.message || "unknown"}`);
   }
 
-  // 2) Purge current Centro Informativo posts.
-  const before = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true });
-  const beforeCount = before.count ?? null;
-  {
-    // citizen_news_posts.id is uuid; comparing to "" can fail. Use a safe always-true predicate.
+  // 2) Purge current Centro Informativo posts (unless CI_SKIP_PURGE=1, e.g. after calling POST /api/automation/ci-purge).
+  const skipPurge = /^1|true|yes$/i.test(String(process.env.CI_SKIP_PURGE ?? "").trim());
+  if (!skipPurge) {
+    const before = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true });
+    const beforeCount = before.count ?? null;
     const { error } = await sb.from("citizen_news_posts").delete().neq("status", "__never__");
     if (error) throw new Error(`purge_failed:${error.message || "unknown"}`);
+    const after = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true });
+    console.log("[purge] citizen_news_posts", { before: beforeCount, after: after?.count ?? null });
+  } else {
+    console.log("[purge] skipped (CI_SKIP_PURGE=1)");
   }
-
-  const after = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true });
-  const afterCount = after.count ?? null;
-
-  console.log("[purge] citizen_news_posts", { before: beforeCount, after: afterCount });
 
   // 3) Regenerate 2 published posts per politician, with validation (not just "2 calls").
   const { data: pols, error: polErr } = await sb.from("politicians").select("id,office,region,auto_blog_enabled").order("id", { ascending: true });

@@ -24,6 +24,9 @@ Dejar el sistema **deployado y estable** en:
 ### Si estás “reconectando” (sesión nueva / CLIs raros)
 Ver: `docs/runbooks/RECONNECT.md` (Docker logout/login, Chrome vs Edge, PowerShell commands).
 
+### Centro Informativo — imágenes que no cambian
+El feed lee de Supabase (`citizen_news_posts`). Las imágenes **solo cambian** cuando se borran los posts y se regeneran con la API desplegada. Ver `docs/runbooks/CI_REGENERATE.md`: ejecutar `npm run ci:purge-regenerate` con `MP26_BASE_URL` apuntando a producción, o llamar `POST /api/automation/ci-purge` y luego el script con `CI_SKIP_PURGE=1`.
+
 ---
 
 ## 2) Variables mínimas (sin valores)

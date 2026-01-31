@@ -1,17 +1,18 @@
 # Runbook — Borrar noticias y regenerar 2 por político
 
 ## Objetivo
-Borrar todas las publicaciones del Centro Informativo y generar **2 artículos nuevos por político** (imágenes por región y coherentes con el artículo).
+Borrar todas las publicaciones del Centro Informativo y generar **2 artículos nuevos por político** (imágenes por región y coherentes con el artículo). **Las imágenes solo cambian cuando se regenera el contenido**; el feed lee de Supabase (`citizen_news_posts`), no del código en tiempo real.
 
 ---
 
 ## 1) Requisitos
+- `npm ci` o `npm install` ejecutado antes (el script usa `@supabase/supabase-js` vía createRequire).
 - `.env.local` con:
   - `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
-  - `MP26_BASE_URL` = URL de la app desplegada (ej. `https://mercadeo-politico-2026.vercel.app`)
+  - `MP26_BASE_URL` = **URL de producción** (ej. `https://mercadeo-politico-2026.vercel.app`) para que la API use el pipeline de imágenes desplegado.
   - `MP26_AUTOMATION_TOKEN`
-- **Producción:** para que el purge use el código desplegado (imágenes correctas), usa la URL de producción: `MP26_BASE_URL=https://mercadeo-politico-2026.vercel.app` al ejecutar `ci:purge-regenerate` (o ponla en `.env.local`).
-- La API debe estar desplegada y accesible (Vercel).
+- **Producción:** siempre usa `MP26_BASE_URL=https://mercadeo-politico-2026.vercel.app` al ejecutar el script (o ponla en `.env.local`) para que las imágenes sigan la lógica actual (sin RSS en arriendo/vivienda, Commons > AI > RSS).
+- Opcional: purgar desde el servidor con `POST /api/automation/ci-purge` (header `x-automation-token`), luego ejecutar el script con `CI_SKIP_PURGE=1` para solo regenerar.
 - Dependencias instaladas: `npm ci` o `npm install`.
 
 ---
