@@ -756,7 +756,10 @@ export function AdminContentPanel() {
           .map(([k, v]) => `${k}=${v}`)
           .join(" · ")}`
       : "";
-    window.alert(`Redes (aprobadas): enviados=${okCount} · omitidos=${skipCount}${detail}`);
+    const hint = reasons.no_approved_networks
+      ? "\n\nAcción: no hay redes aprobadas para ese/estos candidatos. Ve a Admin → n8n / Redes y aprueba destinos (o conecta por OAuth) antes de enviar."
+      : "";
+    window.alert(`Redes (aprobadas): enviados=${okCount} · omitidos=${skipCount}${detail}${hint}`);
     await refresh();
   }
 
@@ -818,24 +821,35 @@ export function AdminContentPanel() {
           <div className="grid gap-3">
             <div className="grid gap-1">
               <label className="text-sm font-medium">Candidate ID</label>
-              <input
-                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
-                value={candidateId}
-                onChange={(e) => setCandidateId(e.target.value)}
-                list="mp26-candidate-id-list"
-              />
-              <datalist id="mp26-candidate-id-list">
-                {candidateOptions.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {`${c.name}${c.region ? ` · ${c.region}` : ""}${c.office ? ` · ${c.office}` : ""}`}
-                  </option>
-                ))}
-              </datalist>
+              {candidateOptions.length ? (
+                <select
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  value={candidateId}
+                  onChange={(e) => setCandidateId(e.target.value)}
+                >
+                  {/* In case URL pre-fills a candidate not in list (rare), still show it */}
+                  {!candidateOptions.some((c) => c.id === candidateId) ? (
+                    <option value={candidateId}>{candidateId}</option>
+                  ) : null}
+                  {candidateOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {`${c.name}${c.region ? ` · ${c.region}` : ""}${c.office ? ` · ${c.office}` : ""}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                  value={candidateId}
+                  onChange={(e) => setCandidateId(e.target.value)}
+                  placeholder="Escribe el Candidate ID…"
+                />
+              )}
               <p className="text-xs text-muted">
                 {selectedCandidateLabel ? (
                   <span>Seleccionado: {selectedCandidateLabel}</span>
                 ) : (
-                  <span>Tip: escribe o abre la lista para seleccionar.</span>
+                  <span>Tip: selecciona un candidato de la lista.</span>
                 )}
               </p>
             </div>

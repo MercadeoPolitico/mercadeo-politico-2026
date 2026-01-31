@@ -1334,6 +1334,18 @@ export async function POST(req: Request) {
   // Recent titles (to avoid “same story, different outlet” duplicates).
   const recentTitles: string[] = [];
   try {
+    // Global recent titles
+    const { data: globalRows } = await admin
+      .from("citizen_news_posts")
+      .select("title")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(40);
+    for (const r of globalRows ?? []) {
+      const t = (r as any)?.title;
+      if (typeof t === "string" && t.trim()) recentTitles.push(t.trim());
+    }
+
     const { data } = await admin
       .from("citizen_news_posts")
       .select("title")
@@ -1886,17 +1898,31 @@ export async function POST(req: Request) {
     .filter(Boolean)
     .join("\n");
 
+  async function generateUniqueAiImage(args: { seedBase: string; avoid: string[] }) {
+    const avoidSet = new Set(args.avoid.map((u) => String(u || "").trim().toLowerCase()).filter(Boolean));
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const seed = createHash("sha256")
+        .update(`${args.seedBase}|v${attempt}`)
+        .digest("hex")
+        .slice(0, 24);
+      // eslint-disable-next-line no-await-in-loop
+      const stored = await generateAndStoreNewsImage({
+        admin: admin!,
+        candidateId: pol.id,
+        seed,
+        prompt: `${aiPrompt}\n\nVariante visual: ${attempt + 1} (cambia composición/encuadre)`,
+        maxMs: 18_000,
+      });
+      if (!stored.ok) continue;
+      const u = String(stored.public_url || "").trim().toLowerCase();
+      if (!u || avoidSet.has(u)) continue;
+      return stored;
+    }
+    return null;
+  }
+
   const imageSeedBase = `${pol.slug}|${sourceUrl || "no_source"}|${newsTitleHint || ""}`.slice(0, 600);
-  const aiStored =
-    !pickedImage && admin
-      ? await generateAndStoreNewsImage({
-          admin,
-          candidateId: pol.id,
-          seed: createHash("sha256").update(imageSeedBase).digest("hex").slice(0, 24),
-          prompt: aiPrompt,
-          maxMs: 18_000,
-        })
-      : null;
+  const aiStored = !pickedImage && admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
 
   const finalImageUrl =
     pickedImage?.thumb_url ??

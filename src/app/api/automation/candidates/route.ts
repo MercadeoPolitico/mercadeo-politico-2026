@@ -46,8 +46,7 @@ export async function GET(req: Request) {
   const { data, error } = await admin
     .from("politicians")
     .select("id,slug,name,office,party,region,ballot_number,auto_blog_enabled,auto_publish_enabled,biography,proposals,updated_at")
-    // Only candidates eligible for automation (mandatory control surface).
-    .eq("auto_blog_enabled", true)
+    // Return all candidates; callers can filter by flags.
     .order("updated_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
