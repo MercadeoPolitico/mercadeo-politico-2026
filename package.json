@@ -14,7 +14,8 @@
     "smoke": "npm run smoke:n8n && npm run smoke:prod",
     "ci:purge-regenerate": "node scripts/purge-and-regenerate-two-per-politician.mjs",
     "ci:verify": "node scripts/verify-ci-two-per-politician.mjs",
-    "ci:report": "node scripts/report-ci-by-region-politician.mjs"
+    "ci:report": "node scripts/report-ci-by-region-politician.mjs",
+    "verify:connections": "node scripts/verify-connections.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
