@@ -57,6 +57,7 @@ Verificación rápida:
 ---
 
 ## 4) Verificación rápida (post-deploy)
+- **Todas las conexiones:** `npm run verify:connections` (Vercel, Supabase, Railway keepalive, n8n).
 - `GET /api/health/supabase` → ok true + env booleans
 - `GET /api/cron/keepalive` (con Bearer CRON_SECRET) → ok true
 - Admin:
