@@ -35,8 +35,10 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
     if (!tok || typeof (tok as any).token_hash !== "string") redirect("/politico/access");
     if ((tok as any).expires_at && Date.now() > Date.parse(String((tok as any).expires_at))) redirect("/politico/access");
     const expected = sign(session.payload, String((tok as any).token_hash));
+    const sigBuf = Buffer.from(session.sig);
+    const expBuf = Buffer.from(expected);
     try {
-      if (!timingSafeEqual(Buffer.from(session.sig), Buffer.from(expected))) redirect("/politico/access");
+      if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) redirect("/politico/access");
     } catch {
       redirect("/politico/access");
     }
@@ -100,8 +102,10 @@ export default async function PoliticoWorkspacePage({ params }: { params: Promis
       if (!tok || typeof (tok as any).token_hash !== "string") redirect("/politico/access");
       if ((tok as any).expires_at && Date.now() > Date.parse(String((tok as any).expires_at))) redirect("/politico/access");
       const expected = sign(session.payload, String((tok as any).token_hash));
+      const sigBuf = Buffer.from(session.sig);
+      const expBuf = Buffer.from(expected);
       try {
-        if (!timingSafeEqual(Buffer.from(session.sig), Buffer.from(expected))) redirect("/politico/access");
+        if (sigBuf.length !== expBuf.length || !timingSafeEqual(sigBuf, expBuf)) redirect("/politico/access");
       } catch {
         redirect("/politico/access");
       }

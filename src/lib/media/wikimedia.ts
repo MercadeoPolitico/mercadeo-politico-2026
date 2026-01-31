@@ -174,6 +174,15 @@ function scoreCandidate(c: WikimediaImage, query: string): number {
   if (title.includes("logo")) score -= 3;
   if (isProbablyAbstractOrIrrelevant(title)) score -= 6;
 
+  // Topic mismatch: do not use sport/kids images for economy/housing/rent articles (avoids wrong pairing like "arriendo" + girls soccer).
+  const economyHousing =
+    /\barriendo\b|vivienda|precio|alquiler|inquilino|renta|arrendatario|ley\s*vivienda|vivienda\s*digna|canon|subsidio\s*vivienda/i.test(q);
+  const sportKids =
+    /fútbol|futbol|soccer|niños|ninos|children|deportes|sport|jugando|partido|football|balón|balon|goal|gol|cancha|estadio|infantil|kids|niña|nina/i.test(
+      title,
+    );
+  if (economyHousing && sportKids) score -= 14;
+
   // Prefer things that match query tokens (helps keep relevance).
   const tokens = q
     .split(/[\s,;|]+/g)

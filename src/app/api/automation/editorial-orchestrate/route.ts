@@ -964,13 +964,17 @@ function isBadOgImageUrl(u: string): boolean {
   if (!s) return true;
   // Allow first-party inline SVG fallbacks (used when Storage upload isn't available).
   if (s.startsWith("data:image/svg+xml")) return false;
-  // Allow first-party stored SVGs in our own Supabase Storage fallback paths.
+  // Allow first-party stored images in our own Supabase Storage public paths.
   try {
     const url = new URL(s);
     const host = url.host.toLowerCase();
     if (host.endsWith(".supabase.co") || host.endsWith(".supabase.in") || host === "supabase.co" || host === "supabase.in") {
       const p = url.pathname.toLowerCase();
-      if (p.includes("/storage/v1/object/public/") && (p.includes("/news-fallback/") || p.includes("/draft-images/"))) return false;
+      const isPublicObject = p.includes("/storage/v1/object/public/");
+      // Only allow our public bucket and common image extensions.
+      const isOurBucket = p.includes("/storage/v1/object/public/politician-media/");
+      const isImageExt = /\.(png|jpe?g|webp|avif|gif|svg)(\?|$)/i.test(p);
+      if (isPublicObject && isOurBucket && isImageExt) return false;
     }
   } catch {
     // ignore
@@ -1256,7 +1260,12 @@ async function downloadAndStoreApprovedImage(args: {
       redirect: "follow",
       cache: "no-store",
       signal: ctrl.signal,
-      headers: { accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" },
+      headers: {
+        // Some CDNs block "unknown" user agents; keep it browser-like (no secrets).
+        "user-agent": "Mozilla/5.0 (compatible; mercadeo-politico-2026/1.0)",
+        accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+        "accept-language": "es-CO,es;q=0.9,en;q=0.7",
+      },
     });
     if (!resp.ok) return { ok: false, reason: `http_${resp.status}` };
     const ct = resp.headers.get("content-type") ?? "application/octet-stream";
@@ -2224,8 +2233,13 @@ export async function POST(req: Request) {
 
   // If the selected RSS source provides an image AND the feed is license_confirmed=true (guardrail),
   // we can cache it into our first-party storage and publish it safely (no hotlink).
-  const rssRefImageUrlRaw =
-    rssChosen?.rss_image_urls?.find((u) => typeof u === "string" && u.trim() && !avoidUrls.includes(u) && !isBadOgImageUrl(u)) ?? null;
+  // Skip RSS image for economy/housing articles: outlet images are often wrong (e.g. arriendo + soccer photo).
+  const skipRssImageForTopicMismatch = /\barriendo\b|vivienda|precio\s+(de|del)|alquiler|inquilino|renta|arrendatario|ley\s*vivienda/i.test(
+    newsTitleHint,
+  );
+  const rssRefImageUrlRaw = skipRssImageForTopicMismatch
+    ? null
+    : (rssChosen?.rss_image_urls?.find((u) => typeof u === "string" && u.trim() && !avoidUrls.includes(u) && !isBadOgImageUrl(u)) ?? null);
   const rssCached =
     rssRefImageUrlRaw && admin
       ? await downloadAndStoreApprovedImage({
@@ -2279,14 +2293,14 @@ export async function POST(req: Request) {
     }
   }
 
-  // Prefer relevance over "any CC image", but NEVER fall back to placeholder if AI is unavailable.
-  const MIN_COMMONS_RELEVANCE = 8;
+  // Prefer relevance over "any CC image", but use low-relevance Commons over RSS/outlet images to avoid wrong pairing (e.g. arriendo + soccer).
+  const MIN_COMMONS_RELEVANCE = 6;
   if (pickedImage && (pickedImage.relevance_score ?? 0) < MIN_COMMONS_RELEVANCE) {
     lowRelevanceFallback = pickedImage;
     pickedImage = null;
   }
 
-  // If we couldn't find a CC image (or RSS cached image), optionally generate a first-party image (MSI/OpenAI)
+  // If we couldn't find a CC image, optionally generate a first-party image (MSI/OpenAI)
   // and store it in Supabase Storage. This avoids hotlinking and improves reliability/performance.
   const aiPrompt = [
     "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
@@ -2326,19 +2340,17 @@ export async function POST(req: Request) {
   }
 
   const imageSeedBase = `${pol.slug}|${sourceUrl || "no_source"}|${newsTitleHint || ""}`.slice(0, 600);
-  // Avoid unnecessary AI calls (credits): use RSS cached first, then CC (Wikimedia),
-  // and only then generate a first-party image if no other option exists.
-  const shouldTryAi = Boolean(admin && !useRssCachedImage && !pickedImage && !lowRelevanceFallback);
-  const aiStored = shouldTryAi && admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
-  const useAiImage = Boolean(aiStored && aiStored.ok);
-  const useWikimediaImage = Boolean(!useRssCachedImage && !useAiImage && (pickedImage || lowRelevanceFallback));
-
+  // Prefer Commons and AI over RSS/outlet images so we don't publish wrong outlet images (e.g. arriendo article with soccer photo).
   const selectedCommons = (pickedImage ?? lowRelevanceFallback) || null;
   const selectedCommonsUrl = selectedCommons ? selectedCommons.thumb_url ?? selectedCommons.image_url : null;
+  const shouldTryAi = Boolean(admin && !pickedImage);
+  const aiStored = shouldTryAi && admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
+  const useAiImage = Boolean(aiStored && aiStored.ok);
+  const useWikimediaImage = Boolean(selectedCommonsUrl);
 
   // Best-effort: cache Wikimedia image into first-party Storage (reliability + consistent hosts).
   const commonsCached =
-    !useRssCachedImage && !useAiImage && selectedCommonsUrl && admin
+    selectedCommonsUrl && admin
       ? await (async () => {
           try {
             const u = new URL(selectedCommonsUrl);
@@ -2357,11 +2369,11 @@ export async function POST(req: Request) {
         })()
       : null;
 
+  // Priority: Commons (cached or direct) > AI > RSS cached > fallback. Avoids wrong outlet images (e.g. arriendo + soccer).
   const finalImageUrl =
-    (useRssCachedImage ? rssCachedImageUrl : null) ??
-    (commonsCached ? commonsCached : null) ??
-    (useWikimediaImage ? selectedCommonsUrl : null) ??
-    (useAiImage ? aiStored!.public_url : null);
+    (commonsCached ?? (useWikimediaImage ? selectedCommonsUrl : null)) ??
+    (useAiImage ? aiStored!.public_url : null) ??
+    (useRssCachedImage ? rssCachedImageUrl : null);
   // If everything fails (no AI + no CC match), store a deterministic first-party SVG so the feed never shows "Imagen no disponible".
   const localFallbackUrl =
     !finalImageUrl && admin
@@ -2373,6 +2385,17 @@ export async function POST(req: Request) {
       : null;
   const finalImageUrlSafe = finalImageUrl ?? localFallbackUrl ?? fallbackPublicImageUrl(`${pol.id}-${imageQueryUsed}-${Date.now()}`);
   const useLocalFallbackImage = Boolean(!finalImageUrl && localFallbackUrl);
+  const imageSourceUsed = !finalImageUrl
+    ? (useLocalFallbackImage ? "first_party_local_svg" : "fallback_svg")
+    : finalImageUrl === rssCachedImageUrl
+      ? "rss_cached"
+      : (commonsCached && finalImageUrl === commonsCached) || (selectedCommonsUrl && finalImageUrl === selectedCommonsUrl)
+        ? (commonsCached && finalImageUrl === commonsCached ? "wikimedia_cached" : "wikimedia_commons")
+        : useAiImage && aiStored && finalImageUrl === aiStored.public_url
+          ? "first_party_ai"
+          : useLocalFallbackImage
+            ? "first_party_local_svg"
+            : "fallback_svg";
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -2405,17 +2428,7 @@ export async function POST(req: Request) {
     has_rss_image: rssChosen ? Boolean(rssChosen.rss_image_urls?.length) : false,
     // RSS media URLs are kept for traceability. If license_confirmed=true, we may cache the feed image and publish the cached (first-party) copy.
     rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
-    image_source: useRssCachedImage
-      ? "rss_cached"
-      : commonsCached
-        ? "wikimedia_cached"
-        : useWikimediaImage
-          ? "wikimedia_commons"
-          : useAiImage
-            ? "first_party_ai"
-            : useLocalFallbackImage
-              ? "first_party_local_svg"
-              : "fallback_svg",
+    image_source: imageSourceUsed,
     reference_media: ogRefImageUrl
       ? {
           type: "image",
@@ -2425,7 +2438,7 @@ export async function POST(req: Request) {
         }
       : null,
     image_query: imageQueryUsed,
-    media: useRssCachedImage
+    media: imageSourceUsed === "rss_cached"
       ? {
           type: "image",
           image_url: finalImageUrlSafe,
@@ -2435,7 +2448,7 @@ export async function POST(req: Request) {
           author: null,
           source: "rss_cached",
         }
-      : (useWikimediaImage || commonsCached)
+      : imageSourceUsed === "wikimedia_cached" || imageSourceUsed === "wikimedia_commons"
       ? {
           type: "image",
           image_url: finalImageUrlSafe,

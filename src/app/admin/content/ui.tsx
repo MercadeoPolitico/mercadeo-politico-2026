@@ -103,7 +103,7 @@ export function AdminContentPanel() {
   async function refresh() {
     setLoadState("loading");
     const url = filterCandidateId ? `/api/admin/drafts?candidate_id=${encodeURIComponent(filterCandidateId)}` : "/api/admin/drafts";
-    const res = await fetch(url, { method: "GET" });
+    const res = await fetch(url, { method: "GET", credentials: "include" });
     if (!res.ok) {
       setLoadState("error");
       return;
@@ -167,7 +167,7 @@ export function AdminContentPanel() {
       .catch(() => {});
 
     const draftsUrl = filterCandidateId ? `/api/admin/drafts?candidate_id=${encodeURIComponent(filterCandidateId)}` : "/api/admin/drafts";
-    fetch(draftsUrl, { method: "GET" })
+    fetch(draftsUrl, { method: "GET", credentials: "include" })
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
@@ -274,6 +274,18 @@ export function AdminContentPanel() {
           ? meta.media.image_url
           : meta?.image_metadata?.url);
     return typeof url === "string" && url.trim().length > 0;
+  }
+
+  function statusKey(v: unknown): string {
+    return String(v ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function isPublishApproved(d: Draft): boolean {
+    const s = statusKey(d.status);
+    return s === "approved" || s === "edited";
   }
 
   function imageUrlOf(d: Draft): string | null {
@@ -418,6 +430,7 @@ export function AdminContentPanel() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      credentials: "include",
     });
 
     if (!res.ok) return;
@@ -434,8 +447,12 @@ export function AdminContentPanel() {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
+      credentials: "include",
     });
     if (!res.ok) return false;
+    // Optimistic update so bulk publish sees latest status before refresh (avoids "not approved" if refresh fails).
+    setDrafts((prev) => prev.map((d) => (d.id === patch.id ? { ...d, ...patch } : d)));
+    if (selected?.id === patch.id) setSelected((s) => (s && s.id === patch.id ? { ...s, ...patch } : s));
     await refresh();
     return true;
   }
@@ -450,6 +467,7 @@ export function AdminContentPanel() {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: draft.id }),
+      credentials: "include",
     });
     if (!res.ok) return;
     // Immediately remove from UI (avoid "deleted ghost" rows).
@@ -611,7 +629,7 @@ export function AdminContentPanel() {
 
   async function publishToCitizenCenter(draft: Draft) {
     if (draft.content_type !== "blog") return;
-    if (draft.status !== "approved" && draft.status !== "edited") return;
+    if (!isPublishApproved(draft)) return;
     const res = await fetch("/api/admin/news/publish", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -654,7 +672,7 @@ export function AdminContentPanel() {
     const toDelete = new Set(selectedIds);
     for (const id of selectedIds) {
       // eslint-disable-next-line no-await-in-loop
-      await fetch("/api/admin/drafts", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
+      await fetch("/api/admin/drafts", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }), credentials: "include" });
     }
     // Optimistic UI: remove immediately.
     setDrafts((prev) => prev.filter((d) => !toDelete.has(d.id)));
@@ -678,7 +696,7 @@ export function AdminContentPanel() {
         // eslint-disable-next-line no-continue
         continue;
       }
-      if (d.status !== "approved" && d.status !== "edited") {
+      if (!isPublishApproved(d)) {
         skipCount++;
         reasons.not_approved = (reasons.not_approved ?? 0) + 1;
         // eslint-disable-next-line no-continue
@@ -698,6 +716,7 @@ export function AdminContentPanel() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ draft_id: d.id, allow_no_image: bulkAllowNoImage }),
+        credentials: "include",
       });
       if (res.ok) okCount++;
       else {
@@ -722,7 +741,7 @@ export function AdminContentPanel() {
     let skipCount = 0;
     const reasons: Record<string, number> = {};
     for (const d of selectedDrafts) {
-      if (d.status !== "approved" && d.status !== "edited") {
+      if (!isPublishApproved(d)) {
         skipCount++;
         reasons.not_approved = (reasons.not_approved ?? 0) + 1;
         // eslint-disable-next-line no-continue
@@ -742,6 +761,7 @@ export function AdminContentPanel() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ draft_id: d.id, allow_no_image: bulkAllowNoImage }),
+        credentials: "include",
       });
       const j = (await res.json().catch(() => null)) as any;
       if (res.ok && j?.ok) okCount++;
@@ -764,7 +784,7 @@ export function AdminContentPanel() {
   }
 
   async function sendDraftToApprovedNetworks(draft: Draft) {
-    if (draft.status !== "approved" && draft.status !== "edited") return;
+    if (!isPublishApproved(draft)) return;
     const v = validateForPublish(draft);
     if (!v.ok) {
       window.alert(`No se puede enviar: ${v.reason}`);
@@ -779,6 +799,7 @@ export function AdminContentPanel() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ draft_id: draft.id, allow_no_image: allowNoImage(draft) }),
+      credentials: "include",
     });
     const j = (await res.json().catch(() => null)) as any;
     if (!res.ok || !j?.ok) {
@@ -1216,7 +1237,7 @@ export function AdminContentPanel() {
                   className="glass-button"
                   type="button"
                   onClick={() => publishToCitizenCenter(selected)}
-                  disabled={selected.content_type !== "blog" || (selected.status !== "approved" && selected.status !== "edited")}
+                  disabled={selected.content_type !== "blog" || !isPublishApproved(selected)}
                 >
                   Publicar en Centro informativo
                 </button>
@@ -1224,7 +1245,7 @@ export function AdminContentPanel() {
                   className="glass-button"
                   type="button"
                   onClick={() => sendDraftToApprovedNetworks(selected)}
-                  disabled={selected.status !== "approved" && selected.status !== "edited"}
+                  disabled={!isPublishApproved(selected)}
                 >
                   Enviar a redes (auto)
                 </button>

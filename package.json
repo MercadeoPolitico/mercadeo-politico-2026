@@ -11,7 +11,10 @@
     "smoke:prod": "node scripts/smoke-prod.mjs",
     "smoke:auto-publish:prod": "node scripts/smoke-auto-publish-prod.mjs",
     "smoke:n8n": "node scripts/smoke-n8n.mjs",
-    "smoke": "npm run smoke:n8n && npm run smoke:prod"
+    "smoke": "npm run smoke:n8n && npm run smoke:prod",
+    "ci:purge-regenerate": "node scripts/purge-and-regenerate-two-per-politician.mjs",
+    "ci:verify": "node scripts/verify-ci-two-per-politician.mjs",
+    "ci:report": "node scripts/report-ci-by-region-politician.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

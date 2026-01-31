@@ -1,15 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
+import { normalizeOAuthProvider, type OAuthProvider } from "@/lib/oauth/providers";
 
-type Provider = "meta" | "x" | "reddit";
-
-function isProvider(p: string): p is Provider {
-  return p === "meta" || p === "x" || p === "reddit";
-}
-
-function buildAppDeepLink(provider: Provider, authUrl: string): { appUrl: string; fallbackUrl: string } {
+function buildAppDeepLink(provider: OAuthProvider, authUrl: string): { appUrl: string; fallbackUrl: string } {
   // Always keep a safe web fallback.
   const fallbackUrl = authUrl;
 
@@ -29,7 +24,8 @@ function buildAppDeepLink(provider: Provider, authUrl: string): { appUrl: string
   return { appUrl: authUrl, fallbackUrl };
 }
 
-export default function ConnectProviderAppPage({ params }: { params: { provider: string } }) {
+export default function ConnectProviderAppPage() {
+  const params = useParams();
   const sp = useSearchParams();
   const providerRaw = String(params?.provider ?? "").trim();
   const candidateId = useMemo(() => String(sp.get("candidate_id") ?? "").trim(), [sp]);
@@ -49,7 +45,8 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
   }
 
   useEffect(() => {
-    if (!isProvider(providerRaw as any)) {
+    const provider = normalizeOAuthProvider(providerRaw);
+    if (!provider) {
       setState("error");
       setErr("Proveedor inválido.");
       return;
@@ -66,13 +63,19 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
     setUrls(null);
 
     void (async () => {
-      const url = `/api/public/oauth/${encodeURIComponent(providerRaw)}/link?candidate_id=${encodeURIComponent(candidateId)}`;
+      const url = `/api/public/oauth/${encodeURIComponent(provider)}/link?candidate_id=${encodeURIComponent(candidateId)}`;
       const res = await fetch(url, { method: "GET", cache: "no-store" }).catch(() => null);
       const j = (await res?.json().catch(() => null)) as any;
       if (cancelled) return;
       if (!res || !res.ok || !j?.ok || typeof j?.auth_url !== "string") {
         setState("error");
-        setErr("Conexión no disponible. Contacta al administrador para revisar configuración OAuth.");
+        const reason =
+          typeof j?.error === "string"
+            ? j.error === "not_configured"
+              ? "Falta configuración OAuth en el servidor."
+              : j.error
+            : "desconocido";
+        setErr(`Conexión no disponible. Motivo: ${reason}`);
         return;
       }
 
@@ -83,7 +86,7 @@ export default function ConnectProviderAppPage({ params }: { params: { provider:
         return;
       }
 
-      const { appUrl, fallbackUrl } = buildAppDeepLink(providerRaw as Provider, authUrl);
+      const { appUrl, fallbackUrl } = buildAppDeepLink(provider, authUrl);
       setUrls({ appUrl, fallbackUrl });
 
       // Auto-attempt (best-effort). Some in-app browsers (WhatsApp/IG) may block auto deep-linking.
