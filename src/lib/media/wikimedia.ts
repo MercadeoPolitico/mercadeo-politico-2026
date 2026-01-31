@@ -209,7 +209,12 @@ function pickFromCandidates(
   const top = scored.slice(0, Math.min(8, scored.length)).map((x) => x.c);
   if (!top.length) return null;
   // Deterministic pick (stable per query) to avoid "random weird" images like textures.
-  const h = createHash("sha256").update(String(query || "")).digest("hex").slice(0, 8);
+  const avoidSig = strictAvoid
+    ? Array.from(avoidKeys).sort().slice(0, 10).join("|")
+    : // Even in non-strict mode, vary selection when avoid lists exist (prevents repeats across runs).
+      Array.from(avoidKeys).sort().slice(0, 6).join("|");
+  const seed = `${String(query || "")}|avoid:${avoidSig}|n:${avoidUrls.size}`;
+  const h = createHash("sha256").update(seed).digest("hex").slice(0, 8);
   const n = parseInt(h, 16) >>> 0;
   const picked = top[n % top.length] ?? top[0] ?? null;
   if (!picked) return null;

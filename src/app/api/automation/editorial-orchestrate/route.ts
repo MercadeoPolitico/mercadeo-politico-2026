@@ -2361,6 +2361,15 @@ export async function POST(req: Request) {
         }
       }
 
+      // Absolute last-resort: guarantee uniqueness even when Commons has no alternatives.
+      {
+        const k0 = commonsFileKeyFromUrl(mediaOkFinal);
+        const isDup = usedMediaUrls.has(mediaOkFinal) || (k0 ? usedMediaKeys.has(k0) : false);
+        if (isDup) {
+          mediaOkFinal = fallbackPublicImageUrl(`${pol.id}|${sourceUrl || "no_source"}|unique_fallback|${requestId}`);
+        }
+      }
+
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")
         .insert({
