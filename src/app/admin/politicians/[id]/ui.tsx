@@ -62,6 +62,8 @@ export function PoliticianWorkspaceClient({
       bio: politician.biography ?? "",
       proposals: politician.proposals ?? "",
       ballotNumber: politician.ballot_number ? String(politician.ballot_number) : "",
+      auto_blog_enabled: Boolean(politician.auto_blog_enabled),
+      auto_publish_enabled: Boolean(politician.auto_publish_enabled),
     }),
     [politician.ballot_number, politician.biography, politician.name, politician.office, politician.party, politician.proposals, politician.region]
   );
@@ -73,6 +75,8 @@ export function PoliticianWorkspaceClient({
   const [bio, setBio] = useState(initialSnapshot.bio);
   const [proposals, setProposals] = useState(initialSnapshot.proposals);
   const [ballotNumber, setBallotNumber] = useState<string>(initialSnapshot.ballotNumber);
+  const [autoBlogEnabled, setAutoBlogEnabled] = useState<boolean>(initialSnapshot.auto_blog_enabled);
+  const [autoPublishEnabled, setAutoPublishEnabled] = useState<boolean>(initialSnapshot.auto_publish_enabled);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState(initialSnapshot);
@@ -84,7 +88,9 @@ export function PoliticianWorkspaceClient({
     party !== savedSnapshot.party ||
     bio !== savedSnapshot.bio ||
     proposals !== savedSnapshot.proposals ||
-    ballotNumber !== savedSnapshot.ballotNumber;
+    ballotNumber !== savedSnapshot.ballotNumber ||
+    autoBlogEnabled !== savedSnapshot.auto_blog_enabled ||
+    autoPublishEnabled !== savedSnapshot.auto_publish_enabled;
 
   const [links, setLinks] = useState<SocialLink[]>(initialLinks);
   const [newPlatform, setNewPlatform] = useState("facebook");
@@ -221,6 +227,8 @@ export function PoliticianWorkspaceClient({
         biography: bio,
         proposals,
         ballot_number: Number.isFinite(bn as number) ? (bn as number) : null,
+        auto_blog_enabled: autoBlogEnabled,
+        auto_publish_enabled: autoPublishEnabled,
       }),
     }).catch(() => null);
     setSavingProfile(false);
@@ -229,7 +237,7 @@ export function PoliticianWorkspaceClient({
       return;
     }
     setProfileMsg("Guardado.");
-    setSavedSnapshot({ name, office, region, party, bio, proposals, ballotNumber });
+    setSavedSnapshot({ name, office, region, party, bio, proposals, ballotNumber, auto_blog_enabled: autoBlogEnabled, auto_publish_enabled: autoPublishEnabled });
   }
 
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -671,17 +679,33 @@ export function PoliticianWorkspaceClient({
             <div>
               <p className="text-sm font-semibold">Automatización</p>
               <p className="text-xs text-muted">
-                El auto-blog + auto-publicación se controlan globalmente desde <span className="text-foreground">Admin → Contenido</span>.
+                Control por candidato (aquí) + control global desde <span className="text-foreground">Admin → Contenido</span>.
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-muted">Estado actual (candidato):</p>
-              <p className="mt-1 text-xs">
-                <span className={politician.auto_blog_enabled ? "text-emerald-300" : "text-rose-300"}>auto_blog={String(politician.auto_blog_enabled)}</span>
-                {" · "}
-                <span className={politician.auto_publish_enabled ? "text-emerald-300" : "text-rose-300"}>
-                  auto_publish={String(politician.auto_publish_enabled)}
-                </span>
+            <div className="grid gap-2 text-right">
+              <label className="inline-flex items-center justify-end gap-2 text-xs">
+                <span className="text-muted">auto_blog</span>
+                <input
+                  type="checkbox"
+                  checked={autoBlogEnabled}
+                  onChange={(e) => {
+                    const v = e.target.checked;
+                    setAutoBlogEnabled(v);
+                    if (!v) setAutoPublishEnabled(false);
+                  }}
+                />
+              </label>
+              <label className="inline-flex items-center justify-end gap-2 text-xs">
+                <span className="text-muted">auto_publish</span>
+                <input
+                  type="checkbox"
+                  checked={autoPublishEnabled}
+                  disabled={!autoBlogEnabled}
+                  onChange={(e) => setAutoPublishEnabled(e.target.checked)}
+                />
+              </label>
+              <p className="text-[11px] text-muted">
+                Nota: auto_publish requiere auto_blog + toggle global ON.
               </p>
             </div>
           </div>
