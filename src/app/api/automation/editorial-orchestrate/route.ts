@@ -2169,13 +2169,13 @@ export async function POST(req: Request) {
         (metadata as any)?.media?.image_url && typeof (metadata as any).media.image_url === "string" ? String((metadata as any).media.image_url) : "";
       // Publish an image whenever possible. If we couldn't find a real image, the fallback SVG is still better than blank.
       const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : fallbackPublicImageUrl(`${pol.id}|${created_at}|fallback`);
+      let mediaOkFinal = mediaOk;
 
       // Hard dedupe: never insert another post for the same canonical source URL.
-      if (sourceUrl && !sourceUrl.startsWith("internal:")) {
+      if (sourceUrl) {
         const { data: dupe } = await admin
           .from("citizen_news_posts")
           .select("id")
-          .eq("candidate_id", pol.id)
           .eq("status", "published")
           .eq("source_url", sourceUrl)
           .limit(1)
@@ -2183,6 +2183,27 @@ export async function POST(req: Request) {
         if (dupe?.id) {
           await admin.from("ai_drafts").update({ status: "draft" }).eq("id", inserted.id);
           return NextResponse.json({ ok: true, id: inserted.id, request_id: requestId, published: false, reason: "duplicate_source_url" });
+        }
+      }
+
+      // Hard dedupe for images (global): avoid repeating the same photo across posts,
+      // especially when consecutive runs happen close together.
+      if (recentMediaUrls.includes(mediaOkFinal) && admin) {
+        // Prefer generating a first-party image (safe + unique).
+        const altSeed = createHash("sha256").update(`${pol.slug}|${sourceUrl || "no_source"}|alt|${requestId}`).digest("hex").slice(0, 24);
+        const alt = await generateAndStoreNewsImage({
+          admin,
+          candidateId: pol.id,
+          seed: altSeed,
+          prompt: aiPrompt,
+          maxMs: 18_000,
+        });
+        if (alt.ok) {
+          mediaOkFinal = alt.public_url;
+        } else {
+          // If AI is unavailable, try a different CC image (best-effort).
+          const altPicked = await pickWikimediaImage({ query: imageQueryUsed, avoid_urls: [...avoidUrls, mediaOkFinal] });
+          if (altPicked) mediaOkFinal = altPicked.thumb_url ?? altPicked.image_url;
         }
       }
 
@@ -2195,7 +2216,7 @@ export async function POST(req: Request) {
           subtitle,
           excerpt,
           body: blogWithCredits,
-          media_urls: [mediaOk],
+          media_urls: [mediaOkFinal],
           source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
           status: "published",
           published_at: created_at,
