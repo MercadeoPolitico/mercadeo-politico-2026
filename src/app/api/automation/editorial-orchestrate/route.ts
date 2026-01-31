@@ -2301,23 +2301,23 @@ export async function POST(req: Request) {
         // ignore
       }
 
-      if ((avoidUrls.includes(mediaOkFinal) || freshAvoidMedia.has(mediaOkFinal)) && admin) {
-        // Prefer generating a first-party image (safe + unique).
-        const altSeed = createHash("sha256").update(`${pol.slug}|${sourceUrl || "no_source"}|alt|${requestId}`).digest("hex").slice(0, 24);
-        const alt = await generateAndStoreNewsImage({
-          admin,
-          candidateId: pol.id,
-          seed: altSeed,
-          prompt: aiPrompt,
-          maxMs: 18_000,
-        });
-        if (alt.ok) {
-          mediaOkFinal = alt.public_url;
-        } else {
-          // If AI is unavailable, try a different CC image (best-effort).
-          const altPicked = await pickWikimediaImage({ query: imageQueryUsed, avoid_urls: [...avoidUrls, mediaOkFinal] });
-          if (altPicked) mediaOkFinal = altPicked.thumb_url ?? altPicked.image_url;
+      // Enforce non-repeat at publish time (strong): if chosen image was already used,
+      // re-pick a different CC image avoiding ALL used URLs.
+      const usedMedia = new Set<string>([...avoidUrls, ...Array.from(freshAvoidMedia)]);
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (!usedMedia.has(mediaOkFinal)) break;
+        const avoidAll = Array.from(usedMedia);
+        const alt1 = await pickWikimediaImage({ query: imageQueryUsed, avoid_urls: [...avoidAll, mediaOkFinal] });
+        const alt2 = !alt1 ? await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: [...avoidAll, mediaOkFinal] }) : null;
+        const alt3 = !alt1 && !alt2 ? await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: [...avoidAll, mediaOkFinal] }) : null;
+        const picked = alt1 ?? alt2 ?? alt3;
+        if (!picked) break;
+        const nextUrl = picked.thumb_url ?? picked.image_url;
+        if (nextUrl && !usedMedia.has(nextUrl)) {
+          mediaOkFinal = nextUrl;
+          break;
         }
+        if (nextUrl) usedMedia.add(nextUrl);
       }
 
       const { data: post, error: postErr } = await admin
