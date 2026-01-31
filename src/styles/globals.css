@@ -31,11 +31,31 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --background: #ffffff;
+    /* Keep light mode readable (avoid pure-white washout) */
+    --background: #f7fafc;
     --foreground: #0b1220;
     --surface: rgba(2, 6, 23, 0.04);
     --border: rgba(2, 6, 23, 0.10);
-    --muted: rgba(15, 23, 42, 0.72);
+    --muted: rgba(15, 23, 42, 0.82);
+  }
+}
+
+/* Headline gradient that stays readable across themes/devices */
+.mp26-headline-gradient {
+  background-image: linear-gradient(90deg, rgba(250, 204, 21, 1), rgba(56, 189, 248, 1));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.22));
+}
+
+@media (prefers-color-scheme: light) {
+  .mp26-headline-gradient {
+    /* Darker gradient for light backgrounds */
+    background-image: linear-gradient(90deg, #b45309, #1d4ed8, #b91c1c);
+    text-shadow: 0 2px 18px rgba(255, 255, 255, 0.55), 0 1px 0 rgba(0, 0, 0, 0.12);
+    filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.12));
   }
 }
 

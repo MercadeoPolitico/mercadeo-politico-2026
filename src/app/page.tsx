@@ -25,9 +25,7 @@ export default async function Home() {
 
             <h1 className="text-balance text-4xl font-semibold tracking-tight md:text-5xl md:leading-[1.05]">
               Colombia decide mejor cuando hay{" "}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-200 to-sky-200">
-                seguridad
-              </span>{" "}
+              <span className="mp26-headline-gradient">seguridad</span>{" "}
               que se anticipa.
             </h1>
 
