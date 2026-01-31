@@ -12,18 +12,22 @@ Borrar todas las publicaciones del Centro Informativo y generar **2 artículos n
   - `MP26_BASE_URL` = **URL de producción** (ej. `https://mercadeo-politico-2026.vercel.app`) para que la API use el pipeline de imágenes desplegado.
   - `MP26_AUTOMATION_TOKEN`
 - **Producción:** siempre usa `MP26_BASE_URL=https://mercadeo-politico-2026.vercel.app` al ejecutar el script (o ponla en `.env.local`) para que las imágenes sigan la lógica actual (sin RSS en arriendo/vivienda, Commons > AI > RSS).
-- Opcional: purgar desde el servidor con `POST /api/automation/ci-purge` (header `x-automation-token`), luego ejecutar el script con `CI_SKIP_PURGE=1` para solo regenerar.
+- Opcional: purgar desde el servidor con `npm run ci:purge-api` (o `POST /api/automation/ci-purge` con header `x-automation-token`), luego ejecutar el script con `CI_SKIP_PURGE=1` para solo regenerar (el script sigue necesitando `npm ci` para Supabase).
 - Dependencias instaladas: `npm ci` o `npm install`.
 
 ---
 
 ## 2) Orden de ejecución
 
+**Requisito:** `npm ci` o `npm install` antes (el script usa `@supabase/supabase-js`).
+
 ```powershell
 # 1) Smoke rápido (opcional, verifica que la API responde)
 npm run smoke:prod
 
 # 2) Borrar todas las noticias y regenerar 2 por político (tarda varios minutos)
+# Usa URL de producción para que las imágenes sigan la lógica desplegada:
+$env:MP26_BASE_URL="https://mercadeo-politico-2026.vercel.app"
 npm run ci:purge-regenerate
 
 # 3) Verificar: exactamente 2 publicados por político, con imagen real (no placeholder)
