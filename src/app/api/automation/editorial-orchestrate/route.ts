@@ -225,6 +225,30 @@ function canonicalizeUrlForDedupe(raw: string | null | undefined): string {
   }
 }
 
+function commonsFileKeyFromUrl(u: string): string | null {
+  try {
+    const url = new URL(u);
+    const host = url.host.toLowerCase();
+    if (!(host === "upload.wikimedia.org" || host.endsWith(".wikimedia.org"))) return null;
+    const path = url.pathname || "";
+    if (!path.toLowerCase().includes("/wikipedia/commons/")) return null;
+    const last = path.split("/").filter(Boolean).slice(-1)[0] ?? "";
+    if (!last) return null;
+    const m = last.match(/^\d+px-(.+)$/i);
+    const name = (m?.[1] ?? last).trim();
+    const decoded = (() => {
+      try {
+        return decodeURIComponent(name);
+      } catch {
+        return name;
+      }
+    })();
+    return decoded ? decoded.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 function titleKey(s: string): string {
   return String(s || "")
     .toLowerCase()
@@ -2303,21 +2327,33 @@ export async function POST(req: Request) {
 
       // Enforce non-repeat at publish time (strong): if chosen image was already used,
       // re-pick a different CC image avoiding ALL used URLs.
-      const usedMedia = new Set<string>([...avoidUrls, ...Array.from(freshAvoidMedia)]);
+      const usedMediaUrls = new Set<string>([...avoidUrls, ...Array.from(freshAvoidMedia)]);
+      const usedMediaKeys = new Set<string>();
+      for (const u of usedMediaUrls) {
+        const k = commonsFileKeyFromUrl(u);
+        if (k) usedMediaKeys.add(k);
+      }
       for (let attempt = 0; attempt < 4; attempt++) {
-        if (!usedMedia.has(mediaOkFinal)) break;
-        const avoidAll = Array.from(usedMedia);
+        const k0 = commonsFileKeyFromUrl(mediaOkFinal);
+        const isDup = usedMediaUrls.has(mediaOkFinal) || (k0 ? usedMediaKeys.has(k0) : false);
+        if (!isDup) break;
+        const avoidAll = Array.from(usedMediaUrls);
         const alt1 = await pickWikimediaImage({ query: imageQueryUsed, avoid_urls: [...avoidAll, mediaOkFinal] });
         const alt2 = !alt1 ? await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: [...avoidAll, mediaOkFinal] }) : null;
         const alt3 = !alt1 && !alt2 ? await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: [...avoidAll, mediaOkFinal] }) : null;
         const picked = alt1 ?? alt2 ?? alt3;
         if (!picked) break;
         const nextUrl = picked.thumb_url ?? picked.image_url;
-        if (nextUrl && !usedMedia.has(nextUrl)) {
+        const k1 = nextUrl ? commonsFileKeyFromUrl(nextUrl) : null;
+        const nextDup = nextUrl ? usedMediaUrls.has(nextUrl) || (k1 ? usedMediaKeys.has(k1) : false) : false;
+        if (nextUrl && !nextDup) {
           mediaOkFinal = nextUrl;
           break;
         }
-        if (nextUrl) usedMedia.add(nextUrl);
+        if (nextUrl) {
+          usedMediaUrls.add(nextUrl);
+          if (k1) usedMediaKeys.add(k1);
+        }
       }
 
       const { data: post, error: postErr } = await admin
