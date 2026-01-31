@@ -312,10 +312,6 @@ async function fetchBestNewsArticle(args: {
     });
     if (!a) continue;
     if (isBlockedNewsUrl(a.url)) continue;
-    // Enforce "grave > viral": for early queries, require a minimum severity.
-    const sev = severityScoreFromTitle(a.title);
-    const isEarly = q.toLowerCase().includes("seguridad") || q.toLowerCase().includes("extors") || q.toLowerCase().includes("secuestro") || q.toLowerCase().includes("corrup");
-    if (isEarly && sev < 3) continue;
     return a;
   }
   return null;
@@ -715,6 +711,8 @@ function sanitizeHeadline(args: { titleLine: string; candidateName: string; ball
   const bn = args.ballotNumber ? String(args.ballotNumber) : "";
   let t = String(args.titleLine || "").trim();
   if (!t) return "";
+  // Strip markdown-ish leading tokens (common when models return "# Título").
+  t = t.replace(/^#+\s*/, "").replaceAll(/[*_`>]+/g, "").trim();
   // Remove obvious candidate mentions (case-insensitive).
   if (name.length >= 3) {
     const escaped = name.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
