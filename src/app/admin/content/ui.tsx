@@ -122,7 +122,7 @@ export function AdminContentPanel() {
     });
 
     // Load latest Centro Informativo posts (published + archived) for admin control.
-    fetch("/api/admin/news/list", { method: "GET" })
+    fetch("/api/admin/news/list", { method: "GET", credentials: "include" })
       .then(async (r) => {
         if (!r.ok) return;
         const j = (await r.json().catch(() => null)) as any;
@@ -145,7 +145,7 @@ export function AdminContentPanel() {
   useEffect(() => {
     let cancelled = false;
     // Load politicians for nicer labels (name/region), best-effort.
-    fetch("/api/admin/politicians/list", { method: "GET" })
+    fetch("/api/admin/politicians/list", { method: "GET", credentials: "include" })
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) return;
@@ -463,14 +463,7 @@ export function AdminContentPanel() {
     );
     if (!ok) return;
 
-    const res = await fetch("/api/admin/drafts", {
-      method: "DELETE",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: draft.id }),
-      credentials: "include",
-    });
-    if (!res.ok) return;
-    // Immediately remove from UI (avoid "deleted ghost" rows).
+    // Optimistic update so the row disappears immediately.
     setDrafts((prev) => prev.filter((d) => d.id !== draft.id));
     setChecked((prev) => {
       const next = { ...prev };
@@ -478,7 +471,18 @@ export function AdminContentPanel() {
       return next;
     });
     if (selected?.id === draft.id) setSelected(null);
-    await refresh();
+
+    const res = await fetch("/api/admin/drafts", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: draft.id }),
+      credentials: "include",
+    });
+    if (!res.ok) {
+      await refresh();
+      window.alert("No se pudo eliminar el borrador. Verifica sesión (inicia sesión de nuevo si hace falta).");
+      return;
+    }
   }
 
   function getPublishedRef(draft: Draft): { post_id: string | null; slug: string | null } {
@@ -508,6 +512,7 @@ export function AdminContentPanel() {
         post_id: ref.post_id ?? undefined,
         slug: ref.slug ?? undefined,
       }),
+      credentials: "include",
     });
     if (!res.ok) return;
     await refresh();
@@ -524,6 +529,7 @@ export function AdminContentPanel() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action, post_id: post.id, slug: post.slug }),
+      credentials: "include",
     });
     if (!res.ok) return;
     await refresh();
@@ -553,6 +559,7 @@ export function AdminContentPanel() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "archive", post_id: p.id, slug: p.slug }),
+        credentials: "include",
       });
       if (res.ok) okCount++;
       else failCount++;
@@ -574,6 +581,7 @@ export function AdminContentPanel() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "delete", post_id: p.id, slug: p.slug }),
+        credentials: "include",
       });
       if (res.ok) okCount++;
       else failCount++;
@@ -586,7 +594,7 @@ export function AdminContentPanel() {
   async function startEditPublishedPost(post: PublishedPost) {
     setEditPostState("loading");
     setEditPostError("");
-    const res = await fetch(`/api/admin/news/get?post_id=${encodeURIComponent(post.id)}`, { method: "GET" });
+    const res = await fetch(`/api/admin/news/get?post_id=${encodeURIComponent(post.id)}`, { method: "GET", credentials: "include" });
     const j = (await res.json().catch(() => null)) as any;
     if (!res.ok || !j?.ok || !j?.post) {
       setEditPostState("error");
@@ -615,6 +623,7 @@ export function AdminContentPanel() {
         excerpt: editingPost.excerpt,
         body: editingPost.body,
       }),
+      credentials: "include",
     });
     const j = (await res.json().catch(() => null)) as any;
     if (!res.ok || !j?.ok) {
@@ -634,6 +643,7 @@ export function AdminContentPanel() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ draft_id: draft.id, allow_no_image: allowNoImage(draft) }),
+      credentials: "include",
     });
     if (!res.ok) {
       const j = (await res.json().catch(() => null)) as any;
@@ -645,7 +655,9 @@ export function AdminContentPanel() {
             ? "No se pudo publicar: falta autor/medio (source_name o source_url en metadata)."
             : err === "missing_image"
               ? "No se pudo publicar: falta imagen (o autoriza “sin imagen”)."
-              : `No se pudo publicar: ${err}`;
+              : err === "not_approved"
+                ? "No se pudo publicar: el borrador debe estar aprobado o editado (cambia el estado en el panel)."
+                : `No se pudo publicar: ${err}`;
       window.alert(msg);
       return;
     }
@@ -659,6 +671,10 @@ export function AdminContentPanel() {
 
   function toggleChecked(id: string) {
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  function selectAllDrafts() {
+    setChecked(drafts.reduce<Record<string, boolean>>((acc, d) => ({ ...acc, [d.id]: true }), {}));
   }
 
   function clearSelection() {
@@ -1015,11 +1031,18 @@ export function AdminContentPanel() {
       </div>
 
       <div className="glass-card p-6">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <h3 className="text-base font-semibold">Cola de revisión</h3>
-          <button className="glass-button" type="button" onClick={refresh}>
-            Actualizar
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {drafts.length > 0 ? (
+              <button className="glass-button" type="button" onClick={selectAllDrafts}>
+                Seleccionar todos
+              </button>
+            ) : null}
+            <button className="glass-button" type="button" onClick={refresh}>
+              Actualizar
+            </button>
+          </div>
         </div>
 
         {loadState === "loading" ? <p className="mt-3 text-sm text-muted">Cargando…</p> : null}
