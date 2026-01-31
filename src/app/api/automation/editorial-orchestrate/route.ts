@@ -1279,6 +1279,7 @@ export async function POST(req: Request) {
   const news_mode: RssPickMode = news_mode_raw === "viral" ? "viral" : news_mode_raw === "any" ? "any" : "grave";
   const news_focus_raw = typeof b.news_focus === "string" ? b.news_focus.trim() : "";
   const news_focus_terms = news_focus_raw ? news_focus_raw.split(/[,\n]+/).flatMap((x) => x.split(" ")).map((x) => x.trim()).filter(Boolean) : [];
+  const story_slot = typeof b.story_slot === "number" && Number.isFinite(b.story_slot) ? Math.max(0, Math.floor(b.story_slot)) : 0;
   const avoid_news_urls = Array.isArray(b.avoid_news_urls) ? (b.avoid_news_urls.filter((x) => typeof x === "string") as string[]) : [];
   const avoid_media_urls = Array.isArray(b.avoid_media_urls) ? (b.avoid_media_urls.filter((x) => typeof x === "string") as string[]) : [];
   if (!candidate_id) return NextResponse.json({ error: "candidate_id_required" }, { status: 400 });
@@ -1951,7 +1952,10 @@ export async function POST(req: Request) {
   const sourceUrl =
     canonicalizeUrlForDedupe(sourceUrlRaw) ||
     sourceUrlRaw ||
-    `internal:topic:${createHash("sha256").update(`${pol.slug}|${pol.region}|${newsTitleHint}|${focusTerms.join("|")}`).digest("hex").slice(0, 24)}`;
+    `internal:topic:${createHash("sha256")
+      .update(`${pol.slug}|${pol.region}|${newsTitleHint}|${focusTerms.join("|")}|slot:${story_slot}`)
+      .digest("hex")
+      .slice(0, 24)}`;
   const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
   const ogRefImageUrl =
     og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
