@@ -72,6 +72,34 @@ async function callOrchestrateOnce(args) {
   return Boolean(r && r.ok);
 }
 
+async function ensureAtLeastTwo(sb, args) {
+  const { base, token, candidate_id, focuses } = args;
+  // Try up to 5 attempts total; stop when count reaches 2.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    // eslint-disable-next-line no-await-in-loop
+    const before = await publishedCountByCandidate(sb, candidate_id);
+    if (before >= 2) return { ok: true, attempts: attempt, count: before };
+    const slot = attempt % focuses.length;
+    // eslint-disable-next-line no-await-in-loop
+    const didOk = await callOrchestrateOnce({ base, token, candidate_id, focus: focuses[slot], slot });
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(1700);
+    // eslint-disable-next-line no-await-in-loop
+    const after = await publishedCountByCandidate(sb, candidate_id);
+    if (didOk || after > before) {
+      // progress
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(650);
+      continue;
+    }
+    // no progress, backoff slightly
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(1200);
+  }
+  const final = await publishedCountByCandidate(sb, candidate_id);
+  return { ok: final >= 2, attempts: 5, count: final };
+}
+
 async function pruneToTwoLatest(sb, candidateId) {
   const { data } = await sb
     .from("citizen_news_posts")
@@ -135,23 +163,21 @@ async function main() {
   const focuses = [
     "secuestro extorsión homicidio captura atentado",
     "accidente incendio explosión robo atraco colapso",
+    "masacre sicariato narcotráfico allanamiento incautación",
+    "fraude corrupción captura imputación condena",
   ];
 
   let ok = 0;
   let fail = 0;
   for (const id of targets) {
-    for (let slot = 0; slot < 2; slot++) {
-      const beforeCount = await publishedCountByCandidate(sb, id);
-      const didOk = await callOrchestrateOnce({ base, token, candidate_id: id, focus: focuses[slot], slot });
-      await sleep(1400);
-      const afterCount = await publishedCountByCandidate(sb, id);
-      if (didOk || afterCount > beforeCount) ok++;
-      else fail++;
-      await sleep(650);
-    }
+    // Ensure at least 2 published posts, then prune extras down to 2.
+    // eslint-disable-next-line no-await-in-loop
+    const ensured = await ensureAtLeastTwo(sb, { base, token, candidate_id: id, focuses });
+    if (ensured.ok) ok++;
+    else fail++;
     const pruned = await pruneToTwoLatest(sb, id);
     const final = await publishedCountByCandidate(sb, id);
-    console.log("[reset-ci-3] candidate", { id, final, pruned });
+    console.log("[reset-ci-3] candidate", { id, final, pruned, ensured });
   }
 
   console.log("[reset-ci-3] done", { calls_ok: ok, calls_failed: fail });
