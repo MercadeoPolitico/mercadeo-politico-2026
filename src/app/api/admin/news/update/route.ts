@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth/admin";
+import { requireAdminApi } from "@/lib/auth/adminApi";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 import { submitToN8n } from "@/lib/automation/n8n";
@@ -19,7 +19,8 @@ function isNonEmptyString(v: unknown): v is string {
 }
 
 export async function POST(req: Request) {
-  await requireAdmin();
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const supabase = await createSupabaseServerClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
   const sb = supabase;

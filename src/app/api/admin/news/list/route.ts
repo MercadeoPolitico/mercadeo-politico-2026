@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth/admin";
+import { requireAdminApi } from "@/lib/auth/adminApi";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  await requireAdmin();
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   const supabase = await createSupabaseServerClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 

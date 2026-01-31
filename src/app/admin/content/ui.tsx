@@ -100,9 +100,14 @@ export function AdminContentPanel() {
     return bits.length ? `${bits.join(" · ")} (${candidateId})` : candidateId;
   }, [candidateId, polById]);
 
+  const DRAFTS_LIMIT = 200;
+
   async function refresh() {
     setLoadState("loading");
-    const url = filterCandidateId ? `/api/admin/drafts?candidate_id=${encodeURIComponent(filterCandidateId)}` : "/api/admin/drafts";
+    const base = "/api/admin/drafts";
+    const params = new URLSearchParams({ limit: String(DRAFTS_LIMIT) });
+    if (filterCandidateId) params.set("candidate_id", filterCandidateId);
+    const url = `${base}?${params.toString()}`;
     const res = await fetch(url, { method: "GET", credentials: "include" });
     if (!res.ok) {
       setLoadState("error");
@@ -166,7 +171,9 @@ export function AdminContentPanel() {
       })
       .catch(() => {});
 
-    const draftsUrl = filterCandidateId ? `/api/admin/drafts?candidate_id=${encodeURIComponent(filterCandidateId)}` : "/api/admin/drafts";
+    const draftsParams = new URLSearchParams({ limit: "200" });
+    if (filterCandidateId) draftsParams.set("candidate_id", filterCandidateId);
+    const draftsUrl = `/api/admin/drafts?${draftsParams.toString()}`;
     fetch(draftsUrl, { method: "GET", credentials: "include" })
       .then(async (res) => {
         if (cancelled) return;
@@ -649,7 +656,9 @@ export function AdminContentPanel() {
       const j = (await res.json().catch(() => null)) as any;
       const err = typeof j?.error === "string" ? j.error : "upstream_error";
       const msg =
-        err === "missing_title"
+        err === "unauthorized" || err === "forbidden"
+          ? "Sesión expirada o sin permisos. Cierra sesión y vuelve a entrar al Admin."
+          : err === "missing_title"
           ? "No se pudo publicar: falta título (primera línea del texto)."
           : err === "missing_author"
             ? "No se pudo publicar: falta autor/medio (source_name o source_url en metadata)."
@@ -692,18 +701,24 @@ export function AdminContentPanel() {
       body: JSON.stringify({ ids: selectedIds }),
       credentials: "include",
     });
+    const j = (await res.json().catch(() => null)) as { error?: string; deleted?: number } | null;
     if (!res.ok) {
-      const j = (await res.json().catch(() => null)) as { error?: string } | null;
       const err = typeof j?.error === "string" ? j.error : "unknown";
-      window.alert(`No se pudieron eliminar (${err}). Verifica sesión e intenta de nuevo.`);
+      const msg =
+        err === "unauthorized" || err === "forbidden"
+          ? "Sesión expirada o sin permisos. Cierra sesión y vuelve a entrar al Admin."
+          : `No se pudieron eliminar (${err}). Verifica sesión e intenta de nuevo.`;
+      window.alert(msg);
       await refresh();
       return;
     }
+    const deleted = typeof j?.deleted === "number" ? j.deleted : selectedIds.length;
     setDrafts((prev) => prev.filter((d) => !toDelete.has(d.id)));
     setChecked({});
     if (selected && toDelete.has(selected.id)) setSelected(null);
     clearSelection();
     await refresh();
+    window.alert(`Eliminados: ${deleted} borrador${deleted !== 1 ? "es" : ""}.`);
   }
 
   async function bulkPublishCitizen() {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/auth/admin";
+import { requireAdminApi } from "@/lib/auth/adminApi";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
 
@@ -7,6 +7,18 @@ export const runtime = "nodejs";
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+function normalizeDraftStatus(v: unknown): string {
+  return String(v ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isApprovedDraftStatus(v: unknown): boolean {
+  const s = normalizeDraftStatus(v);
+  return s === "approved" || s === "edited";
 }
 
 function normalizeLineBreaks(input: string): string {
@@ -44,7 +56,8 @@ function imageUrlFromDraftMeta(meta: unknown): string | null {
 }
 
 export async function POST(req: Request) {
-  await requireAdmin();
+  const auth = await requireAdminApi();
+  if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
   // Use service-role for admin publishing to avoid RLS surprises.
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ error: "not_configured" }, { status: 503 });
@@ -66,7 +79,7 @@ export async function POST(req: Request) {
 
   if (!draft) return NextResponse.json({ error: "not_found" }, { status: 404 });
   if (draft.content_type !== "blog") return NextResponse.json({ error: "not_a_blog" }, { status: 400 });
-  if (draft.status !== "approved" && draft.status !== "edited") return NextResponse.json({ error: "not_approved" }, { status: 400 });
+  if (!isApprovedDraftStatus(draft.status)) return NextResponse.json({ error: "not_approved" }, { status: 400 });
 
   // Idempotency: if draft already references a published post, return it.
   const draftMeta = (draft.metadata ?? null) as any;
