@@ -2234,7 +2234,7 @@ export async function POST(req: Request) {
   // If the selected RSS source provides an image AND the feed is license_confirmed=true (guardrail),
   // we can cache it into our first-party storage and publish it safely (no hotlink).
   // Skip RSS image for economy/housing articles: outlet images are often wrong (e.g. arriendo + soccer photo).
-  const skipRssImageForTopicMismatch = /\barriendo\b|vivienda|precio\s+(de|del)|alquiler|inquilino|renta|arrendatario|ley\s*vivienda/i.test(
+  const skipRssImageForTopicMismatch = /\barriendo\b|vivienda|precio\s*(y|de|del)?|alquiler|inquilino|renta|arrendatario|ley\s*vivienda|fecha\s*l[ií]mite|subir\s*el\s*precio|canon\s*de\s*arriendo/i.test(
     newsTitleHint,
   );
   const rssRefImageUrlRaw = skipRssImageForTopicMismatch
@@ -2294,7 +2294,7 @@ export async function POST(req: Request) {
   }
 
   // Prefer relevance over "any CC image", but use low-relevance Commons over RSS/outlet images to avoid wrong pairing (e.g. arriendo + soccer).
-  const MIN_COMMONS_RELEVANCE = 6;
+  const MIN_COMMONS_RELEVANCE = 5;
   if (pickedImage && (pickedImage.relevance_score ?? 0) < MIN_COMMONS_RELEVANCE) {
     lowRelevanceFallback = pickedImage;
     pickedImage = null;

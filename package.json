@@ -15,6 +15,7 @@
     "ci:purge-regenerate": "node scripts/purge-and-regenerate-two-per-politician.mjs",
     "ci:verify": "node scripts/verify-ci-two-per-politician.mjs",
     "ci:report": "node scripts/report-ci-by-region-politician.mjs",
+    "ci:verify-project": "node scripts/verify-project-env.mjs",
     "verify:connections": "node scripts/verify-connections.mjs"
   },
   "dependencies": {

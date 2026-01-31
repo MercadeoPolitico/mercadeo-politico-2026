@@ -10,6 +10,7 @@ Borrar todas las publicaciones del Centro Informativo y generar **2 artículos n
   - `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
   - `MP26_BASE_URL` = URL de la app desplegada (ej. `https://mercadeo-politico-2026.vercel.app`)
   - `MP26_AUTOMATION_TOKEN`
+- **Producción:** para que el purge use el código desplegado (imágenes correctas), usa la URL de producción: `MP26_BASE_URL=https://mercadeo-politico-2026.vercel.app` al ejecutar `ci:purge-regenerate` (o ponla en `.env.local`).
 - La API debe estar desplegada y accesible (Vercel).
 - Dependencias instaladas: `npm ci` o `npm install`.
 
