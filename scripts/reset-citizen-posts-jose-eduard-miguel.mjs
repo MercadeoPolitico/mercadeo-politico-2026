@@ -53,7 +53,7 @@ async function publishedCountByCandidate(sb, candidateId) {
 }
 
 async function callOrchestrateOnce(args) {
-  const { base, token, candidate_id, focus, slot } = args;
+  const { base, token, candidate_id, focus, slot, avoid_news_urls, avoid_media_urls } = args;
   const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-automation-token": token },
@@ -64,6 +64,8 @@ async function callOrchestrateOnce(args) {
       editorial_style: "noticiero_portada",
       editorial_inclination: "correctivo",
       news_focus: focus,
+      avoid_news_urls: Array.isArray(avoid_news_urls) ? avoid_news_urls : [],
+      avoid_media_urls: Array.isArray(avoid_media_urls) ? avoid_media_urls : [],
       // slot is carried in focus; server may ignore unknown fields safely
       story_slot: slot,
     }),
@@ -73,31 +75,58 @@ async function callOrchestrateOnce(args) {
 }
 
 async function ensureAtLeastTwo(sb, args) {
-  const { base, token, candidate_id, focuses } = args;
-  // Try up to 5 attempts total; stop when count reaches 2.
-  for (let attempt = 0; attempt < 5; attempt++) {
+  const { base, token, candidate_id, focuses, usedNews, usedMedia } = args;
+  // Try up to 8 attempts total; stop when count reaches 2.
+  // Backoff is important to avoid transient network/socket issues to Vercel.
+  for (let attempt = 0; attempt < 8; attempt++) {
     // eslint-disable-next-line no-await-in-loop
     const before = await publishedCountByCandidate(sb, candidate_id);
     if (before >= 2) return { ok: true, attempts: attempt, count: before };
     const slot = attempt % focuses.length;
     // eslint-disable-next-line no-await-in-loop
-    const didOk = await callOrchestrateOnce({ base, token, candidate_id, focus: focuses[slot], slot });
+    const didOk = await callOrchestrateOnce({
+      base,
+      token,
+      candidate_id,
+      focus: focuses[slot],
+      slot,
+      avoid_news_urls: Array.from(usedNews),
+      avoid_media_urls: Array.from(usedMedia),
+    });
     // eslint-disable-next-line no-await-in-loop
-    await sleep(1700);
+    await sleep(4200);
     // eslint-disable-next-line no-await-in-loop
     const after = await publishedCountByCandidate(sb, candidate_id);
+    // Refresh avoid lists from DB (best-effort)
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const { data } = await sb
+        .from("citizen_news_posts")
+        .select("source_url,media_urls")
+        .eq("status", "published")
+        .order("published_at", { ascending: false })
+        .limit(30);
+      for (const row of data ?? []) {
+        const src = typeof row.source_url === "string" ? row.source_url.trim() : "";
+        if (src) usedNews.add(src);
+        const arr = Array.isArray(row.media_urls) ? row.media_urls : [];
+        for (const u of arr) if (typeof u === "string" && u.trim()) usedMedia.add(u.trim());
+      }
+    } catch {
+      // ignore
+    }
     if (didOk || after > before) {
       // progress
       // eslint-disable-next-line no-await-in-loop
-      await sleep(650);
+      await sleep(1200);
       continue;
     }
     // no progress, backoff slightly
     // eslint-disable-next-line no-await-in-loop
-    await sleep(1200);
+    await sleep(6000 + attempt * 900);
   }
   const final = await publishedCountByCandidate(sb, candidate_id);
-  return { ok: final >= 2, attempts: 5, count: final };
+  return { ok: final >= 2, attempts: 8, count: final };
 }
 
 async function pruneToTwoLatest(sb, candidateId) {
@@ -169,10 +198,12 @@ async function main() {
 
   let ok = 0;
   let fail = 0;
+  const usedNews = new Set();
+  const usedMedia = new Set();
   for (const id of targets) {
     // Ensure at least 2 published posts, then prune extras down to 2.
     // eslint-disable-next-line no-await-in-loop
-    const ensured = await ensureAtLeastTwo(sb, { base, token, candidate_id: id, focuses });
+    const ensured = await ensureAtLeastTwo(sb, { base, token, candidate_id: id, focuses, usedNews, usedMedia });
     if (ensured.ok) ok++;
     else fail++;
     const pruned = await pruneToTwoLatest(sb, id);

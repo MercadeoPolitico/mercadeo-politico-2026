@@ -306,7 +306,8 @@ async function fetchBestNewsArticle(args: {
     // eslint-disable-next-line no-await-in-loop
     const a = await fetchTopGdeltArticle(q, {
       preferred_url_hints: args.regional_hints,
-      prefer_sensational: false,
+      // For "grave" mode, bias towards high-impact civic news.
+      prefer_sensational: true,
       exclude_urls: args.avoid_urls ?? [],
     });
     if (!a) continue;
@@ -1256,6 +1257,8 @@ export async function POST(req: Request) {
   const news_mode: RssPickMode = news_mode_raw === "viral" ? "viral" : news_mode_raw === "any" ? "any" : "grave";
   const news_focus_raw = typeof b.news_focus === "string" ? b.news_focus.trim() : "";
   const news_focus_terms = news_focus_raw ? news_focus_raw.split(/[,\n]+/).flatMap((x) => x.split(" ")).map((x) => x.trim()).filter(Boolean) : [];
+  const avoid_news_urls = Array.isArray(b.avoid_news_urls) ? (b.avoid_news_urls.filter((x) => typeof x === "string") as string[]) : [];
+  const avoid_media_urls = Array.isArray(b.avoid_media_urls) ? (b.avoid_media_urls.filter((x) => typeof x === "string") as string[]) : [];
   if (!candidate_id) return NextResponse.json({ error: "candidate_id_required" }, { status: 400 });
   if (max_items < 1 || max_items > 2) return NextResponse.json({ error: "max_items_invalid" }, { status: 400 });
 
@@ -1405,6 +1408,10 @@ export async function POST(req: Request) {
 
   const avoidNewsUrls = adminProvidedNewsLinks.length ? [] : await recentUsedNewsUrls({ admin, candidate_id: pol.id });
   const avoidNewsSet = new Set(avoidNewsUrls.map((u) => canonicalizeUrlForDedupe(u).toLowerCase()).filter(Boolean));
+  for (const u of avoid_news_urls) {
+    const c = canonicalizeUrlForDedupe(u).toLowerCase();
+    if (c) avoidNewsSet.add(c);
+  }
 
   // Recent titles (to avoid “same story, different outlet” duplicates).
   const recentTitles: string[] = [];
@@ -1867,6 +1874,7 @@ export async function POST(req: Request) {
   // Pick a CC image (Wikimedia) and store attribution (best-effort).
   const avoidUrls: string[] = [];
   try {
+    for (const u of avoid_media_urls) if (typeof u === "string" && u.trim()) avoidUrls.push(u.trim());
     const prevBody = lastPublished?.body ? String(lastPublished.body) : "";
     const m = prevBody.match(/https?:\/\/upload\.wikimedia\.org\/[^\s)]+/i);
     if (m?.[0]) avoidUrls.push(m[0]);

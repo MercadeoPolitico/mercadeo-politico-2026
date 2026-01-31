@@ -87,6 +87,17 @@ export async function GET(req: Request) {
   const target = `${origin}/api/automation/editorial-orchestrate`;
 
   const results: Array<{ candidate_id: string; triggered: boolean; reason: string; next_due_at?: string | null }> = [];
+  const usedNewsUrls = new Set<string>();
+  const usedMediaUrls = new Set<string>();
+
+  const focusClusters: string[][] = [
+    ["secuestro", "extorsión", "amenaza"],
+    ["homicidio", "captura", "violencia"],
+    ["corrupción", "contratación", "fraude"],
+    ["narcotráfico", "incautación", "bandas"],
+    ["accidente", "vías", "emergencia"],
+    ["conflicto", "orden público", "ataque"],
+  ];
 
   // Anti-spam guardrail:
   // - We do NOT trigger everyone who is “due” in the same run.
@@ -128,9 +139,14 @@ export async function GET(req: Request) {
     }
 
     // Create ONE item per trigger (so we can keep 3 publicaciones / 24h).
-    // Alternate deterministically between "grave" and "viral" so the feed stays varied.
+    // Prefer "grave" (high-impact civic), occasional "viral" for feed variety.
     const cycle = typeof (dueMeta as any)?.cycle === "number" ? (dueMeta as any).cycle : 0;
-    const news_mode = sha256Int(`${c.id}|${cycle}|mp26_auto_blog_mode`) % 2 === 0 ? "grave" : "viral";
+    const roll = sha256Int(`${c.id}|${cycle}|mp26_auto_blog_mode`) % 10;
+    const news_mode = roll < 8 ? "grave" : "viral";
+    const focus = (() => {
+      const idx = sha256Int(`${c.id}|${cycle}|mp26_focus`) % focusClusters.length;
+      return (focusClusters[idx] ?? focusClusters[0]!).join(" ");
+    })();
     // eslint-disable-next-line no-await-in-loop
     const resp = await fetch(target, {
       method: "POST",
@@ -140,7 +156,11 @@ export async function GET(req: Request) {
         max_items: 1,
         news_mode,
         editorial_style: "noticiero_portada",
-        editorial_inclination: "informativo",
+        editorial_inclination: news_mode === "grave" ? "correctivo" : "informativo",
+        news_focus: focus,
+        // Hard guarantee of uniqueness within the same cron run (avoids race conditions on DB propagation).
+        avoid_news_urls: Array.from(usedNewsUrls).slice(0, 80),
+        avoid_media_urls: Array.from(usedMediaUrls).slice(0, 120),
       }),
       cache: "no-store",
     });
@@ -148,6 +168,25 @@ export async function GET(req: Request) {
     if (!resp.ok) {
       results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
       continue;
+    }
+
+    // Best-effort: update in-memory avoid lists based on latest published posts.
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const { data } = await admin
+        .from("citizen_news_posts")
+        .select("source_url,media_urls")
+        .eq("status", "published")
+        .order("published_at", { ascending: false })
+        .limit(18);
+      for (const row of data ?? []) {
+        const src = typeof (row as any)?.source_url === "string" ? String((row as any).source_url).trim() : "";
+        if (src) usedNewsUrls.add(src);
+        const arr = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];
+        for (const u of arr) if (typeof u === "string" && u.trim()) usedMediaUrls.add(u.trim());
+      }
+    } catch {
+      // ignore
     }
 
     const at = new Date().toISOString();
