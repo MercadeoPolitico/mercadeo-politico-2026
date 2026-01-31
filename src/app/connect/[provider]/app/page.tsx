@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { normalizeOAuthProvider, type OAuthProvider } from "@/lib/oauth/providers";
+import { normalizeOAuthProvider, type OAuthProvider } from "@/lib/oauth/provider-keys";
 
 function buildAppDeepLink(provider: OAuthProvider, authUrl: string): { appUrl: string; fallbackUrl: string } {
   // Always keep a safe web fallback.

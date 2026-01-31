@@ -1,13 +1,12 @@
 import "server-only";
 
-export type OAuthProvider = "meta" | "x" | "reddit";
+import { isOAuthProvider, normalizeOAuthProvider, type OAuthProvider } from "./provider-keys";
+
+export type { OAuthProvider };
+export { isOAuthProvider, normalizeOAuthProvider };
 
 function envOptional(name: string): string {
   return String(process.env[name] ?? "").trim();
-}
-
-export function isOAuthProvider(v: string): v is OAuthProvider {
-  return v === "meta" || v === "x" || v === "reddit";
 }
 
 export function oauthClientConfig(provider: OAuthProvider): { clientId: string; clientSecret: string; configured: boolean } {
@@ -28,4 +27,3 @@ export function oauthClientConfig(provider: OAuthProvider): { clientId: string; 
   const clientSecret = envOptional(secretName);
   return { clientId, clientSecret, configured: Boolean(clientId && clientSecret) };
 }
-
