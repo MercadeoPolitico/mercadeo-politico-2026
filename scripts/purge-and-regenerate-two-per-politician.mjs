@@ -32,6 +32,55 @@ async function sleep(ms) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+async function publishedCountByCandidate(sb, candidateId) {
+  const r = await sb
+    .from("citizen_news_posts")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "published")
+    .eq("candidate_id", candidateId);
+  return r.count ?? 0;
+}
+
+async function pruneToTwoLatest(sb, candidateId) {
+  const { data } = await sb
+    .from("citizen_news_posts")
+    .select("id,published_at")
+    .eq("status", "published")
+    .eq("candidate_id", candidateId)
+    .order("published_at", { ascending: false })
+    .limit(50);
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length <= 2) return { deleted: 0, kept: rows.length };
+  const toDelete = rows.slice(2).map((r) => String(r.id));
+  await sb.from("citizen_news_posts").delete().in("id", toDelete);
+  return { deleted: toDelete.length, kept: 2 };
+}
+
+function stableIndexFromId(id, mod) {
+  const s = String(id || "");
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h + s.charCodeAt(i) * 17) >>> 0;
+  return mod ? h % mod : 0;
+}
+
+async function callOrchestrateOnce(args) {
+  const { base, token, candidate_id, news_mode, news_focus } = args;
+  const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-automation-token": token },
+    body: JSON.stringify({
+      candidate_id,
+      max_items: 1,
+      news_mode,
+      ...(news_focus ? { news_focus } : {}),
+      editorial_style: "noticiero_portada",
+      editorial_inclination: "informativo",
+    }),
+    cache: "no-store",
+  }).catch(() => null);
+  return Boolean(r && r.ok);
+}
+
 async function main() {
   const envLocal = fs.existsSync(".env.local") ? parseDotenv(fs.readFileSync(".env.local", "utf8")) : {};
 
@@ -75,40 +124,95 @@ async function main() {
 
   console.log("[purge] citizen_news_posts", { before: beforeCount, after: afterCount });
 
-  // 3) Regenerate 2 drafts/posts per politician by calling orchestrator twice.
+  // 3) Regenerate 2 published posts per politician, with validation (not just "2 calls").
   const { data: pols, error: polErr } = await sb.from("politicians").select("id,office,region,auto_blog_enabled").order("id", { ascending: true });
   if (polErr) throw new Error("politicians_query_failed");
   const candidates = (pols ?? []).filter((p) => p && p.auto_blog_enabled !== false);
 
   let okCount = 0;
   let failCount = 0;
+  let ensuredTwo = 0;
+  let ensuredFail = 0;
+
+  // Vary focus to reduce duplicate_source_url skips and keep content unique.
+  const focusViral = [
+    "economía empleo emprendimiento",
+    "educación juventud",
+    "salud pública hospitales",
+    "infraestructura vías movilidad",
+    "seguridad convivencia comunidad",
+    "servicios públicos agua energía",
+  ];
+  const focusGrave = [
+    "secuestro extorsión amenaza",
+    "homicidio captura violencia",
+    "corrupción contratación fraude",
+    "narcotráfico incautación bandas",
+    "accidente vías emergencia",
+    "orden público ataque conflicto",
+  ];
 
   for (const c of candidates) {
-    // 2 posts per candidate: one viral + one grave
-    for (const news_mode of ["viral", "grave"]) {
+    const candidateId = String(c.id);
+    const i0v = stableIndexFromId(candidateId, focusViral.length);
+    const i0g = stableIndexFromId(candidateId, focusGrave.length);
+    const focuses = [
+      { mode: "viral", focus: focusViral[i0v] || focusViral[0] },
+      { mode: "grave", focus: focusGrave[i0g] || focusGrave[0] },
+    ];
+
+    // Make at least 2 attempts (viral+grave), then validate count and top-up if needed.
+    for (const f of focuses) {
       // eslint-disable-next-line no-await-in-loop
-      const r = await fetch(`${base}/api/automation/editorial-orchestrate`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-automation-token": token },
-        body: JSON.stringify({
-          candidate_id: c.id,
-          max_items: 1,
-          news_mode,
-          editorial_style: "noticiero_portada",
-          editorial_inclination: "informativo",
-        }),
-        cache: "no-store",
-      });
-      if (r.ok) okCount++;
+      const beforeN = await publishedCountByCandidate(sb, candidateId);
+      // eslint-disable-next-line no-await-in-loop
+      const didOk = await callOrchestrateOnce({ base, token, candidate_id: candidateId, news_mode: f.mode, news_focus: f.focus });
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(900);
+      // eslint-disable-next-line no-await-in-loop
+      const afterN = await publishedCountByCandidate(sb, candidateId);
+      if (didOk || afterN > beforeN) okCount++;
       else failCount++;
-      // Small stagger to avoid burst rate limits
-      // eslint-disable-next-line no-await-in-loop
-      await sleep(650);
     }
+
+    // Top-up: if duplicate_source_url prevented publishing, try up to 3 extra calls with "any" and varied focus.
+    for (let extra = 0; extra < 3; extra++) {
+      // eslint-disable-next-line no-await-in-loop
+      const n = await publishedCountByCandidate(sb, candidateId);
+      if (n >= 2) break;
+      const focus = extra % 2 === 0 ? focusViral[(i0v + 2 + extra) % focusViral.length] : focusGrave[(i0g + 2 + extra) % focusGrave.length];
+      // eslint-disable-next-line no-await-in-loop
+      const beforeN = n;
+      // eslint-disable-next-line no-await-in-loop
+      const didOk = await callOrchestrateOnce({ base, token, candidate_id: candidateId, news_mode: "any", news_focus: focus });
+      // eslint-disable-next-line no-await-in-loop
+      await sleep(900);
+      // eslint-disable-next-line no-await-in-loop
+      const afterN = await publishedCountByCandidate(sb, candidateId);
+      if (didOk || afterN > beforeN) okCount++;
+      else failCount++;
+    }
+
+    // Enforce exactly 2 (delete extras if any).
+    // eslint-disable-next-line no-await-in-loop
+    const pruned = await pruneToTwoLatest(sb, candidateId);
+    // eslint-disable-next-line no-await-in-loop
+    const finalN = await publishedCountByCandidate(sb, candidateId);
+    if (finalN === 2) ensuredTwo++;
+    else ensuredFail++;
+
+    console.log("[candidate]", { candidate_id: candidateId, final: finalN, pruned });
   }
 
   const final = await sb.from("citizen_news_posts").select("*", { count: "exact", head: true }).eq("status", "published");
-  console.log("[regenerate] done", { candidates: candidates.length, calls_ok: okCount, calls_failed: failCount, published_count: final.count ?? null });
+  console.log("[regenerate] done", {
+    candidates: candidates.length,
+    ensured_two_each: ensuredTwo,
+    ensured_failed: ensuredFail,
+    calls_ok: okCount,
+    calls_failed: failCount,
+    published_count: final.count ?? null,
+  });
 }
 
 main().catch((e) => {

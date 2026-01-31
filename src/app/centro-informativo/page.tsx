@@ -33,6 +33,8 @@ function isLocalHostUrl(u: string): boolean {
 
 function isSafeDirectImageHost(u: string): boolean {
   try {
+    // Inline data URLs are safe and must not be proxied.
+    if (u.trim().toLowerCase().startsWith("data:image/")) return true;
     const host = new URL(u).host.toLowerCase();
     if (!host) return false;
     if (host.endsWith("vercel.app") || host === "localhost") return true;

@@ -30,12 +30,20 @@ function normalizeQuery(q: string): string {
     .slice(0, 180);
 }
 
-function enforceBitmapFiletype(query: string): string {
-  const q = normalizeQuery(query);
-  if (!q) return q;
-  // MediaWiki search supports `filetype:`. Bitmap avoids PDFs/djvu and most vectors.
-  if (/\bfiletype\s*:/i.test(q)) return q;
-  return `${q} filetype:bitmap`.slice(0, 200);
+function buildSearchQueries(query: string): string[] {
+  const q0 = normalizeQuery(query);
+  if (!q0) return [];
+  // NOTE: We do NOT force `filetype:bitmap`. On Commons, that token can yield 0 results for many queries.
+  // Strategy:
+  // - First try plain search (then filter by MIME + license).
+  // - If empty, retry with a couple of common photo extensions.
+  if (/\bfiletype\s*:/i.test(q0)) return [q0];
+  return [
+    q0,
+    `${q0} filetype:jpg`.slice(0, 200),
+    `${q0} filetype:jpeg`.slice(0, 200),
+    `${q0} filetype:png`.slice(0, 200),
+  ];
 }
 
 function isAllowedLicenseShort(s: string | null): boolean {
@@ -226,8 +234,8 @@ export async function pickWikimediaImage(args: {
   avoid_urls?: string[];
   strict_avoid?: boolean;
 }): Promise<WikimediaImage | null> {
-  const q = enforceBitmapFiletype(args.query);
-  if (!q) return null;
+  const queries = buildSearchQueries(args.query);
+  if (!queries.length) return null;
 
   const avoid = new Set((args.avoid_urls ?? []).filter(isNonEmptyString).map((u) => u.trim()));
   const strictAvoid = args.strict_avoid === true;
@@ -239,68 +247,75 @@ export async function pickWikimediaImage(args: {
 
   // Commons API (no key). We intentionally keep it conservative.
   // Docs: https://www.mediawiki.org/wiki/API:Search
-  const url = new URL("https://commons.wikimedia.org/w/api.php");
-  url.searchParams.set("action", "query");
-  url.searchParams.set("format", "json");
-  url.searchParams.set("origin", "*");
-  url.searchParams.set("generator", "search");
-  url.searchParams.set("gsrsearch", q);
-  url.searchParams.set("gsrlimit", "18");
-  url.searchParams.set("gsrnamespace", "6"); // File:
-  url.searchParams.set("prop", "imageinfo");
-  url.searchParams.set("iiprop", "url|mime|extmetadata");
-  url.searchParams.set("iiurlwidth", "1400");
+  for (const q of queries) {
+    const url = new URL("https://commons.wikimedia.org/w/api.php");
+    url.searchParams.set("action", "query");
+    url.searchParams.set("format", "json");
+    url.searchParams.set("origin", "*");
+    url.searchParams.set("generator", "search");
+    url.searchParams.set("gsrsearch", q);
+    url.searchParams.set("gsrlimit", "18");
+    url.searchParams.set("gsrnamespace", "6"); // File:
+    url.searchParams.set("prop", "imageinfo");
+    url.searchParams.set("iiprop", "url|mime|extmetadata");
+    url.searchParams.set("iiurlwidth", "1400");
 
-  const resp = await fetch(url.toString(), {
-    method: "GET",
-    cache: "no-store",
-    headers: { "user-agent": "mercadeo-politico-2026/1.0 (news automation)" },
-  }).catch(() => null);
+    // eslint-disable-next-line no-await-in-loop
+    const resp = await fetch(url.toString(), {
+      method: "GET",
+      cache: "no-store",
+      headers: { "user-agent": "mercadeo-politico-2026/1.0 (news automation)" },
+    }).catch(() => null);
 
-  if (!resp?.ok) return null;
-  const json = (await resp.json().catch(() => null)) as any;
-  const pages = json?.query?.pages;
-  if (!pages || typeof pages !== "object") return null;
+    if (!resp?.ok) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const json = (await resp.json().catch(() => null)) as any;
+    const pages = json?.query?.pages;
+    if (!pages || typeof pages !== "object") continue;
 
-  const candidates: WikimediaImage[] = [];
+    const candidates: WikimediaImage[] = [];
 
-  for (const k of Object.keys(pages)) {
-    const p = pages[k];
-    const title = safeText(p?.title);
-    const infos = Array.isArray(p?.imageinfo) ? p.imageinfo : [];
-    const info = infos[0];
-    const image_url = safeText(info?.url);
-    const thumb_url = safeText(info?.thumburl);
-    const mime = safeText(info?.mime);
-    if (!title || !image_url) continue;
-    // Must be an actual image; Commons search can return PDFs/djvu.
-    if (!mime || !mime.toLowerCase().startsWith("image/")) continue;
-    if (isLikelyDocumentImageTitleOrUrl(`${title} ${image_url}`)) continue;
+    for (const k of Object.keys(pages)) {
+      const p = pages[k];
+      const title = safeText(p?.title);
+      const infos = Array.isArray(p?.imageinfo) ? p.imageinfo : [];
+      const info = infos[0];
+      const image_url = safeText(info?.url);
+      const thumb_url = safeText(info?.thumburl);
+      const mime = safeText(info?.mime);
+      if (!title || !image_url) continue;
+      // Must be an actual image; Commons search can return PDFs/djvu.
+      if (!mime || !mime.toLowerCase().startsWith("image/")) continue;
+      if (isLikelyDocumentImageTitleOrUrl(`${title} ${image_url}`)) continue;
 
-    const page_url = `https://commons.wikimedia.org/wiki/${encodeURIComponent(title.replaceAll(" ", "_"))}`;
+      const page_url = `https://commons.wikimedia.org/wiki/${encodeURIComponent(title.replaceAll(" ", "_"))}`;
 
-    const meta = info?.extmetadata ?? {};
-    const license_short = safeText(meta?.LicenseShortName?.value);
-    if (!isAllowedLicenseShort(license_short)) continue;
+      const meta = info?.extmetadata ?? {};
+      const license_short = safeText(meta?.LicenseShortName?.value);
+      if (!isAllowedLicenseShort(license_short)) continue;
 
-    const author = safeText(meta?.Artist?.value)?.replaceAll(/<[^>]*>/g, "").trim() ?? null;
-    const attribution =
-      safeText(meta?.Attribution?.value)?.replaceAll(/<[^>]*>/g, "").trim() ??
-      safeText(meta?.Credit?.value)?.replaceAll(/<[^>]*>/g, "").trim() ??
-      null;
+      const author = safeText(meta?.Artist?.value)?.replaceAll(/<[^>]*>/g, "").trim() ?? null;
+      const attribution =
+        safeText(meta?.Attribution?.value)?.replaceAll(/<[^>]*>/g, "").trim() ??
+        safeText(meta?.Credit?.value)?.replaceAll(/<[^>]*>/g, "").trim() ??
+        null;
 
-    candidates.push({
-      image_url,
-      page_url,
-      thumb_url,
-      license_short,
-      attribution,
-      author,
-      mime,
-      source: "wikimedia_commons",
-    });
+      candidates.push({
+        image_url,
+        page_url,
+        thumb_url,
+        license_short,
+        attribution,
+        author,
+        mime,
+        source: "wikimedia_commons",
+      });
+    }
+
+    const picked = pickFromCandidates(candidates, avoid, avoidKeys, q, strictAvoid);
+    if (picked) return picked;
   }
 
-  return pickFromCandidates(candidates, avoid, avoidKeys, q, strictAvoid);
+  return null;
 }
 

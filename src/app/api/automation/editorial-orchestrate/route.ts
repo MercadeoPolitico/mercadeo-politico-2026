@@ -202,6 +202,33 @@ function isBlockedNewsUrl(url: string): boolean {
   }
 }
 
+function isOffTopicForRegionalCandidate(args: { office: string; region: string; title: string; url: string }): boolean {
+  const off = String(args.office || "").toLowerCase();
+  if (off.includes("senado")) return false;
+  const reg = String(args.region || "").toLowerCase();
+  if (!reg) return false;
+
+  const title = String(args.title || "").toLowerCase();
+  const url = String(args.url || "").toLowerCase();
+  const hay = `${title} ${url}`;
+
+  // Region: Meta (extendable later)
+  if (reg.includes("meta")) {
+    const localHints = [" meta", "villavicencio", "acacias", "acacías", "granada", "vistahermosa", "puerto gaitan", "puerto lópez", "orinoqu"];
+    const hasLocalHint = localHints.some((h) => hay.includes(h));
+    if (hasLocalHint) return false;
+
+    // Strong off-topic patterns: sports/teams centered in Bogotá/Cundinamarca.
+    const sports = ["millonarios", "santa fe", "santafé", "liga", "fútbol", "futbol", "dimayor"];
+    if (sports.some((k) => hay.includes(k))) return true;
+
+    // If it doesn't mention Meta/local municipalities at all, it's too risky for "viral" mode.
+    return true;
+  }
+
+  return false;
+}
+
 function canonicalizeUrlForDedupe(raw: string | null | undefined): string {
   const v = String(raw || "").trim();
   if (!v) return "";
@@ -395,6 +422,8 @@ async function fetchViralNewsArticle(args: {
     });
     if (!a) continue;
     if (isBlockedNewsUrl(a.url)) continue;
+    // Hard relevance floor for regional candidates (avoid cross-region sports/news).
+    if (isOffTopicForRegionalCandidate({ office: args.office, region: args.region, title: a.title, url: a.url })) continue;
     // Prefer actual viral-ish headlines.
     if (!isViralTitle(a.title)) continue;
     return a;
@@ -1020,11 +1049,230 @@ function stripPublicMetaLines(input: string): string {
     .trim();
 }
 
+function buildImageCreditLineFromMedia(mm: Record<string, unknown> | null): string | null {
+  const m = mm ?? {};
+  const creditBits = [
+    typeof (m as any).attribution === "string" ? String((m as any).attribution) : null,
+    typeof (m as any).author === "string" ? `Autor: ${String((m as any).author)}` : null,
+    typeof (m as any).license_short === "string" ? `Licencia: ${String((m as any).license_short)}` : null,
+    typeof (m as any).page_url === "string" ? `Fuente imagen: ${String((m as any).page_url)}` : null,
+  ].filter(Boolean);
+  return creditBits.length ? `Crédito imagen: ${creditBits.join(" · ")}` : null;
+}
+
+function upsertImageMetaLines(args: { text: string; imageUrl: string; creditLine: string | null }): string {
+  const base = normalizeLineBreaks(args.text);
+  if (!base) return base;
+  const lines = base.split("\n");
+  // Remove old meta lines (we'll reinsert cleanly).
+  const cleaned = lines.filter((l) => {
+    const t = String(l || "").trim();
+    const low = t.toLowerCase();
+    if (low.startsWith("imagen:")) return false;
+    if (low.startsWith("crédito imagen:") || low.startsWith("credito imagen:")) return false;
+    if (low.startsWith("fuente imagen:")) return false;
+    return true;
+  });
+
+  const insertBlock = ["", `Imagen: ${args.imageUrl}`, args.creditLine].filter(Boolean) as string[];
+
+  // Keep the public footer at the end when possible.
+  const footerIdx = cleaned.findIndex((l) => String(l || "").toLowerCase().includes("contenido generado y analizado por"));
+  if (footerIdx >= 0) {
+    const before = cleaned.slice(0, footerIdx);
+    const after = cleaned.slice(footerIdx);
+    return normalizeLineBreaks([...before, ...insertBlock, ...after].join("\n"));
+  }
+
+  return normalizeLineBreaks([...cleaned, ...insertBlock].join("\n"));
+}
+
 function fallbackPublicImageUrl(seed: string): string {
   // Use a real hosted asset (not a data URL) so DB constraints that require http(s) URLs are satisfied.
   const s = String(seed || "mp26").slice(0, 120);
   const v = createHash("sha256").update(s).digest("hex").slice(0, 10);
   return `${getSiteUrlString()}/fallback/news.svg?v=${v}`;
+}
+
+function hashSeed(input: string): number {
+  // Simple deterministic hash (not cryptographic).
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(a: number): () => number {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function localAbstractSvg(args: { seed: string }): string {
+  const seed = hashSeed(args.seed);
+  const rnd = mulberry32(seed);
+  const w = 1024;
+  const h = 1024;
+
+  // Patriotic-inspired palette (subtle).
+  const colors = [
+    { c: "#facc15", a: 0.22 }, // amarillo
+    { c: "#2563eb", a: 0.18 }, // azul
+    { c: "#ef4444", a: 0.14 }, // rojo
+    { c: "#22c55e", a: 0.12 }, // verde
+    { c: "#06b6d4", a: 0.1 }, // cyan
+  ];
+
+  const blobs = Array.from({ length: 8 }).map((_, i) => {
+    const x = Math.floor(rnd() * w);
+    const y = Math.floor(rnd() * h);
+    const r = Math.floor(clamp(180 + rnd() * 420, 160, 620));
+    const p = colors[i % colors.length];
+    const a = clamp(p.a + rnd() * 0.08, 0.08, 0.32);
+    return { x, y, r, color: p.c, alpha: a };
+  });
+
+  const glass = `
+    <rect x="120" y="120" width="784" height="784" rx="72"
+      fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.22)" stroke-width="2"/>
+    <rect x="140" y="140" width="744" height="744" rx="64"
+      fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.10)" stroke-width="1"/>
+  `;
+
+  const blurId = "b";
+  const blobEls = blobs
+    .map(
+      (b) =>
+        `<circle cx="${b.x}" cy="${b.y}" r="${b.r}" fill="${b.color}" fill-opacity="${b.alpha.toFixed(
+          3,
+        )}" filter="url(#${blurId})"/>`,
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs>
+    <filter id="${blurId}" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="90"/>
+    </filter>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b2f54"/>
+      <stop offset="1" stop-color="#081c33"/>
+    </linearGradient>
+  </defs>
+  <rect width="${w}" height="${h}" fill="url(#g)"/>
+  ${blobEls}
+  ${glass}
+</svg>`;
+}
+
+async function storeLocalSvgFallback(args: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  candidateId: string;
+  seed: string;
+}): Promise<string | null> {
+  const admin = args.admin;
+  if (!admin) return null;
+  try {
+    const svg = localAbstractSvg({ seed: args.seed });
+    const buf = Buffer.from(svg, "utf8");
+    const ymd = new Date().toISOString().slice(0, 10);
+    const h = createHash("sha256").update(String(args.seed || "")).digest("hex").slice(0, 16);
+    const path = `${args.candidateId}/news-fallback/${ymd}/${Date.now()}-${h}.svg`;
+    const up = await admin.storage.from("politician-media").upload(path, buf, {
+      contentType: "image/svg+xml",
+      upsert: false,
+      cacheControl: "3600",
+    });
+    if (up.error) {
+      // LAST RESORT: return an inline data URL (works even if Storage is misconfigured).
+      // NOTE: Centro Informativo must treat data:image/* as safe and not proxy it.
+      return `data:image/svg+xml;base64,${buf.toString("base64")}`;
+    }
+    const { data } = admin.storage.from("politician-media").getPublicUrl(path);
+    const url = data?.publicUrl;
+    if (typeof url === "string" && url.startsWith("http")) return url;
+    return `data:image/svg+xml;base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+function isPrivateIpHost(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  if (!h) return true;
+  if (h === "localhost" || h.endsWith(".localhost")) return true;
+  // Block raw IPv4/IPv6 literals to avoid SSRF to private networks.
+  const isIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(h);
+  const isIpv6 = h.includes(":");
+  return isIpv4 || isIpv6;
+}
+
+async function downloadAndStoreApprovedImage(args: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  candidateId: string;
+  seed: string;
+  imageUrl: string;
+}): Promise<{ ok: true; public_url: string } | { ok: false; reason: string }> {
+  const admin = args.admin;
+  if (!admin) return { ok: false, reason: "supabase_not_configured" };
+  const url = String(args.imageUrl || "").trim();
+  if (!/^https?:\/\//i.test(url)) return { ok: false, reason: "invalid_url" };
+  try {
+    const u = new URL(url);
+    if (isPrivateIpHost(u.hostname)) return { ok: false, reason: "host_blocked" };
+  } catch {
+    return { ok: false, reason: "invalid_url" };
+  }
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 10_000);
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      cache: "no-store",
+      signal: ctrl.signal,
+      headers: { accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8" },
+    });
+    if (!resp.ok) return { ok: false, reason: `http_${resp.status}` };
+    const ct = resp.headers.get("content-type") ?? "application/octet-stream";
+    if (!ct.toLowerCase().startsWith("image/")) return { ok: false, reason: "not_image" };
+    const len = Number(resp.headers.get("content-length") ?? "0");
+    if (Number.isFinite(len) && len > 7_500_000) return { ok: false, reason: "too_large" };
+    const ab = await resp.arrayBuffer();
+    if (ab.byteLength > 7_500_000) return { ok: false, reason: "too_large" };
+
+    const ext = ct.toLowerCase().includes("png") ? "png" : ct.toLowerCase().includes("webp") ? "webp" : "jpg";
+    const ymd = new Date().toISOString().slice(0, 10);
+    const h = createHash("sha256").update(String(args.seed || "")).digest("hex").slice(0, 16);
+    const path = `${args.candidateId}/news-source-images/${ymd}/${Date.now()}-${h}.${ext}`;
+    const up = await admin.storage.from("politician-media").upload(path, Buffer.from(ab), {
+      contentType: ct,
+      upsert: false,
+      cacheControl: "3600",
+    });
+    if (up.error) return { ok: false, reason: "storage_upload_failed" };
+    const { data } = admin.storage.from("politician-media").getPublicUrl(path);
+    const publicUrl = data?.publicUrl;
+    if (typeof publicUrl !== "string" || !publicUrl.startsWith("http")) return { ok: false, reason: "storage_public_url_failed" };
+    return { ok: true, public_url: publicUrl };
+  } catch (e: any) {
+    const name = typeof e?.name === "string" ? e.name : "";
+    if (name === "AbortError") return { ok: false, reason: "timeout" };
+    return { ok: false, reason: "network_error" };
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 async function fetchActiveRssSources(args: {
@@ -1939,7 +2187,7 @@ export async function POST(req: Request) {
 
   // IMPORTANT (rights & reliability):
   // - We do NOT publish/hotlink outlet images (OpenGraph/Twitter cards) because licenses are unclear and hotlinking often fails.
-  // - We only publish CC images (Wikimedia) or our own fallback placeholder.
+  // - We only publish CC images (Wikimedia) or first-party media we store (including licensed feeds).
   // Canonical source URL (dedupe across tracking params); ensure we always persist one.
   const newsTitleHint = rssChosen?.title ?? article?.title ?? lastPublished?.title ?? "";
   const titleTokens = keywordsFromTitle(newsTitleHint);
@@ -1959,6 +2207,22 @@ export async function POST(req: Request) {
   const og = sourceUrl ? await fetchOpenGraphMedia({ url: sourceUrl }) : null;
   const ogRefImageUrl =
     og?.image_url && !avoidUrls.includes(og.image_url) && !isBadOgImageUrl(og.image_url) ? og.image_url : null;
+
+  // If the selected RSS source provides an image AND the feed is license_confirmed=true (guardrail),
+  // we can cache it into our first-party storage and publish it safely (no hotlink).
+  const rssRefImageUrlRaw =
+    rssChosen?.rss_image_urls?.find((u) => typeof u === "string" && u.trim() && !avoidUrls.includes(u) && !isBadOgImageUrl(u)) ?? null;
+  const rssCached =
+    rssRefImageUrlRaw && admin
+      ? await downloadAndStoreApprovedImage({
+          admin,
+          candidateId: pol.id,
+          seed: `${pol.slug}|rss|${rssChosen?.source_name || ""}|${rssChosen?.title || ""}|slot:${story_slot}|req:${requestId}`,
+          imageUrl: rssRefImageUrlRaw,
+        })
+      : null;
+  const rssCachedImageUrl = rssCached && rssCached.ok ? rssCached.public_url : null;
+  const useRssCachedImage = Boolean(rssCachedImageUrl);
   const imageQueryPrimary = [
     ...titleTokens,
     ...(winner.data.image_keywords?.slice(0, 4) ?? []),
@@ -1974,23 +2238,27 @@ export async function POST(req: Request) {
   // 1) Try the semantic query (keywords + geo).
   // 2) If no CC image found, retry with a geo/photo-biased query for consistent visuals.
   // Keep fallbacks intentionally broad; over-constraining Commons search can yield zero hits.
-  const imageQueryGeoFallback = [pol.region, "Colombia", "ciudad", "fotografía"].filter(Boolean).join(" ");
-  const imageQueryCivicPhotoFallback = [pol.region, "Colombia", "servicio público", "institución", "ciudad", "fotografía"]
+  const geoHints =
+    regionKey === "meta"
+      ? ["Departamento del Meta", "Villavicencio", "Acacías", "Granada (Meta)", "Puerto López (Meta)", "Llanos Orientales", "Orinoquía"]
+      : [];
+  const imageQueryGeoFallback = [pol.region, ...geoHints, "Colombia", "ciudad", "fotografía"].filter(Boolean).join(" ");
+  const imageQueryCivicPhotoFallback = [pol.region, ...geoHints, "Colombia", "servicio público", "institución", "ciudad", "fotografía"]
     .filter(Boolean)
     .join(" ");
 
-  let pickedImage = await pickWikimediaImage({ query: imageQueryPrimary, avoid_urls: avoidUrls });
+  let pickedImage = useRssCachedImage ? null : await pickWikimediaImage({ query: imageQueryPrimary, avoid_urls: avoidUrls });
   let lowRelevanceFallback: typeof pickedImage | null = null;
   let imageQueryUsed: string = imageQueryPrimary;
   if (!pickedImage) {
-    const retry = await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: avoidUrls });
+    const retry = useRssCachedImage ? null : await pickWikimediaImage({ query: imageQueryGeoFallback, avoid_urls: avoidUrls });
     if (retry) {
       pickedImage = retry;
       imageQueryUsed = imageQueryGeoFallback;
     }
   }
   if (!pickedImage) {
-    const retry2 = await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: avoidUrls });
+    const retry2 = useRssCachedImage ? null : await pickWikimediaImage({ query: imageQueryCivicPhotoFallback, avoid_urls: avoidUrls });
     if (retry2) {
       pickedImage = retry2;
       imageQueryUsed = imageQueryCivicPhotoFallback;
@@ -2004,8 +2272,8 @@ export async function POST(req: Request) {
     pickedImage = null;
   }
 
-  // If we couldn't find a CC image, generate a first-party image (MSI/OpenAI) and store it in Supabase Storage.
-  // This avoids hotlinking and improves reliability/performance.
+  // If we couldn't find a CC image (or RSS cached image), optionally generate a first-party image (MSI/OpenAI)
+  // and store it in Supabase Storage. This avoids hotlinking and improves reliability/performance.
   const aiPrompt = [
     "Imagen ilustrativa editorial para una nota cívica en Colombia (no propaganda).",
     "Requisitos: sin texto, sin logos, sin marcas de agua, sin banderas explícitas, sin símbolos partidistas.",
@@ -2044,17 +2312,53 @@ export async function POST(req: Request) {
   }
 
   const imageSeedBase = `${pol.slug}|${sourceUrl || "no_source"}|${newsTitleHint || ""}`.slice(0, 600);
-  // Prefer first-party images for Centro Informativo to guarantee uniqueness and reliability.
-  // Wikimedia remains as a fallback when AI is unavailable.
-  const aiStored = admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
+  // Avoid unnecessary AI calls (credits): use RSS cached first, then CC (Wikimedia),
+  // and only then generate a first-party image if no other option exists.
+  const shouldTryAi = Boolean(admin && !useRssCachedImage && !pickedImage && !lowRelevanceFallback);
+  const aiStored = shouldTryAi && admin ? await generateUniqueAiImage({ seedBase: imageSeedBase, avoid: avoidUrls }) : null;
   const useAiImage = Boolean(aiStored && aiStored.ok);
-  const useWikimediaImage = Boolean(!useAiImage && pickedImage);
+  const useWikimediaImage = Boolean(!useRssCachedImage && !useAiImage && (pickedImage || lowRelevanceFallback));
+
+  const selectedCommons = (pickedImage ?? lowRelevanceFallback) || null;
+  const selectedCommonsUrl = selectedCommons ? selectedCommons.thumb_url ?? selectedCommons.image_url : null;
+
+  // Best-effort: cache Wikimedia image into first-party Storage (reliability + consistent hosts).
+  const commonsCached =
+    !useRssCachedImage && !useAiImage && selectedCommonsUrl && admin
+      ? await (async () => {
+          try {
+            const u = new URL(selectedCommonsUrl);
+            const host = u.host.toLowerCase();
+            if (!(host === "upload.wikimedia.org" || host.endsWith(".wikimedia.org"))) return null;
+          } catch {
+            return null;
+          }
+          const stored = await downloadAndStoreApprovedImage({
+            admin,
+            candidateId: pol.id,
+            seed: `${pol.slug}|commons|${selectedCommons?.page_url || ""}|${newsTitleHint || ""}|slot:${story_slot}|req:${requestId}`,
+            imageUrl: selectedCommonsUrl,
+          });
+          return stored && stored.ok ? stored.public_url : null;
+        })()
+      : null;
 
   const finalImageUrl =
-    (useAiImage ? aiStored!.public_url : null) ??
-    (useWikimediaImage ? pickedImage!.thumb_url ?? pickedImage!.image_url : null) ??
-    (lowRelevanceFallback?.thumb_url ?? lowRelevanceFallback?.image_url ?? null);
-  const finalImageUrlSafe = finalImageUrl || fallbackPublicImageUrl(`${pol.id}-${imageQueryUsed}-${Date.now()}`);
+    (useRssCachedImage ? rssCachedImageUrl : null) ??
+    (commonsCached ? commonsCached : null) ??
+    (useWikimediaImage ? selectedCommonsUrl : null) ??
+    (useAiImage ? aiStored!.public_url : null);
+  // If everything fails (no AI + no CC match), store a deterministic first-party SVG so the feed never shows "Imagen no disponible".
+  const localFallbackUrl =
+    !finalImageUrl && admin
+      ? await storeLocalSvgFallback({
+          admin,
+          candidateId: pol.id,
+          seed: `${pol.slug}|${pol.region}|${sourceUrl || "no_source"}|${newsTitleHint || ""}|slot:${story_slot}|req:${requestId}`,
+        })
+      : null;
+  const finalImageUrlSafe = finalImageUrl ?? localFallbackUrl ?? fallbackPublicImageUrl(`${pol.id}-${imageQueryUsed}-${Date.now()}`);
+  const useLocalFallbackImage = Boolean(!finalImageUrl && localFallbackUrl);
 
   const metadata = {
     orchestrator: { source: "n8n", version: "v2_arbiter" },
@@ -2085,9 +2389,19 @@ export async function POST(req: Request) {
     source_region: rssChosen ? rssChosen.source_region : regional.region_used,
     original_rss_url: rssChosen ? rssChosen.url : null,
     has_rss_image: rssChosen ? Boolean(rssChosen.rss_image_urls?.length) : false,
-    // RSS images are reference-only, never published.
+    // RSS media URLs are kept for traceability. If license_confirmed=true, we may cache the feed image and publish the cached (first-party) copy.
     rss_image_urls: rssChosen ? (rssChosen.rss_image_urls ?? []).slice(0, 4) : [],
-    image_source: useAiImage ? "first_party_ai" : useWikimediaImage ? "wikimedia_commons" : "fallback_svg",
+    image_source: useRssCachedImage
+      ? "rss_cached"
+      : commonsCached
+        ? "wikimedia_cached"
+        : useWikimediaImage
+          ? "wikimedia_commons"
+          : useAiImage
+            ? "first_party_ai"
+            : useLocalFallbackImage
+              ? "first_party_local_svg"
+              : "fallback_svg",
     reference_media: ogRefImageUrl
       ? {
           type: "image",
@@ -2097,15 +2411,25 @@ export async function POST(req: Request) {
         }
       : null,
     image_query: imageQueryUsed,
-    media: useWikimediaImage
+    media: useRssCachedImage
       ? {
           type: "image",
           image_url: finalImageUrlSafe,
-          page_url: pickedImage!.page_url,
-          license_short: pickedImage!.license_short,
-          attribution: pickedImage!.attribution,
-          author: pickedImage!.author,
-          source: pickedImage!.source,
+          page_url: sourceUrl ?? rssChosen?.url ?? null,
+          license_short: "licensed_feed",
+          attribution: `Imagen (según RSS) · Fuente: ${rssChosen?.source_name || "RSS aprobado"} · ${sourceUrl ?? rssChosen?.url ?? ""}`.trim(),
+          author: null,
+          source: "rss_cached",
+        }
+      : (useWikimediaImage || commonsCached)
+      ? {
+          type: "image",
+          image_url: finalImageUrlSafe,
+          page_url: selectedCommons?.page_url ?? null,
+          license_short: selectedCommons?.license_short ?? null,
+          attribution: selectedCommons?.attribution ?? null,
+          author: selectedCommons?.author ?? null,
+          source: commonsCached ? "wikimedia_cached" : (selectedCommons?.source ?? "wikimedia_commons"),
         }
       : useAiImage
         ? {
@@ -2117,6 +2441,16 @@ export async function POST(req: Request) {
             author: null,
             source: "first_party_ai",
           }
+        : useLocalFallbackImage
+          ? {
+              type: "image",
+              image_url: finalImageUrlSafe,
+              page_url: null,
+              license_short: "first_party_local_svg",
+              attribution: "Imagen ilustrativa local (first-party) · MarketBrain Technology™.",
+              author: null,
+              source: "first_party_local_svg",
+            }
         : {
             type: "image",
             image_url: finalImageUrlSafe,
@@ -2295,6 +2629,7 @@ export async function POST(req: Request) {
       // Publish an image whenever possible. If we couldn't find a real image, the fallback SVG is still better than blank.
       const mediaOk = mediaUrl && !isBadOgImageUrl(mediaUrl) ? mediaUrl : fallbackPublicImageUrl(`${pol.id}|${created_at}|fallback`);
       let mediaOkFinal = mediaOk;
+      let publishMediaOverride: Record<string, unknown> | null = null;
 
       // Hard dedupe: never insert another post for the same canonical source URL (global).
       if (sourceUrl) {
@@ -2357,6 +2692,15 @@ export async function POST(req: Request) {
         const nextDup = nextUrl ? usedMediaUrls.has(nextUrl) || (k1 ? usedMediaKeys.has(k1) : false) : false;
         if (nextUrl && !nextDup) {
           mediaOkFinal = nextUrl;
+          publishMediaOverride = {
+            type: "image",
+            image_url: nextUrl,
+            page_url: picked.page_url,
+            license_short: picked.license_short,
+            attribution: picked.attribution,
+            author: picked.author,
+            source: picked.source,
+          };
           break;
         }
         if (nextUrl) {
@@ -2370,9 +2714,35 @@ export async function POST(req: Request) {
         const k0 = commonsFileKeyFromUrl(mediaOkFinal);
         const isDup = usedMediaUrls.has(mediaOkFinal) || (k0 ? usedMediaKeys.has(k0) : false);
         if (isDup) {
-          mediaOkFinal = fallbackPublicImageUrl(`${pol.id}|${sourceUrl || "no_source"}|unique_fallback|${requestId}`);
+          const stored = await storeLocalSvgFallback({
+            admin,
+            candidateId: pol.id,
+            seed: `${pol.slug}|publish_unique_fallback|${sourceUrl || "no_source"}|${created_at}|${requestId}`,
+          });
+          mediaOkFinal = stored ?? fallbackPublicImageUrl(`${pol.id}|${sourceUrl || "no_source"}|unique_fallback|${requestId}`);
+          if (stored) {
+            publishMediaOverride = {
+              type: "image",
+              image_url: stored,
+              page_url: null,
+              license_short: "first_party_local_svg",
+              attribution: "Imagen ilustrativa local (first-party) · MarketBrain Technology™.",
+              author: null,
+              source: "first_party_local_svg",
+            };
+          }
         }
       }
+
+      // Keep body meta lines consistent with the final selected image.
+      const mmForPublish =
+        publishMediaOverride && typeof publishMediaOverride === "object"
+          ? publishMediaOverride
+          : ((metadata as any)?.media && typeof (metadata as any).media === "object"
+              ? ((metadata as any).media as Record<string, unknown>)
+              : null);
+      const creditLineForPublish = buildImageCreditLineFromMedia(mmForPublish);
+      const bodyForPublish = upsertImageMetaLines({ text: blogWithCredits, imageUrl: mediaOkFinal, creditLine: creditLineForPublish });
 
       const { data: post, error: postErr } = await admin
         .from("citizen_news_posts")
@@ -2382,7 +2752,7 @@ export async function POST(req: Request) {
           title: safeTitle.slice(0, 160),
           subtitle,
           excerpt,
-          body: blogWithCredits,
+          body: bodyForPublish,
           media_urls: [mediaOkFinal],
           source_url: typeof (metadata as any).source_url === "string" ? (metadata as any).source_url : null,
           status: "published",
