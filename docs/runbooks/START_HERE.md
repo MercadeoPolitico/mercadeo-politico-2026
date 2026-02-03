@@ -27,6 +27,12 @@ Ver: `docs/runbooks/RECONNECT.md` (Docker logout/login, Chrome vs Edge, PowerShe
 ### Centro Informativo — imágenes que no cambian
 El feed lee de Supabase (`citizen_news_posts`). Las imágenes **solo cambian** cuando se borran los posts y se regeneran con la API desplegada. Ver `docs/runbooks/CI_REGENERATE.md`: ejecutar `npm run ci:purge-regenerate` con `MP26_BASE_URL` apuntando a producción, o llamar `POST /api/automation/ci-purge` y luego el script con `CI_SKIP_PURGE=1`.
 
+### Fotos de candidatos (placeholder)
+Las fotos se sirven desde Storage (`politician-media/{id}/profile/profile`). Si no hay archivo, se muestra SVG placeholder. La URL incluye `updated_at` para cache-bust tras subir/borrar foto en Admin → Políticos. Si un candidato muestra placeholder, subir foto en Admin → Políticos → [candidato] → Foto.
+
+### Auto-publicación — primera ejecución
+Candidatos con `last_auto_blog_at` null se consideran "due" en la primera ejecución del cron (Railway Worker). Tras el primer trigger se respeta la cadencia (`auto_blog_every_hours`, default 8).
+
 ---
 
 ## 2) Variables mínimas (sin valores)
