@@ -89,6 +89,7 @@ export async function GET(req: Request) {
   const results: Array<{ candidate_id: string; triggered: boolean; reason: string; next_due_at?: string | null }> = [];
   const usedNewsUrls = new Set<string>();
   const usedMediaUrls = new Set<string>();
+  const usedTitles = new Set<string>();
 
   const focusClusters: string[][] = [
     ["secuestro", "extorsión", "amenaza"],
@@ -120,7 +121,8 @@ export async function GET(req: Request) {
 
       const cycle = Math.floor(lastSafe / Math.max(1, periodMs)) + 1;
       const jitterMs = jitterMsFor({ candidateId: c.id, cycle, maxJitterMs });
-      const nextDueMs = lastSafe + periodMs + jitterMs;
+      // Never-before-run candidates are due immediately so first cron run produces content.
+      const nextDueMs = !Number.isFinite(lastMs) ? now - 1 : lastSafe + periodMs + jitterMs;
       return { id: c.id, nextDueMs, cycle };
     })
     .filter((x) => now >= x.nextDueMs)
@@ -161,6 +163,7 @@ export async function GET(req: Request) {
         // Hard guarantee of uniqueness within the same cron run (avoids race conditions on DB propagation).
         avoid_news_urls: Array.from(usedNewsUrls).slice(0, 80),
         avoid_media_urls: Array.from(usedMediaUrls).slice(0, 120),
+        avoid_titles: Array.from(usedTitles).slice(0, 60),
       }),
       cache: "no-store",
     });
@@ -175,11 +178,13 @@ export async function GET(req: Request) {
       // eslint-disable-next-line no-await-in-loop
       const { data } = await admin
         .from("citizen_news_posts")
-        .select("source_url,media_urls")
+        .select("title,source_url,media_urls")
         .eq("status", "published")
         .order("published_at", { ascending: false })
         .limit(18);
       for (const row of data ?? []) {
+        const title = typeof (row as any)?.title === "string" ? String((row as any).title).trim() : "";
+        if (title) usedTitles.add(title);
         const src = typeof (row as any)?.source_url === "string" ? String((row as any).source_url).trim() : "";
         if (src) usedNewsUrls.add(src);
         const arr = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];

@@ -23,7 +23,11 @@ export function AuthorizeClient({ token }: { token: string }) {
   useEffect(() => {
     let cancelled = false;
     if (!trimmed) {
-      setState({ kind: "error", message: "Enlace inválido (token faltante)." });
+      setState({
+        kind: "error",
+        message:
+          "Este enlace no trae el código necesario. Debes abrir el enlace completo que te enviaron por WhatsApp (no copies solo una parte). Si no tienes el enlace o ya expiró, pide al administrador que te envíe uno nuevo.",
+      });
       return;
     }
     setState({ kind: "loading" });
@@ -99,6 +103,9 @@ export function AuthorizeClient({ token }: { token: string }) {
       <div className="glass-card p-6">
         <p className="text-sm font-semibold">No se pudo abrir el enlace</p>
         <p className="mt-2 text-sm text-muted">{state.message}</p>
+        <p className="mt-3 text-xs text-muted">
+          Si el admin te envió el enlace por WhatsApp, asegúrate de tocar el enlace completo (que empieza con la dirección del sitio y termina con ?token=…). No escribas la dirección a mano ni copies solo una parte.
+        </p>
       </div>
     );
   }

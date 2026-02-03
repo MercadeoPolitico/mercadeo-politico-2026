@@ -60,7 +60,10 @@ En Railway Worker:
   - `CRON_SECRET` no configurado en Vercel
   - `MP26_AUTOMATION_TOKEN` faltante
   - `politicians.auto_blog_enabled` o `auto_publish_enabled` en false
+  - **Railway Worker** no está corriendo o no tiene `MP26_BASE_URL` y `CRON_SECRET`
+  - Candidatos con `last_auto_blog_at` null se consideran "due" en la primera ejecución del cron
 - Si publica en web pero no en redes:
   - No hay destinos `approved` en `/admin/networks`
   - n8n no está configurado o no responde
+  - Para Facebook: destino debe tener `target_id` (page_id) y conexión OAuth completada (enlace por WhatsApp)
 

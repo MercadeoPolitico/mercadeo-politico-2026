@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth/admin";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
 
@@ -36,7 +36,7 @@ function isExpired(expiresAt: string): boolean {
 
 export async function GET() {
   await requireAdmin();
-  const supabase = await createSupabaseServerClient();
+  const supabase = createSupabaseAdminClient();
   if (!supabase) return NextResponse.json({ error: "not_configured" }, { status: 503 });
 
   const { data: candidates } = await supabase

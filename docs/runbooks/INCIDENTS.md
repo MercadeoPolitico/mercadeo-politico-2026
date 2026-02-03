@@ -58,3 +58,17 @@
 - Desactivar temporalmente o cambiar URL.
 - Ver `GET /api/admin/rss/list?with_health=1` (admin).
 
+---
+
+### 5) "Publicar en Facebook da error" (n8n / redes)
+**Causas comunes**
+- Destino sin `page_id` (Facebook requiere ID de página, no de usuario).
+- Token OAuth expirado o revocado (reconectar por enlace OAuth en Admin → n8n/Redes).
+- Meta Graph API devuelve error (revisar respuesta 502: `meta_code` / `meta_message`).
+
+**Fix**
+- Admin → n8n/Redes: destino Facebook debe tener ruteo con `target_id` = ID de la página.
+- Reconectar Meta: generar enlace OAuth (APP), enviar por WhatsApp, completar flujo.
+- En n8n (Railway): `MP26_APP_BASE_URL` y `MP26_AUTOMATION_TOKEN` para llamar `POST /api/automation/social/publish`.
+- Ver runbook `OAUTH_CONNECT_META_X_REDDIT.md`.
+

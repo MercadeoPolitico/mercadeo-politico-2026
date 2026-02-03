@@ -101,7 +101,14 @@ export async function POST(req: Request) {
         u.searchParams.set("access_token", accessToken);
         const r = await fetch(u.toString(), { method: "POST", cache: "no-store" });
         const j = await r.json().catch(() => null);
-        if (!r.ok) return NextResponse.json({ ok: false, error: "upstream_error", response: j }, { status: 502 });
+        if (!r.ok) {
+          const code = typeof (j as any)?.error?.code === "number" ? (j as any).error.code : null;
+          const msg = typeof (j as any)?.error?.message === "string" ? String((j as any).error.message).slice(0, 200) : null;
+          return NextResponse.json(
+            { ok: false, error: "upstream_error", meta_code: code, meta_message: msg },
+            { status: 502 },
+          );
+        }
         return NextResponse.json({ ok: true, status: "published", response: j });
       }
 
@@ -110,7 +117,14 @@ export async function POST(req: Request) {
       u.searchParams.set("access_token", accessToken);
       const r = await fetch(u.toString(), { method: "POST", cache: "no-store" });
       const j = await r.json().catch(() => null);
-      if (!r.ok) return NextResponse.json({ ok: false, error: "upstream_error", response: j }, { status: 502 });
+      if (!r.ok) {
+        const code = typeof (j as any)?.error?.code === "number" ? (j as any).error.code : null;
+        const msg = typeof (j as any)?.error?.message === "string" ? String((j as any).error.message).slice(0, 200) : null;
+        return NextResponse.json(
+          { ok: false, error: "upstream_error", meta_code: code, meta_message: msg },
+          { status: 502 },
+        );
+      }
       return NextResponse.json({ ok: true, status: "published", response: j });
     }
 

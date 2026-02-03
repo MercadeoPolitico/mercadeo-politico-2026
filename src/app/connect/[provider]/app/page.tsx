@@ -127,13 +127,30 @@ export default function ConnectProviderAppPage() {
                 if (!urls?.fallbackUrl) e.preventDefault();
               }}
             >
-              Continuar en web
+              Continuar en web (Meta/X)
             </a>
           </div>
           <p className="text-xs text-muted">
-            Nota: algunos navegadores dentro de WhatsApp bloquean abrir apps automáticamente; por eso dejamos el reintento manual.
+            Enlaces alternativos (si el navegador de WhatsApp bloquea): abre en Chrome/Safari el enlace “En esta misma web” para que el servidor te lleve a Meta o X.
           </p>
+          <a
+            className="mt-2 inline-block break-all text-xs text-link underline"
+            href={`/connect/${encodeURIComponent(providerRaw)}?candidate_id=${encodeURIComponent(candidateId)}`}
+          >
+            En esta misma web (abre en navegador externo)
+          </a>
         </div>
+      ) : null}
+      {state === "error" && candidateId && providerRaw ? (
+        <p className="mt-2 text-xs text-muted">
+          Prueba abrir en Chrome o Safari:{" "}
+          <a
+            className="break-all text-link underline"
+            href={`/connect/${encodeURIComponent(providerRaw)}?candidate_id=${encodeURIComponent(candidateId)}`}
+          >
+            Enlace alternativo (web)
+          </a>
+        </p>
       ) : null}
     </div>
   );

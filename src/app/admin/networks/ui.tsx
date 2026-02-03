@@ -149,7 +149,7 @@ export function NetworksPanel() {
   async function refresh() {
     setMsg(null);
     setLoadState("loading");
-    const r = await fetch("/api/admin/networks/list", { method: "GET" });
+    const r = await fetch("/api/admin/networks/list", { method: "GET", credentials: "include" });
     const j = (await r.json().catch(() => null)) as any;
     if (!r.ok || !j?.ok) {
       setLoadState("error");
@@ -163,7 +163,7 @@ export function NetworksPanel() {
     if (!oauthCandidateId && Array.isArray(j.candidates) && j.candidates.length) setOauthCandidateId(String(j.candidates[0].id));
 
     // RSS sources (admin-only visibility)
-    fetch("/api/admin/rss/list?with_health=1", { method: "GET" })
+    fetch("/api/admin/rss/list?with_health=1", { method: "GET", credentials: "include" })
       .then(async (rr) => {
         const jj = (await rr.json().catch(() => null)) as any;
         if (rr.ok && jj?.ok && Array.isArray(jj.sources)) setRssSources(jj.sources as RssSource[]);
@@ -171,7 +171,7 @@ export function NetworksPanel() {
       .catch(() => {});
 
     // OAuth status (safe)
-    fetch("/api/admin/oauth/status", { method: "GET" })
+    fetch("/api/admin/oauth/status", { method: "GET", credentials: "include" })
       .then(async (rr) => {
         const jj = (await rr.json().catch(() => null)) as any;
         if (rr.ok && jj?.ok) setOauthStatus({ loaded: true, providers: jj.providers, has_encryption_key: jj.has_encryption_key, counts: jj.counts });
@@ -296,6 +296,7 @@ export function NetworksPanel() {
     const r = await fetch("/api/admin/networks/invite", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ destination_id: d.id }),
     });
     const j = (await r.json().catch(() => null)) as any;
@@ -776,12 +777,19 @@ export function NetworksPanel() {
                 className="glass-button mt-2"
                 type="button"
                 onClick={async () => {
-                  const rawBase = (process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin).replace(/\/+$/, "");
-                  const base = rawBase.startsWith("http://") || rawBase.startsWith("https://") ? rawBase : `https://${rawBase}`;
-                  // WhatsApp-friendly: use APP link as the primary one.
-                  // It attempts to open the native app first and falls back to web automatically.
+                  // Use canonical site URL from server so OAuth callback URL always matches.
+                  let base = window.location.origin;
+                  try {
+                    const r = await fetch("/api/public/site-url", { method: "GET", cache: "no-store" });
+                    const j = (await r.json().catch(() => null)) as { url?: string };
+                    if (r.ok && typeof j?.url === "string" && j.url) base = String(j.url).replace(/\/+$/, "");
+                  } catch {
+                    // keep window.location.origin
+                  }
+                  if (!base.startsWith("http://") && !base.startsWith("https://")) base = `https://${base}`;
+                  // WhatsApp-friendly: use APP link as the primary one (app first, then web).
                   const linkApp = `${base}/connect/${encodeURIComponent(oauthProvider)}/app?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
-                  // Optional explicit web fallback (rarely needed).
+                  // Web fallback: server redirect to Meta/X (no client fetch).
                   const linkWeb = `${base}/connect/${encodeURIComponent(oauthProvider)}?candidate_id=${encodeURIComponent(oauthCandidateId)}`;
                   setOauthLink(linkWeb);
                   setOauthAppLink(linkApp);

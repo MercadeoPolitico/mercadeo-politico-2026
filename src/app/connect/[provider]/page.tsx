@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { PublicPageShell } from "@/components/PublicPageShell";
 import { Section } from "@/components/Section";
-import { oauthClientConfig, isOAuthProvider } from "@/lib/oauth/providers";
+import { oauthClientConfig, normalizeOAuthProvider } from "@/lib/oauth/providers";
 
 export const runtime = "nodejs";
 
@@ -23,7 +23,8 @@ export default async function ConnectProviderPage({
   const sp = await searchParams;
   const candidateId = String(sp?.candidate_id ?? "").trim();
 
-  if (!isOAuthProvider(provider)) {
+  const normalized = normalizeOAuthProvider(provider);
+  if (!normalized) {
     return (
       <PublicPageShell className="space-y-10">
         <Section title="Conexión no disponible" subtitle="Proveedor inválido.">
@@ -32,6 +33,7 @@ export default async function ConnectProviderPage({
       </PublicPageShell>
     );
   }
+  const providerKey = normalized;
 
   if (!candidateId) {
     return (
@@ -43,7 +45,7 @@ export default async function ConnectProviderPage({
     );
   }
 
-  const cfg = oauthClientConfig(provider);
+  const cfg = oauthClientConfig(providerKey);
   const hasEncKey = Boolean(String(process.env.OAUTH_TOKEN_ENCRYPTION_KEY ?? "").trim());
 
   if (!cfg.configured || !hasEncKey) {
@@ -51,7 +53,7 @@ export default async function ConnectProviderPage({
       <PublicPageShell className="space-y-10">
         <Section title="Conexión temporalmente no disponible" subtitle="Aún no se configuró la conexión OAuth en este entorno.">
           <div className="glass-card p-6">
-            <p className="text-sm font-semibold">{providerLabel(provider)}</p>
+            <p className="text-sm font-semibold">{providerLabel(providerKey)}</p>
             <p className="mt-2 text-sm text-muted">
               Este enlace está listo, pero falta configurar credenciales del proveedor en el servidor. Intenta más tarde o contacta al admin.
             </p>
@@ -62,6 +64,6 @@ export default async function ConnectProviderPage({
   }
 
   // Start OAuth immediately.
-  redirect(`/api/public/oauth/${encodeURIComponent(provider)}/start?candidate_id=${encodeURIComponent(candidateId)}`);
+  redirect(`/api/public/oauth/${encodeURIComponent(providerKey)}/start?candidate_id=${encodeURIComponent(candidateId)}`);
 }
 

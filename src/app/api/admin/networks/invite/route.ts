@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   const rawPhone = typeof dest.owner_contact_phone === "string" ? dest.owner_contact_phone : "";
   const phone = normalizePhone(rawPhone);
 
-  const token = crypto.randomBytes(24).toString("hex"); // 48 chars
+  const token = crypto.randomBytes(12).toString("hex"); // 24 chars — shorter URL, less likely to be truncated by WhatsApp
   const token_hash = sha256Hex(token);
   const now = Date.now();
   const expires_at = new Date(now + 5 * 60 * 60 * 1000).toISOString(); // 5h

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSiteUrlString } from "@/lib/site";
-import { oauthClientConfig, isOAuthProvider, type OAuthProvider } from "@/lib/oauth/providers";
+import { oauthClientConfig, normalizeOAuthProvider, type OAuthProvider } from "@/lib/oauth/providers";
 import { decryptSecret, encryptSecret, sha256Hex } from "@/lib/oauth/crypto";
 
 export const runtime = "nodejs";
@@ -144,8 +144,8 @@ async function xMe(accessToken: string) {
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ provider: string }> }) {
   const { provider: rawProvider } = await params;
-  if (!isOAuthProvider(rawProvider)) return NextResponse.json({ ok: false, error: "invalid_provider" }, { status: 400 });
-  const provider = rawProvider as OAuthProvider;
+  const provider = normalizeOAuthProvider(rawProvider);
+  if (!provider) return NextResponse.json({ ok: false, error: "invalid_provider" }, { status: 400 });
 
   const url = new URL(req.url);
   const code = String(url.searchParams.get("code") ?? "").trim();

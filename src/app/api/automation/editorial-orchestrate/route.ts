@@ -303,7 +303,7 @@ function isDuplicateTitle(title: string, recentTitles: string[]): boolean {
   if (!t) return false;
   for (const r of recentTitles) {
     const s = jaccardSimilarity(title, r);
-    if (s >= 0.86) return true;
+    if (s >= 0.72) return true; // stricter: avoid same-story titles across candidates
   }
   return false;
 }
@@ -1553,6 +1553,7 @@ export async function POST(req: Request) {
   const story_slot = typeof b.story_slot === "number" && Number.isFinite(b.story_slot) ? Math.max(0, Math.floor(b.story_slot)) : 0;
   const avoid_news_urls = Array.isArray(b.avoid_news_urls) ? (b.avoid_news_urls.filter((x) => typeof x === "string") as string[]) : [];
   const avoid_media_urls = Array.isArray(b.avoid_media_urls) ? (b.avoid_media_urls.filter((x) => typeof x === "string") as string[]) : [];
+  const avoid_titles = Array.isArray(b.avoid_titles) ? (b.avoid_titles.filter((x) => typeof x === "string") as string[]) : [];
   if (!candidate_id) return NextResponse.json({ error: "candidate_id_required" }, { status: 400 });
   if (max_items < 1 || max_items > 2) return NextResponse.json({ error: "max_items_invalid" }, { status: 400 });
 
@@ -1708,7 +1709,7 @@ export async function POST(req: Request) {
   }
 
   // Recent titles (to avoid “same story, different outlet” duplicates).
-  const recentTitles: string[] = [];
+  const recentTitles: string[] = [...avoid_titles.map((x) => x.trim()).filter(Boolean)];
   try {
     // Global recent titles
     const { data: globalRows } = await admin

@@ -231,3 +231,11 @@ Nuevo:
   - Login/logout (Vercel/Railway) y login (Supabase)
   - Checklist de n8n (502 vs 401) y variables requeridas
 
+---
+
+## 16) Cierre / fixes aplicados (2026-02)
+- **Fotos candidatos:** cache-bust con `politicians.updated_at` en URL de foto; admin ya actualiza `updated_at` al subir/borrar foto.
+- **Auto-publicación vacía:** candidatos con `last_auto_blog_at` null se consideran "due" en la primera ejecución del cron (Railway Worker).
+- **Artículos duplicados:** umbral jaccard 0.86 → 0.72; cron pasa `avoid_titles` y editorial-orchestrate los fusiona con `recentTitles`; cron actualiza `usedTitles` tras cada trigger.
+- **Facebook/publicar error:** respuesta 502 del API social incluye `meta_code` y `meta_message` (sanitizados) para diagnóstico; INCIDENTS.md sección 5 y AUTO_BLOG troubleshooting actualizados.
+

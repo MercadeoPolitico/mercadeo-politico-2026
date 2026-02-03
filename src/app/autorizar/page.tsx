@@ -7,8 +7,19 @@ export const metadata = {
   description: "Aprobar o rechazar autorización de publicación.",
 };
 
-export default function AutorizarPage({ searchParams }: { searchParams: { token?: string } }) {
-  const token = typeof searchParams?.token === "string" ? searchParams.token : "";
+function tokenFromParams(sp: { token?: string | string[] } | null): string {
+  if (!sp || sp.token == null) return "";
+  const t = sp.token;
+  return typeof t === "string" ? t.trim() : Array.isArray(t) && t[0] ? String(t[0]).trim() : "";
+}
+
+export default async function AutorizarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string | string[] }>;
+}) {
+  const sp = await searchParams;
+  const token = tokenFromParams(sp);
   return (
     <PublicPageShell className="space-y-10">
       <Section

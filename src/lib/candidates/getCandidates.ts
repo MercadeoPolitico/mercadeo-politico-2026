@@ -18,9 +18,11 @@ function roleFromOffice(office: string): CandidateRole {
   return o.includes("senado") ? "Senado de la República" : "Cámara de Representantes";
 }
 
-function publicPhotoUrlFor(politicianId: string): string | null {
+function publicPhotoUrlFor(politicianId: string, updatedAt?: string | null): string | null {
   // Go through our API so we can serve a fallback image if storage is empty.
-  return `/api/candidates/photo?id=${encodeURIComponent(politicianId)}`;
+  const base = `/api/candidates/photo?id=${encodeURIComponent(politicianId)}`;
+  const v = typeof updatedAt === "string" && updatedAt.trim() ? updatedAt.trim() : "";
+  return v ? `${base}&v=${encodeURIComponent(v)}` : base;
 }
 
 function shortExcerpt(text: string, max = 240): string {
@@ -71,7 +73,7 @@ export async function getCandidates(): Promise<Candidate[]> {
       ballotNumber,
       region: String(p.region || fallback?.region || ""),
       party: typeof p.party === "string" && p.party.trim() ? p.party.trim() : fallback?.party,
-      photoUrl: publicPhotoUrlFor(id),
+      photoUrl: publicPhotoUrlFor(id, p.updated_at),
       biography,
       // Landing cards should reflect admin edits: use an excerpt of biography when present.
       shortBio: biography.trim() ? shortExcerpt(biography, 260) : (fallback?.shortBio ?? ""),

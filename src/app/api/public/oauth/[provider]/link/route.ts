@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSiteUrlString } from "@/lib/site";
-import { oauthClientConfig, isOAuthProvider, type OAuthProvider } from "@/lib/oauth/providers";
+import { oauthClientConfig, normalizeOAuthProvider, type OAuthProvider } from "@/lib/oauth/providers";
 import { randomStateToken, sha256Hex, encryptSecret } from "@/lib/oauth/crypto";
 import crypto from "node:crypto";
 
@@ -69,8 +69,8 @@ function redditAuthorizeUrl(params: { clientId: string; redirectUri: string; sta
 
 export async function GET(req: Request, { params }: { params: Promise<{ provider: string }> }) {
   const { provider: rawProvider } = await params;
-  if (!isOAuthProvider(rawProvider)) return NextResponse.json({ ok: false, error: "invalid_provider" }, { status: 400 });
-  const provider = rawProvider as OAuthProvider;
+  const provider = normalizeOAuthProvider(rawProvider);
+  if (!provider) return NextResponse.json({ ok: false, error: "invalid_provider" }, { status: 400 });
 
   const u = new URL(req.url);
   const candidateId = String(u.searchParams.get("candidate_id") ?? "").trim();
@@ -84,7 +84,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
 
   const state = randomStateToken(24);
   const stateHash = sha256Hex(state);
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 min
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // 30 min
 
   const { error } = await admin.from("social_oauth_states").insert({
     provider,
@@ -117,7 +117,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
     secure: true,
     sameSite: "lax",
     path: `/api/public/oauth/x/callback`,
-    maxAge: 10 * 60,
+    maxAge: 30 * 60,
   });
   return res;
 }
