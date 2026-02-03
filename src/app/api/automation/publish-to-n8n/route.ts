@@ -23,6 +23,18 @@ function normalizeToken(v: unknown): string {
   return s.endsWith("\\n") ? s.slice(0, -2).trim() : s;
 }
 
+function normalizeDraftStatus(v: unknown): string {
+  return String(v ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function isApprovedDraftStatus(v: unknown): boolean {
+  const s = normalizeDraftStatus(v);
+  return s === "approved" || s === "edited";
+}
+
 function allow(req: Request): boolean {
   const apiToken = process.env.MP26_AUTOMATION_TOKEN ?? process.env.AUTOMATION_API_TOKEN;
   const headerToken = req.headers.get("x-automation-token") ?? "";
@@ -109,7 +121,7 @@ export async function POST(req: Request) {
     .eq("id", draft_id)
     .maybeSingle();
   if (!draft) return NextResponse.json({ error: "draft_not_found" }, { status: 404 });
-  if (draft.status !== "approved" && draft.status !== "edited") return NextResponse.json({ error: "draft_not_approved" }, { status: 400 });
+  if (!isApprovedDraftStatus(draft.status)) return NextResponse.json({ error: "draft_not_approved" }, { status: 400 });
 
   const { data: destinations } = await admin
     .from("politician_social_destinations")

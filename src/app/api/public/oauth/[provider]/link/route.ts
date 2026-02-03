@@ -73,14 +73,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ provider
   if (!provider) return NextResponse.json({ ok: false, error: "invalid_provider" }, { status: 400 });
 
   const u = new URL(req.url);
-  const candidateId = String(u.searchParams.get("candidate_id") ?? "").trim();
-  if (!candidateId) return NextResponse.json({ ok: false, error: "candidate_id_required" }, { status: 400 });
+  const candidateIdRaw = String(u.searchParams.get("candidate_id") ?? "").trim();
+  if (!candidateIdRaw) return NextResponse.json({ ok: false, error: "candidate_id_required" }, { status: 400 });
 
   const missing = missingEnvForProvider(provider);
   if (missing.length) return NextResponse.json({ ok: false, error: "not_configured", missing }, { status: 503 });
 
   const admin = createSupabaseAdminClient();
   if (!admin) return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+
+  // Resolve candidate_id: accept id or slug (so /connect/meta/app?candidate_id=eduard-buitrago or eduardo-buitrago both work).
+  let candidateId = candidateIdRaw;
+  const { data: polById } = await admin.from("politicians").select("id").eq("id", candidateIdRaw).maybeSingle();
+  if (!polById?.id) {
+    const { data: polBySlug } = await admin.from("politicians").select("id").eq("slug", candidateIdRaw).maybeSingle();
+    if (polBySlug?.id) candidateId = String(polBySlug.id);
+    else return NextResponse.json({ ok: false, error: "candidate_not_found" }, { status: 400 });
+  }
 
   const state = randomStateToken(24);
   const stateHash = sha256Hex(state);

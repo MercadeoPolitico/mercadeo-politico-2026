@@ -4,6 +4,7 @@ import { Section } from "@/components/Section";
 function errorMessage(error: string): { title: string; body: string } {
   const e = error.toLowerCase();
   if (e === "state_expired") return { title: "Enlace caducado", body: "Este enlace ya no es válido (caduca en 30 minutos). Pide al administrador que te envíe un nuevo enlace por WhatsApp." };
+  if (e === "candidate_not_found") return { title: "Candidato no encontrado", body: "El enlace no corresponde a un candidato válido. Pide al administrador que te envíe el enlace correcto." };
   if (e === "invalid_state" || e === "state_already_used") return { title: "Enlace no válido", body: "Este enlace ya se usó o no es válido. Pide un nuevo enlace al administrador." };
   if (e === "missing_code_or_state") return { title: "Faltan datos", body: "Meta o X no devolvieron los datos necesarios. Vuelve a intentar desde el enlace que te enviaron." };
   if (e === "missing_pkce_verifier") return { title: "Sesión de X caducada", body: "Abre de nuevo el enlace que te enviaron (en el mismo navegador) y completa la autorización de X." };

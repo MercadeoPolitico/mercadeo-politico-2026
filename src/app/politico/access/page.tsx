@@ -14,9 +14,9 @@ function sha256Hex(input: string): string {
 export default async function PoliticoAccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>;
+  searchParams: { token?: string };
 }) {
-  const { token } = await searchParams;
+  const { token } = searchParams;
   const raw = typeof token === "string" ? token.trim() : "";
 
   if (!raw) {

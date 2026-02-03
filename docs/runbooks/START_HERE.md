@@ -50,6 +50,10 @@ Candidatos con `last_auto_blog_at` null se consideran "due" en la primera ejecuc
 - `MP26_BASE_URL` (URL pública de Vercel)
 - `CRON_SECRET`
 
+**Sincronizar env desde .env.local (sin imprimir secretos):**
+- **Vercel:** `npm run vercel:sync-env` — requiere `VERCEL_TOKEN` en `.env.local`. Sincroniza NEXT_PUBLIC_SITE_URL, MP26_AUTOMATION_TOKEN, CRON_SECRET, Supabase, OAuth (Meta/X) y OAUTH_TOKEN_ENCRYPTION_KEY.
+- **Railway Worker:** `npm run railway:sync-worker-env` — requiere CLI `railway` instalado y `railway link` al servicio Worker. Sincroniza MP26_BASE_URL y CRON_SECRET.
+
 ### GitHub Actions (keepalive redundante)
 - `MP26_KEEPALIVE_URL`
 - `MP26_CRON_SECRET`

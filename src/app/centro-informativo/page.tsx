@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Section } from "@/components/Section";
 import { PublicPageShell } from "@/components/PublicPageShell";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { CiPostActions } from "@/components/CiPostActions";
 import type { ReactNode } from "react";
 
 export const metadata = {
@@ -213,6 +214,10 @@ export default async function CitizenInfoCenterPage() {
                             Ver fuente
                           </a>
                         ) : null}
+                      </div>
+
+                      <div className="mt-3">
+                        <CiPostActions slug={p.slug} title={p.title} />
                       </div>
 
                       {excerptParts.main ? (

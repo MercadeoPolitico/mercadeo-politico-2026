@@ -46,25 +46,30 @@ export async function GET(req: Request) {
   const storageUrl = storageUrlForCandidate(id);
   if (!storageUrl) return fallbackSvg();
 
-  // Cheap existence check: GET with tight timeout.
-  // Note: Supabase Storage public objects may not reliably support HEAD across all deployments,
-  // which would cause false negatives and fall back to the placeholder.
+  // Existence check: HEAD first (no body); then GET with small range if needed.
+  // Some Supabase/CDN setups don't support HEAD or Range; accept 200/206/304 so we don't false-negative.
+  const timeoutMs = 3500;
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 1400);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(storageUrl, {
+    const headReq = await fetch(storageUrl, {
+      method: "HEAD",
+      cache: "no-store",
+      redirect: "follow",
+      signal: ctrl.signal,
+    });
+    if (headReq.ok || headReq.status === 304) return NextResponse.redirect(storageUrl, 302);
+
+    const getReq = await fetch(storageUrl, {
       method: "GET",
       cache: "no-store",
       redirect: "follow",
       signal: ctrl.signal,
-      // Try to avoid downloading the full image during the probe.
       headers: { range: "bytes=0-0" },
     });
-    // If Storage doesn't support range requests, it may return 200.
-    if (r.ok || r.status === 206) return NextResponse.redirect(storageUrl, 302);
-    // Ensure the body is not kept open.
+    if (getReq.ok || getReq.status === 206) return NextResponse.redirect(storageUrl, 302);
     try {
-      r.body?.cancel();
+      getReq.body?.cancel();
     } catch {
       // ignore
     }

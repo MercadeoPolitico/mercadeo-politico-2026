@@ -238,4 +238,6 @@ Nuevo:
 - **Auto-publicación vacía:** candidatos con `last_auto_blog_at` null se consideran "due" en la primera ejecución del cron (Railway Worker).
 - **Artículos duplicados:** umbral jaccard 0.86 → 0.72; cron pasa `avoid_titles` y editorial-orchestrate los fusiona con `recentTitles`; cron actualiza `usedTitles` tras cada trigger.
 - **Facebook/publicar error:** respuesta 502 del API social incluye `meta_code` y `meta_message` (sanitizados) para diagnóstico; INCIDENTS.md sección 5 y AUTO_BLOG troubleshooting actualizados.
+- **OAuth Connect (Meta/X):** resolución de `candidate_id` por `id` o `slug` en `/api/public/oauth/[provider]/link` y `start`; página connect/app con enlace "Ir a Meta/X por web"; connect/done con mensaje `candidate_not_found`; admin networks usa service role para listar destinos; tokens de invitación acortados (24 chars).
+- **Env sync (CLI, sin imprimir secretos):** `scripts/vercel-sync-production-env.mjs` (VERCEL_TOKEN) y `scripts/railway-sync-worker-env.mjs` (Railway CLI + link al Worker); ver START_HERE.md §2.
 

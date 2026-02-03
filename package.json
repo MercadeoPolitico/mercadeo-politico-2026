@@ -17,7 +17,9 @@
     "ci:verify": "node scripts/verify-ci-two-per-politician.mjs",
     "ci:report": "node scripts/report-ci-by-region-politician.mjs",
     "ci:verify-project": "node scripts/verify-project-env.mjs",
-    "verify:connections": "node scripts/verify-connections.mjs"
+    "verify:connections": "node scripts/verify-connections.mjs",
+    "vercel:sync-env": "node scripts/vercel-sync-production-env.mjs",
+    "railway:sync-worker-env": "node scripts/railway-sync-worker-env.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

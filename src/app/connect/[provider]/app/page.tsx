@@ -73,7 +73,9 @@ export default function ConnectProviderAppPage() {
           typeof j?.error === "string"
             ? j.error === "not_configured"
               ? "Falta configuración OAuth en el servidor."
-              : j.error
+              : j.error === "candidate_not_found"
+                ? "Candidato no encontrado. Usa el enlace que te envió el administrador (mismo candidato)."
+                : j.error
             : "desconocido";
         setErr(`Conexión no disponible. Motivo: ${reason}`);
         return;
@@ -103,7 +105,17 @@ export default function ConnectProviderAppPage() {
   return (
     <div className="glass-card p-6">
       <p className="text-sm font-semibold">Conectar cuenta</p>
-      {state === "loading" ? <p className="mt-2 text-sm text-muted">Abriendo la app… si no está instalada, abriremos la web.</p> : null}
+      {state === "loading" ? (
+        <>
+          <p className="mt-2 text-sm text-muted">Abriendo la app… si no está instalada, abriremos la web.</p>
+          <p className="mt-2 text-xs text-muted">
+            Si no se abre en 3 segundos, haz clic aquí:{" "}
+            <a className="text-link underline" href={`/connect/${encodeURIComponent(providerRaw)}?candidate_id=${encodeURIComponent(candidateId)}`}>
+              Ir a Meta/X por web
+            </a>
+          </p>
+        </>
+      ) : null}
       {state === "error" ? <p className="mt-2 text-sm text-amber-300">{err}</p> : null}
       {state === "done" ? (
         <div className="mt-3 space-y-3">

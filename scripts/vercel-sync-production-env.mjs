@@ -101,8 +101,16 @@ async function main() {
     "WEBHOOK_TOKEN",
     "N8N_FORWARD_ENABLED",
 
-    // Optional site
+    // Optional site + cron + OAuth (required for auto-blog and connect links)
     "NEXT_PUBLIC_SITE_URL",
+    "CRON_SECRET",
+    "OAUTH_TOKEN_ENCRYPTION_KEY",
+    "OAUTH_META_CLIENT_ID",
+    "OAUTH_META_CLIENT_SECRET",
+    "OAUTH_X_CLIENT_ID",
+    "OAUTH_X_CLIENT_SECRET",
+    "OAUTH_REDDIT_CLIENT_ID",
+    "OAUTH_REDDIT_CLIENT_SECRET",
   ];
 
   const present = keys.filter((k) => typeof envLocal[k] === "string" && envLocal[k].trim().length);
