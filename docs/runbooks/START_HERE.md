@@ -5,6 +5,10 @@
 - **OAuth/Connect (build Vercel):** `.cursor/rules/mp26-oauth-connect.mdc`: en rutas Connect con `"use client"` importar solo desde `@/lib/oauth/provider-keys`, nunca desde `@/lib/oauth/providers`. Evita el error Turbopack `'server-only' cannot be imported from a Client Component`.
 - **Git push (Windows):** Si falla con `protocol error: bad line length character: Micr`, ver `docs/runbooks/RECONNECT.md` (GIT_SSH_COMMAND).
 - **Params en rutas dinámicas:** Next.js 15+: `params` es Promise; hacer `await params` en Server Components; en Client usar `useParams()`.
+- **Archivos TSX/JSX:** No usar comillas escapadas (`\"`) en el código fuente; usar comillas normales (`"`). Si un archivo tiene `\"use client\"` en lugar de `"use client"`, el build falla con "Unterminated string constant".
+
+### Admin → n8n/Redes — candidato del enlace OAuth
+En "Agregar destino social" y "Conectar redes por enlace (OAuth)" el **candidato seleccionado está sincronizado**: al cambiar el candidato en uno de los dos desplegables, el otro se actualiza. Así el enlace OAuth generado corresponde siempre al candidato que ves seleccionado (evita que el enlace “vuelva” a otro candidato).
 
 ### Objetivo
 Dejar el sistema **deployado y estable** en:
@@ -51,8 +55,8 @@ Candidatos con `last_auto_blog_at` null se consideran "due" en la primera ejecuc
 - `CRON_SECRET`
 
 **Sincronizar env desde .env.local (sin imprimir secretos):**
-- **Vercel:** `npm run vercel:sync-env` — requiere `VERCEL_TOKEN` en `.env.local`. Sincroniza NEXT_PUBLIC_SITE_URL, MP26_AUTOMATION_TOKEN, CRON_SECRET, Supabase, OAuth (Meta/X) y OAUTH_TOKEN_ENCRYPTION_KEY.
-- **Railway Worker:** `npm run railway:sync-worker-env` — requiere CLI `railway` instalado y `railway link` al servicio Worker. Sincroniza MP26_BASE_URL y CRON_SECRET.
+- **Vercel:** `npm run vercel:sync-env` — requiere `VERCEL_TOKEN` en `.env.local`. Sincroniza NEXT_PUBLIC_SITE_URL, MP26_AUTOMATION_TOKEN, CRON_SECRET, Supabase, OAuth (Meta/X) y OAUTH_TOKEN_ENCRYPTION_KEY. Usa API de Vercel (no CLI).
+- **Railway Worker:** `npm run railway:sync-worker-env` — usa CLI `railway` del proyecto (`npx railway`; devDependency `@railway/cli`). Requiere `railway link` al servicio Worker (ver RECONNECT.md §3). Sincroniza MP26_BASE_URL y CRON_SECRET.
 
 ### GitHub Actions (keepalive redundante)
 - `MP26_KEEPALIVE_URL`

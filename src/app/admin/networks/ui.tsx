@@ -159,8 +159,9 @@ export function NetworksPanel() {
     setDestinations(Array.isArray(j.destinations) ? j.destinations : []);
     setStats(j.stats ?? { total: 0, approved: 0, pending: 0, expired: 0 });
     setLoadState("ready");
-    if (!newFor && Array.isArray(j.candidates) && j.candidates.length) setNewFor(String(j.candidates[0].id));
-    if (!oauthCandidateId && Array.isArray(j.candidates) && j.candidates.length) setOauthCandidateId(String(j.candidates[0].id));
+    const firstId = Array.isArray(j.candidates) && j.candidates.length ? String(j.candidates[0].id) : "";
+    if (!newFor && firstId) setNewFor(firstId);
+    if (!oauthCandidateId && firstId) setOauthCandidateId(firstId);
 
     // RSS sources (admin-only visibility)
     fetch("/api/admin/rss/list?with_health=1", { method: "GET", credentials: "include" })
@@ -652,7 +653,15 @@ export function NetworksPanel() {
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <div className="grid gap-2">
             <label className="text-xs font-semibold text-muted">Candidato</label>
-            <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={newFor} onChange={(e) => setNewFor(e.target.value)}>
+            <select
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+              value={newFor}
+              onChange={(e) => {
+                const v = e.target.value;
+                setNewFor(v);
+                setOauthCandidateId(v);
+              }}
+            >
               {candidates.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} · {c.office} · {c.region}
@@ -766,7 +775,15 @@ export function NetworksPanel() {
 
             <div className="grid gap-2">
               <label className="text-xs font-semibold text-muted">Candidato</label>
-              <select className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm" value={oauthCandidateId} onChange={(e) => setOauthCandidateId(e.target.value)}>
+              <select
+                className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm"
+                value={oauthCandidateId}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setOauthCandidateId(v);
+                  setNewFor(v);
+                }}
+              >
                 {candidates.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} · {c.office} · {c.region}

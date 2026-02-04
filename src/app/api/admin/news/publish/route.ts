@@ -51,8 +51,12 @@ function imageUrlFromDraftMeta(meta: unknown): string | null {
     .filter((x): x is string => typeof x === "string")
     .map((s) => s.trim())
     .filter(Boolean);
-  const url = candidates[0] ?? "";
-  return url && /^https?:\/\//i.test(url) ? url : null;
+  const url = (candidates[0] ?? "").trim();
+  if (!url) return null;
+  // Allow https and data URLs (e.g. SVG fallback from generate-image).
+  if (/^https?:\/\//i.test(url)) return url;
+  if (/^data:image\//i.test(url)) return url;
+  return null;
 }
 
 export async function POST(req: Request) {

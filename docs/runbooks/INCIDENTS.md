@@ -72,3 +72,25 @@
 - En n8n (Railway): `MP26_APP_BASE_URL` y `MP26_AUTOMATION_TOKEN` para llamar `POST /api/automation/social/publish`.
 - Ver runbook `OAUTH_CONNECT_META_X_REDDIT.md`.
 
+---
+
+### 7) "Conectar por enlace OAuth" funciona para X pero no para Meta (Facebook)
+**Causa**
+- En el código el proveedor es **meta** (no "facebook"). La redirect URI debe ser exactamente:
+  `https://TU_DOMINIO/api/public/oauth/meta/callback`
+- Si en Meta for Developers tienes una URL con "facebook" en la ruta o un dominio distinto, falla.
+
+**Fix**
+- Meta for Developers → tu App → Facebook Login → Configuración → URLs de redirección de OAuth válidas: agrega **solo** `https://TU_DOMINIO/api/public/oauth/meta/callback` (mismo valor que `NEXT_PUBLIC_SITE_URL` + esa ruta).
+- Comprueba que `OAUTH_META_CLIENT_ID` y `OAUTH_META_CLIENT_SECRET` en Vercel son los de esa misma app.
+- Ver runbook `OAUTH_CONNECT_META_X_REDDIT.md` §1.2.
+
+---
+
+### 6) "Centro informativo publicados 0, omitidos 1" (not approved)
+**Causa**
+- El borrador no tiene estado considerado "aprobado" por la API. La API solo publica si `ai_drafts.status` es `approved` o `edited` (case-insensitive).
+
+**Fix**
+- En Admin → Contenido, marcar el borrador como **Aprobado** (o **Editado**) antes de usar "Publicar en Centro Informativo".
+- Si en la UI ya aparece como aprobado pero sigue omitiendo: comprobar en Supabase tabla `ai_drafts` que la columna `status` sea exactamente `approved` o `edited`.

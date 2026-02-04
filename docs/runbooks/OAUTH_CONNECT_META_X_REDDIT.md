@@ -51,8 +51,10 @@ Esto permite que el workflow publique vía `POST /api/automation/social/publish`
 3) Habilita el producto **Facebook Login**.
 
 ### 1.2 Configurar Redirect URL
-Agrega como Redirect URL:
+Agrega como Redirect URL **exactamente** (el proveedor en código es `meta`, no `facebook`):
 - `https://TU_DOMINIO/api/public/oauth/meta/callback`
+
+Importante: la URL debe usar **meta** en la ruta. `NEXT_PUBLIC_SITE_URL` en Vercel debe coincidir con el dominio que registres en Meta for Developers (ej. `https://mercadeo-politico-2026.vercel.app`). Si Meta da "redirect_uri_mismatch", revisa que no haya espacio final ni http en lugar de https.
 
 ### 1.3 Guardar variables en Vercel (server-only)
 - `OAUTH_META_CLIENT_ID`

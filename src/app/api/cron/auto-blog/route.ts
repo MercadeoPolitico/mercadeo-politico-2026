@@ -140,8 +140,7 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Create ONE item per trigger (so we can keep 3 publicaciones / 24h).
-    // Prefer "grave" (high-impact civic), occasional "viral" for feed variety.
+    // Create up to 2 items per trigger (noticias únicas; engine evita repetir URL/título/imagen).
     const cycle = typeof (dueMeta as any)?.cycle === "number" ? (dueMeta as any).cycle : 0;
     const roll = sha256Int(`${c.id}|${cycle}|mp26_auto_blog_mode`) % 10;
     const news_mode = roll < 8 ? "grave" : "viral";
@@ -155,7 +154,7 @@ export async function GET(req: Request) {
       headers: { "content-type": "application/json", "x-automation-token": apiToken },
       body: JSON.stringify({
         candidate_id: c.id,
-        max_items: 1,
+        max_items: 2,
         news_mode,
         editorial_style: "noticiero_portada",
         editorial_inclination: news_mode === "grave" ? "correctivo" : "informativo",

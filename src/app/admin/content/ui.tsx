@@ -102,7 +102,7 @@ export function AdminContentPanel() {
 
   const DRAFTS_LIMIT = 200;
 
-  async function refresh() {
+  async function refresh(): Promise<Draft[]> {
     setLoadState("loading");
     const base = "/api/admin/drafts";
     const params = new URLSearchParams({ limit: String(DRAFTS_LIMIT) });
@@ -111,13 +111,14 @@ export function AdminContentPanel() {
     const res = await fetch(url, { method: "GET", credentials: "include" });
     if (!res.ok) {
       setLoadState("error");
-      return;
+      return [];
     }
     const json = (await res.json()) as { ok: boolean; drafts: Draft[] };
-    setDrafts(json.drafts ?? []);
+    const list = json.drafts ?? [];
+    setDrafts(list);
     setLoadState("ready");
     // Drop selections for rows no longer present.
-    const ids = new Set((json.drafts ?? []).map((d) => d.id));
+    const ids = new Set(list.map((d) => d.id));
     setChecked((prev) => {
       const next: Record<string, boolean> = {};
       for (const [k, v] of Object.entries(prev)) {
@@ -126,8 +127,11 @@ export function AdminContentPanel() {
       return next;
     });
 
-    // Load latest Centro Informativo posts (published + archived) for admin control.
-    fetch("/api/admin/news/list", { method: "GET", credentials: "include" })
+    // Sync selected draft with refreshed list so detail card shows updated metadata (e.g. after generate image).
+    setSelected((prev) => (prev ? list.find((d) => d.id === prev.id) ?? prev : null));
+
+    // Load latest Centro Informativo posts (published + archived) for admin control (fire-and-forget).
+    void fetch("/api/admin/news/list", { method: "GET", credentials: "include" })
       .then(async (r) => {
         if (!r.ok) return;
         const j = (await r.json().catch(() => null)) as any;
@@ -145,6 +149,8 @@ export function AdminContentPanel() {
         }
       })
       .catch(() => {});
+
+    return list;
   }
 
   useEffect(() => {
@@ -838,7 +844,11 @@ export function AdminContentPanel() {
     const detail = Object.keys(reasons).length ? `\n\nDetalle (safe): ${Object.entries(reasons)
       .map(([k, v]) => `${k}=${v}`)
       .join(" · ")}` : "";
-    window.alert(`Centro Informativo: publicados=${okCount} · omitidos=${skipCount}${detail}`);
+    const hint =
+      reasons.not_approved || reasons.missing_image || reasons.missing_author || reasons.missing_title
+        ? "\n\nSugerencia: aprobar borradores (Aprobar), asegurar imagen (Generar imagen con IA o subir) y que el borrador tenga título y autor/medio."
+        : "";
+    window.alert(`Centro Informativo: publicados=${okCount} · omitidos=${skipCount}${detail}${hint}`);
     await refresh();
   }
 
@@ -1384,9 +1394,26 @@ export function AdminContentPanel() {
                 </p>
                 {imageUrlOf(selected) ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-[180px_1fr] sm:items-start">
-                    <figure className="overflow-hidden rounded-2xl border border-border bg-background/40">
+                    <figure className="overflow-hidden rounded-2xl border border-border bg-background/40 min-h-[140px]">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={imageUrlOf(selected)!} alt="" className="h-[140px] w-full object-cover" loading="lazy" />
+                      <img
+                        src={imageUrlOf(selected)!}
+                        alt=""
+                        className="h-[140px] w-full object-cover"
+                        loading="lazy"
+                        onError={(e) => {
+                          const el = e.currentTarget;
+                          el.style.display = "none";
+                          const fallback = el.nextElementSibling as HTMLElement | null;
+                          if (fallback) {
+                            fallback.classList.remove("hidden");
+                            fallback.classList.add("flex");
+                          }
+                        }}
+                      />
+                      <div className="hidden h-[140px] w-full flex flex-col items-center justify-center bg-muted/40 p-2 text-center text-xs text-muted" aria-hidden>
+                        No se pudo cargar la imagen. Revisa URL o sube otra.
+                      </div>
                     </figure>
                     <div className="space-y-2">
                       <p className="text-xs text-muted">
