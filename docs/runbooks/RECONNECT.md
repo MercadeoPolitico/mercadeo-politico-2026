@@ -52,6 +52,8 @@ Remove-Item Env:DOCKER_PASSWORD -ErrorAction SilentlyContinue
 
 ## 3) CLIs (logout/login) — PowerShell
 
+Las CLIs están instaladas en el proyecto (devDependencies: `vercel`, `@railway/cli`). Usar `npx` desde el repo (tras `npm ci`).
+
 ### Vercel
 ```powershell
 npx --yes vercel whoami
@@ -63,12 +65,16 @@ npx --yes vercel login
 
 ### Railway
 ```powershell
-npx --yes @railway/cli whoami
+npx --yes railway whoami
 # Logout (si quedó en una cuenta equivocada):
-npx --yes @railway/cli logout
+npx --yes railway logout
 # Si necesitas re-login:
-npx --yes @railway/cli login
+npx --yes railway login
+# Enlazar al Worker (requerido para railway:sync-worker-env):
+npx railway link
 ```
+
+Sincronizar env (sin imprimir secretos): ver START_HERE.md §2 — `npm run railway:sync-worker-env` (Railway), `npm run vercel:sync-env` (Vercel; requiere `VERCEL_TOKEN` en `.env.local`).
 
 ### Supabase
 La CLI se autentica con token (o `SUPABASE_ACCESS_TOKEN` en entorno).

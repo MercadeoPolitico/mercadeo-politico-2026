@@ -95,3 +95,8 @@ Verificación rápida:
   - el path del webhook no coincide.
   Solución recomendada: importar/activar el workflow desde el repo (ver `docs/automation/n8n-master-editorial-orchestrator.md`).
 
+### Meta: Página de Facebook "Centro Informativo Ciudadano"
+- Una sola Página recibe las publicaciones automáticas; el enlace apunta siempre al Centro Informativo del sitio.
+- Runbook: `docs/runbooks/META_CENTRO_INFORMATIVO_FACEBOOK.md`.
+- En Vercel: `N8N_WEBHOOK_URL_CENTRO_FACEBOOK`. En n8n: `FACEBOOK_CENTRO_PAGE_ID`, `FACEBOOK_CENTRO_PAGE_TOKEN`. Workflow: `docs/automation/n8n-centro-informativo-facebook.json`.
+

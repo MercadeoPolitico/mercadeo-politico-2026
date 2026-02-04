@@ -357,6 +357,7 @@ export function AdminContentPanel() {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ draft_id: selected.id, image_keywords: selected.image_keywords ?? undefined }),
+      credentials: "include",
     });
 
     const j = (await res.json().catch(() => null)) as any;
@@ -368,7 +369,40 @@ export function AdminContentPanel() {
       return;
     }
 
+    const imageUrl = typeof j?.image_url === "string" ? String(j.image_url).trim() : null;
     setImageState("done");
+    // Optimistic update so the image shows immediately and draft is publishable (status edited).
+    if (selected && imageUrl) {
+      const prevMeta = (selected.metadata ?? {}) as Record<string, unknown>;
+      setSelected({
+        ...selected,
+        status: "edited",
+        metadata: {
+          ...prevMeta,
+          image_ready: true,
+          image_url: imageUrl,
+          media: { ...(prevMeta.media as object) ?? {}, type: "image", image_url: imageUrl },
+          image_metadata: { ...(prevMeta.image_metadata as object) ?? {}, provider: j?.provider ?? "unknown" },
+        },
+      });
+      setDrafts((prev) =>
+        prev.map((d) =>
+          d.id === selected.id
+            ? {
+                ...d,
+                status: "edited",
+                metadata: {
+                  ...((d.metadata ?? {}) as Record<string, unknown>),
+                  image_ready: true,
+                  image_url: imageUrl,
+                  media: { type: "image", image_url: imageUrl },
+                  image_metadata: { provider: j?.provider ?? "unknown" },
+                },
+              }
+            : d
+        )
+      );
+    }
     await refresh();
   }
 
@@ -431,7 +465,7 @@ export function AdminContentPanel() {
       tone: tone.trim() ? tone.trim() : null,
       generated_text: genResult.generated_text,
       variants: variants ?? null,
-      status: "pending_review",
+      status: "edited",
       rotation_window_days: Number.isFinite(rotation as number) ? rotation : null,
       expires_at: expiresAt.trim() ? new Date(expiresAt).toISOString() : null,
       image_keywords: keywords.length ? keywords : null,

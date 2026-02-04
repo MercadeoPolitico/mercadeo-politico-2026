@@ -437,16 +437,27 @@ export async function POST(req: Request) {
       attempts.push({ provider: "Local", ok: true });
       nextMeta.image_ready = true;
       nextMeta.image_url = finalUrl;
+      nextMeta.media = {
+        type: "image",
+        image_url: finalUrl,
+        page_url: null,
+        license_short: "first_party",
+        attribution: "Ilustración local (fallback) · MarketBrain Technology™.",
+        author: null,
+        source: "local_fallback",
+      };
       nextMeta.image_metadata = { provider: "Local", generated_at: nowIso(), keywords, request_id: requestId };
       nextMeta.image_last_error = safeFailure(stored.reason || "ai_unavailable_local_fallback");
       }
     }
   }
 
+  // Mark as edited so the draft is publishable without an extra "Aprobar" step.
   const { error: upErr } = await admin
     .from("ai_drafts")
     .update({
       metadata: nextMeta,
+      status: "edited",
       ...(overrideKeywords ? { image_keywords: keywords } : {}),
       updated_at: nowIso(),
     })

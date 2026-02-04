@@ -1,0 +1,178 @@
+{
+  "name": "MP26 — Centro Informativo → Facebook Page",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "mp26-centro-informativo-facebook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-ci-fb",
+      "name": "Webhook CI → Facebook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [ 280, 200 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{String($json?.headers?.['x-n8n-webhook-token'] ?? $json?.body?.headers?.['x-n8n-webhook-token'] ?? '').trim() || String($json?.headers?.authorization ?? $json?.body?.headers?.authorization ?? '').replace(/^Bearer\\s+/i,'').trim()}}",
+              "operation": "equals",
+              "value2": "={{$env.N8N_WEBHOOK_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "if-token",
+      "name": "IF token ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 480, 200 ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":false,\"error\":\"unauthorized\"}",
+        "responseCode": 401,
+        "options": {}
+      },
+      "id": "respond-401",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [ 700, 320 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $input.first().json?.body ?? $input.first().json ?? {};\nconst post_id = body.post_id ?? null;\nconst slug = body.slug ?? '';\nconst title = String(body.title ?? '').trim().slice(0, 300);\nconst excerpt = String(body.excerpt ?? '').trim().slice(0, 500);\nconst media_url = typeof body.media_url === 'string' && body.media_url.trim() ? body.media_url.trim() : null;\nconst link = typeof body.link === 'string' && body.link.trim() ? body.link.trim() : null;\n\nconst pageId = String($env.FACEBOOK_CENTRO_PAGE_ID ?? $env.FACEBOOK_CENTRO_INFORMATIVO_PAGE_ID ?? '').trim();\nconst token = String($env.FACEBOOK_CENTRO_PAGE_TOKEN ?? $env.FACEBOOK_CENTRO_INFORMATIVO_PAGE_TOKEN ?? $env.FACEBOOK_CENTRO_PAGE_ACCESS_TOKEN ?? '').trim();\n\nif (!pageId) {\n  console.warn('[CI-Facebook] Missing Page ID: set FACEBOOK_CENTRO_PAGE_ID (or FACEBOOK_CENTRO_INFORMATIVO_PAGE_ID) in n8n');\n  return [{ json: { ok: false, error: 'missing_page_id', post_id } }];\n}\nif (!token) {\n  console.warn('[CI-Facebook] Missing Page Access Token: set FACEBOOK_CENTRO_PAGE_TOKEN (or FACEBOOK_CENTRO_INFORMATIVO_PAGE_TOKEN) in n8n');\n  return [{ json: { ok: false, error: 'missing_page_token', post_id } }];\n}\nif (!link) {\n  return [{ json: { ok: false, error: 'missing_link', post_id } }];\n}\n\nconst message = [title, excerpt, link].filter(Boolean).join('\\n\\n');\nconst version = String($env.MP26_META_GRAPH_VERSION ?? 'v21.0').trim();\n\nreturn [{ json: { post_id, slug, title, excerpt, media_url, link, message, pageId, token, version } }];"
+      },
+      "id": "prepare",
+      "name": "Prepare (check Page ID + Token)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 700, 200 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.ok !== false}}",
+              "operation": "isTrue"
+            }
+          ]
+        }
+      },
+      "id": "if-prepared",
+      "name": "IF prepared?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 920, 200 ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({ ok: false, error: $json.error || 'bad_request', post_id: $json.post_id || null })}}",
+        "responseCode": 400,
+        "options": {}
+      },
+      "id": "respond-400",
+      "name": "Respond 400 (missing config)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [ 1140, 320 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.version }}/{{ $json.pageId }}/feed",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "message", "value": "={{ $json.message }}" },
+            { "name": "link", "value": "={{ $json.link }}" },
+            { "name": "access_token", "value": "={{ $json.token }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "fb-feed",
+      "name": "Facebook Page feed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [ 1140, 200 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const item = $input.first().json;\nconst postId = $('Prepare (check Page ID + Token)').first().json?.post_id ?? null;\n\nif (item && item.error) {\n  const msg = item.error.message ?? item.error.message ?? JSON.stringify(item.error);\n  console.warn('[CI-Facebook] Facebook rejected:', msg);\n  return [{ json: { ok: false, error: 'facebook_rejected', meta_message: msg, post_id: postId } }];\n}\n\nconst fbPostId = item && (item.id ?? item.post_id);\nif (fbPostId) {\n  return [{ json: { ok: true, facebook_post_id: String(fbPostId), post_id: postId } }];\n}\nreturn [{ json: { ok: false, error: 'no_post_id_in_response', post_id: postId } }];"
+      },
+      "id": "parse-response",
+      "name": "Parse FB response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1360, 200 ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const err = $input.first().json?.error ?? $input.first().json?.message ?? 'facebook_request_failed';\nconst postId = $('Prepare (check Page ID + Token)').first().json?.post_id ?? null;\nconsole.warn('[CI-Facebook] Facebook API error:', err);\nreturn [{ json: { ok: false, error: 'facebook_rejected', meta_message: String(err), post_id: postId } }];"
+      },
+      "id": "handle-fb-error",
+      "name": "Handle FB error",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [ 1360, 380 ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({ ok: $json.ok === true, facebook_post_id: $json.facebook_post_id || null, error: $json.error || null })}}",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "respond-200",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [ 1580, 200 ]
+    }
+  ],
+  "connections": {
+    "Webhook CI → Facebook": {
+      "main": [ [ { "node": "IF token ok?", "type": "main", "index": 0 } ] ]
+    },
+    "IF token ok?": {
+      "main": [
+        [ { "node": "Prepare (check Page ID + Token)", "type": "main", "index": 0 } ],
+        [ { "node": "Respond 401", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Prepare (check Page ID + Token)": {
+      "main": [ [ { "node": "IF prepared?", "type": "main", "index": 0 } ] ]
+    },
+    "IF prepared?": {
+      "main": [
+        [ { "node": "Facebook Page feed", "type": "main", "index": 0 } ],
+        [ { "node": "Respond 400 (missing config)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Facebook Page feed": {
+      "main": [ [ { "node": "Parse FB response", "type": "main", "index": 0 } ] ],
+      "error": [ [ { "node": "Handle FB error", "type": "main", "index": 0 } ] ]
+    },
+    "Parse FB response": {
+      "main": [ [ { "node": "Respond 200", "type": "main", "index": 0 } ] ]
+    },
+    "Handle FB error": {
+      "main": [ [ { "node": "Respond 200", "type": "main", "index": 0 } ] ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionTimeout": 60,
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "v1"
+}

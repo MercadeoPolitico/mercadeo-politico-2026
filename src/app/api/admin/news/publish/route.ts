@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminApi } from "@/lib/auth/adminApi";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { readJsonBodyWithLimit } from "@/lib/automation/readBody";
+import { submitCentroInformativoToFacebook } from "@/lib/automation/centroInformativoFacebook";
 
 export const runtime = "nodejs";
 
@@ -178,6 +179,28 @@ export async function POST(req: Request) {
       : { published_post_id: inserted?.id ?? null, published_slug: slug };
 
   await admin.from("ai_drafts").update({ metadata: nextMeta }).eq("id", draft.id);
+
+  // Publish to single Facebook Page "Centro Informativo Ciudadano" via n8n (best-effort).
+  const postId = inserted?.id;
+  if (postId) {
+    const ciResult = await submitCentroInformativoToFacebook({
+      id: postId,
+      slug,
+      title,
+      excerpt,
+      media_urls: media_url ? [media_url] : null,
+    });
+    if (ciResult.ok && ciResult.facebook_post_id) {
+      const now = new Date().toISOString();
+      await admin
+        .from("citizen_news_posts")
+        .update({
+          facebook_post_id: ciResult.facebook_post_id,
+          facebook_published_at: now,
+        })
+        .eq("id", postId);
+    }
+  }
 
   return NextResponse.json({ ok: true, slug });
 }

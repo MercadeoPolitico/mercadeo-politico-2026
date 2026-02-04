@@ -10,6 +10,11 @@
  */
 
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
 
 function readText(p) {
   return fs.readFileSync(p, "utf8");
@@ -48,11 +53,27 @@ async function vercelApi(token, path, { method = "GET", body } = {}) {
 }
 
 async function main() {
-  const envLocal = fs.existsSync(".env.local") ? parseDotenv(readText(".env.local")) : {};
-  const token = process.env.VERCEL_TOKEN || envLocal.VERCEL_TOKEN;
-  if (!token || !String(token).trim()) throw new Error("Missing VERCEL_TOKEN (set in shell env or .env.local)");
+  const envLocalPath = path.join(repoRoot, ".env.local");
+  const envLocal = fs.existsSync(envLocalPath) ? parseDotenv(readText(envLocalPath)) : {};
+  // Token: VERCEL_TOKEN / VERCEL_TOKEN_CLI preferred; VERCEL in .env.local often used as Personal Token
+  const token =
+    process.env.VERCEL_TOKEN ||
+    process.env.VERCEL_ACCESS_TOKEN ||
+    process.env.VERCEL_API_TOKEN ||
+    process.env.VERCEL_TOKEN_CLI ||
+    envLocal.VERCEL_TOKEN ||
+    envLocal.VERCEL_ACCESS_TOKEN ||
+    envLocal.VERCEL_API_TOKEN ||
+    envLocal.VERCEL_TOKEN_CLI ||
+    envLocal.VERCEL;
+  if (!token || !String(token).trim()) {
+    const vercelKeys = Object.keys(envLocal).filter((k) => k.includes("VERCEL"));
+    const hint = vercelKeys.length ? ` En .env.local hay: ${vercelKeys.join(", ")}. Añade VERCEL_TOKEN o usa VERCEL=tu_personal_token (vercel.com/account/tokens).` : "";
+    throw new Error("Missing VERCEL_TOKEN (en .env.local o shell)." + hint);
+  }
 
-  const project = JSON.parse(readText(".vercel/project.json"));
+  const projectPath = path.join(repoRoot, ".vercel", "project.json");
+  const project = JSON.parse(readText(projectPath));
   const projectId = project.projectId;
   const teamId = project.orgId;
   if (!projectId || !teamId) throw new Error("Missing .vercel project linkage");
@@ -100,6 +121,8 @@ async function main() {
     "WEBHOOK_URL",
     "WEBHOOK_TOKEN",
     "N8N_FORWARD_ENABLED",
+    // Centro Informativo → single Facebook Page (Meta)
+    "N8N_WEBHOOK_URL_CENTRO_FACEBOOK",
 
     // Optional site + cron + OAuth (required for auto-blog and connect links)
     "NEXT_PUBLIC_SITE_URL",

@@ -7,6 +7,7 @@ import { callMarlenyAI } from "@/lib/si/marleny-ai/client";
 import { openAiJson } from "@/lib/automation/openai";
 import { regionalProvidersForCandidate } from "@/lib/news/providers";
 import { submitToN8n } from "@/lib/automation/n8n";
+import { submitCentroInformativoToFacebook } from "@/lib/automation/centroInformativoFacebook";
 import { getSiteUrlString } from "@/lib/site";
 import { pickWikimediaImage } from "@/lib/media/wikimedia";
 import { generateAndStoreNewsImage } from "@/lib/media/aiEditorialImage";
@@ -2797,6 +2798,26 @@ export async function POST(req: Request) {
             ? { ...(metadata as Record<string, unknown>), published_post_id: post?.id ?? null, published_slug: slug, auto_published_at: created_at }
             : { published_post_id: post?.id ?? null, published_slug: slug, auto_published_at: created_at };
         await admin.from("ai_drafts").update({ metadata: nextMeta }).eq("id", inserted.id);
+
+        // Publish to single Facebook Page "Centro Informativo Ciudadano" via n8n (best-effort).
+        if (post?.id) {
+          const ciResult = await submitCentroInformativoToFacebook({
+            id: post.id,
+            slug,
+            title: safeTitle.slice(0, 160),
+            excerpt,
+            media_urls: [mediaOkFinal],
+          });
+          if (ciResult.ok && ciResult.facebook_post_id) {
+            await admin
+              .from("citizen_news_posts")
+              .update({
+                facebook_post_id: ciResult.facebook_post_id,
+                facebook_published_at: created_at,
+              })
+              .eq("id", post.id);
+          }
+        }
 
         // Forward teaser to n8n (best-effort; does NOT block).
         const publicLink = `${getSiteUrlString()}/centro-informativo#${slug}`;
