@@ -140,39 +140,64 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Create up to 2 items per trigger (noticias únicas; engine evita repetir URL/título/imagen).
+    // Two publications per candidate per trigger: call orchestrate twice with distinct story_slot and avoid lists.
     const cycle = typeof (dueMeta as any)?.cycle === "number" ? (dueMeta as any).cycle : 0;
-    const roll = sha256Int(`${c.id}|${cycle}|mp26_auto_blog_mode`) % 10;
-    const news_mode = roll < 8 ? "grave" : "viral";
-    const focus = (() => {
-      const idx = sha256Int(`${c.id}|${cycle}|mp26_focus`) % focusClusters.length;
-      return (focusClusters[idx] ?? focusClusters[0]!).join(" ");
-    })();
-    // eslint-disable-next-line no-await-in-loop
-    const resp = await fetch(target, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-automation-token": apiToken },
-      body: JSON.stringify({
-        candidate_id: c.id,
-        max_items: 2,
-        news_mode,
-        editorial_style: "noticiero_portada",
-        editorial_inclination: news_mode === "grave" ? "correctivo" : "informativo",
-        news_focus: focus,
-        // Hard guarantee of uniqueness within the same cron run (avoids race conditions on DB propagation).
-        avoid_news_urls: Array.from(usedNewsUrls).slice(0, 80),
-        avoid_media_urls: Array.from(usedMediaUrls).slice(0, 120),
-        avoid_titles: Array.from(usedTitles).slice(0, 60),
-      }),
-      cache: "no-store",
-    });
+    let triggered = 0;
+    for (let storySlot = 0; storySlot < 2; storySlot++) {
+      const roll = sha256Int(`${c.id}|${cycle}|${storySlot}|mp26_auto_blog_mode`) % 10;
+      const news_mode = roll < 8 ? "grave" : "viral";
+      const focus = (() => {
+        const idx = sha256Int(`${c.id}|${cycle}|${storySlot}|mp26_focus`) % focusClusters.length;
+        return (focusClusters[idx] ?? focusClusters[0]!).join(" ");
+      })();
+      // eslint-disable-next-line no-await-in-loop
+      const resp = await fetch(target, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-automation-token": apiToken },
+        body: JSON.stringify({
+          candidate_id: c.id,
+          max_items: 1,
+          story_slot: storySlot,
+          news_mode,
+          editorial_style: "noticiero_portada",
+          editorial_inclination: news_mode === "grave" ? "correctivo" : "informativo",
+          news_focus: focus,
+          avoid_news_urls: Array.from(usedNewsUrls).slice(0, 80),
+          avoid_media_urls: Array.from(usedMediaUrls).slice(0, 120),
+          avoid_titles: Array.from(usedTitles).slice(0, 60),
+        }),
+        cache: "no-store",
+      });
 
-    if (!resp.ok) {
-      results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
-      continue;
+      if (!resp.ok) break;
+      triggered++;
+
+      // Refresh avoid lists from this candidate's latest posts so second call picks different news.
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const { data } = await admin
+          .from("citizen_news_posts")
+          .select("title,source_url,media_urls")
+          .eq("status", "published")
+          .eq("candidate_id", c.id)
+          .order("published_at", { ascending: false })
+          .limit(4);
+        for (const row of data ?? []) {
+          const title = typeof (row as any)?.title === "string" ? String((row as any).title).trim() : "";
+          if (title) usedTitles.add(title);
+          const src = typeof (row as any)?.source_url === "string" ? String((row as any).source_url).trim() : "";
+          if (src) usedNewsUrls.add(src);
+          const arr = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];
+          for (const u of arr) if (typeof u === "string" && u.trim()) usedMediaUrls.add(u.trim());
+        }
+      } catch {
+        // ignore
+      }
+      // Small stagger between the two calls to reduce burst load.
+      if (storySlot === 0) await new Promise((r) => setTimeout(r, 2000));
     }
 
-    // Best-effort: update in-memory avoid lists based on latest published posts.
+    // Best-effort: update global avoid lists for next candidates.
     try {
       // eslint-disable-next-line no-await-in-loop
       const { data } = await admin
@@ -193,6 +218,10 @@ export async function GET(req: Request) {
       // ignore
     }
 
+    if (triggered === 0) {
+      results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
+      continue;
+    }
     const at = new Date().toISOString();
     // eslint-disable-next-line no-await-in-loop
     await admin.from("politicians").update({ last_auto_blog_at: at, updated_at: at }).eq("id", c.id);

@@ -5,8 +5,14 @@
 - Facebook **no** permite autopublicación en perfiles personales.
 - Toda publicación automática **debe** hacerse en una **Página** (Page).
 - Este proyecto usa **una sola** Página: **"Centro Informativo Ciudadano"**.
+- El workflow de n8n usa **solo** la Graph API de Página (`/{page-id}/feed`), **nunca** el perfil personal.
 - El enlace en cada publicación **siempre** apunta a:
   `https://mercadeo-politico-2026.vercel.app/centro-informativo`
+
+### Valores configurados (referencia)
+
+- **Page ID (Centro Informativo Ciudadano):** `61587865731961` (usar este en n8n y en .env.local como `FACEBOOK_CENTRO_PAGE_ID`).
+- **App ID (Meta for Developers):** solo referencia; el token debe ser Page Access Token de esa Página.
 
 ## Arquitectura
 
@@ -53,6 +59,22 @@
 - Importar en n8n, configurar las variables anteriores y **activar** el workflow.
 - Ruta del webhook: `mp26-centro-informativo-facebook` → URL final: `https://TU-N8N/webhook/mp26-centro-informativo-facebook`
 
+### Automatizar (CLI + API)
+
+1. **Variables en n8n (Railway)**  
+   Con Railway CLI enlazado al **servicio n8n** (no al Worker) y `.env.local` con `N8N_WEBHOOK_TOKEN`, `FACEBOOK_CENTRO_PAGE_ID`, `FACEBOOK_CENTRO_PAGE_TOKEN`:
+   ```bash
+   npm run railway:sync-n8n-env
+   ```
+   Esto sube esas variables al servicio n8n en Railway.
+
+2. **Importar y activar el workflow por API**  
+   El script `npm run n8n:ensure-centro-facebook` importa el JSON y activa el workflow **si** n8n acepta la API:
+   - En n8n: **Settings → API** → habilitar API y crear un **API key**.
+   - En `.env.local`: añadir `N8N_API_KEY=<el key>` y `N8N_WEBHOOK_URL` = **URL pública de n8n en Railway** (no localhost ni 0.0.0.0:5678). Ejemplo: `https://n8n-production-XXXX.up.railway.app` o la URL completa del webhook `https://.../webhook/mp26-centro-informativo-facebook`. La obtienes en Railway → servicio n8n → Settings / Networking.
+   - Ejecutar: `npm run n8n:ensure-centro-facebook`.
+   - Si devuelve `"unauthorized"`, el API key no es válido o la API no está habilitada en n8n; en ese caso importar manualmente desde **Import from file** con `docs/automation/n8n-centro-informativo-facebook.json` y activar el workflow en la UI.
+
 ## Flujo en la app
 
 1. Al publicar en Centro Informativo (Admin → Contenido → "Publicar en Centro Informativo" o vía auto-publicación del editorial), se inserta una fila en `citizen_news_posts`.
@@ -67,6 +89,17 @@
 - **Facebook rechaza la publicación**: n8n escribe en consola y responde `error: "facebook_rejected"`. Revisar permisos del token, políticas de Meta y contenido del post.
 
 En los logs de Vercel aparecerán mensajes con prefijo `[centro-informativo-facebook]` cuando se omita el envío (config no definida) o cuando n8n devuelva error.
+
+## Publicaciones por candidato e imágenes
+
+- **Dos publicaciones por candidato:** El cron auto-blog dispara **dos** orquestaciones por candidato (story_slot 0 y 1) con noticias distintas; el sistema mantiene hasta 2 publicaciones vigentes por candidato (scripts `topup-ci-to-two-per-politician`, `prune-ci-to-two`).
+- **Mínimo 450 palabras:** Las publicaciones del centro informativo se generan con mínimo 450 palabras (ideal 500–800), SEO y 1–2 ejes de la propuesta que mitigan o empoderan la noticia.
+- **Imágenes:** Orden del pipeline: RSS (feeds con licencia) → Wikimedia Commons → generación AI en rotación. Atribución siempre en el cuerpo; sin hotlink a medios.
+
+## Instagram y otras apps Meta
+
+- El workflow actual publica en la **Página de Facebook** "Centro Informativo Ciudadano" (con imagen cuando `media_url` está presente vía Graph API `/photos`).
+- Para **Instagram**: hace falta tener la Página conectada a una cuenta Instagram Professional/Business y usar la API de Instagram Content Publishing (crear contenedor y publicar). Mismo token de Page puede tener permisos para IG si está vinculado; se puede añadir un nodo opcional en n8n que llame a la API de IG cuando esté configurado.
 
 ## Resumen de comprobaciones
 

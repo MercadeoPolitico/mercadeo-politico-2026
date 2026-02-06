@@ -11,7 +11,7 @@
       "name": "Webhook CI → Facebook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [ 280, 200 ]
+      "position": [280, 200]
     },
     {
       "parameters": {
@@ -29,7 +29,7 @@
       "name": "IF token ok?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [ 480, 200 ]
+      "position": [480, 200]
     },
     {
       "parameters": {
@@ -42,7 +42,7 @@
       "name": "Respond 401",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [ 700, 320 ]
+      "position": [700, 320]
     },
     {
       "parameters": {
@@ -52,7 +52,7 @@
       "name": "Prepare (check Page ID + Token)",
       "type": "n8n-nodes-base.function",
       "typeVersion": 2,
-      "position": [ 700, 200 ]
+      "position": [700, 200]
     },
     {
       "parameters": {
@@ -69,7 +69,7 @@
       "name": "IF prepared?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [ 920, 200 ]
+      "position": [920, 200]
     },
     {
       "parameters": {
@@ -82,7 +82,46 @@
       "name": "Respond 400 (missing config)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [ 1140, 320 ]
+      "position": [1140, 320]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.media_url || ''}}",
+              "operation": "notEquals",
+              "value2": ""
+            }
+          ]
+        }
+      },
+      "id": "if-has-media",
+      "name": "IF has media?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1020, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.version }}/{{ $json.pageId }}/photos",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {"name": "url", "value": "={{ $json.media_url }}"},
+            {"name": "message", "value": "={{ $json.message }}"},
+            {"name": "access_token", "value": "={{ $json.token }}"}
+          ]
+        },
+        "options": {"timeout": 30000}
+      },
+      "id": "fb-photo",
+      "name": "Facebook Page photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1220, 120]
     },
     {
       "parameters": {
@@ -92,18 +131,18 @@
         "sendQuery": true,
         "queryParameters": {
           "parameters": [
-            { "name": "message", "value": "={{ $json.message }}" },
-            { "name": "link", "value": "={{ $json.link }}" },
-            { "name": "access_token", "value": "={{ $json.token }}" }
+            {"name": "message", "value": "={{ $json.message }}"},
+            {"name": "link", "value": "={{ $json.link }}"},
+            {"name": "access_token", "value": "={{ $json.token }}"}
           ]
         },
-        "options": { "timeout": 30000 }
+        "options": {"timeout": 30000}
       },
       "id": "fb-feed",
       "name": "Facebook Page feed",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [ 1140, 200 ]
+      "position": [1220, 280]
     },
     {
       "parameters": {
@@ -113,7 +152,7 @@
       "name": "Parse FB response",
       "type": "n8n-nodes-base.function",
       "typeVersion": 2,
-      "position": [ 1360, 200 ]
+      "position": [1420, 200]
     },
     {
       "parameters": {
@@ -123,7 +162,7 @@
       "name": "Handle FB error",
       "type": "n8n-nodes-base.function",
       "typeVersion": 2,
-      "position": [ 1360, 380 ]
+      "position": [1420, 380]
     },
     {
       "parameters": {
@@ -136,43 +175,21 @@
       "name": "Respond 200",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [ 1580, 200 ]
+      "position": [1620, 200]
     }
   ],
   "connections": {
-    "Webhook CI → Facebook": {
-      "main": [ [ { "node": "IF token ok?", "type": "main", "index": 0 } ] ]
-    },
-    "IF token ok?": {
-      "main": [
-        [ { "node": "Prepare (check Page ID + Token)", "type": "main", "index": 0 } ],
-        [ { "node": "Respond 401", "type": "main", "index": 0 } ]
-      ]
-    },
-    "Prepare (check Page ID + Token)": {
-      "main": [ [ { "node": "IF prepared?", "type": "main", "index": 0 } ] ]
-    },
-    "IF prepared?": {
-      "main": [
-        [ { "node": "Facebook Page feed", "type": "main", "index": 0 } ],
-        [ { "node": "Respond 400 (missing config)", "type": "main", "index": 0 } ]
-      ]
-    },
-    "Facebook Page feed": {
-      "main": [ [ { "node": "Parse FB response", "type": "main", "index": 0 } ] ],
-      "error": [ [ { "node": "Handle FB error", "type": "main", "index": 0 } ] ]
-    },
-    "Parse FB response": {
-      "main": [ [ { "node": "Respond 200", "type": "main", "index": 0 } ] ]
-    },
-    "Handle FB error": {
-      "main": [ [ { "node": "Respond 200", "type": "main", "index": 0 } ] ]
-    }
+    "Webhook CI → Facebook": {"main": [[{"node": "IF token ok?", "type": "main", "index": 0}]]},
+    "IF token ok?": {"main": [[{"node": "Prepare (check Page ID + Token)", "type": "main", "index": 0}], [{"node": "Respond 401", "type": "main", "index": 0}]]},
+    "Prepare (check Page ID + Token)": {"main": [[{"node": "IF prepared?", "type": "main", "index": 0}]]},
+    "IF prepared?": {"main": [[{"node": "IF has media?", "type": "main", "index": 0}], [{"node": "Respond 400 (missing config)", "type": "main", "index": 0}]]},
+    "IF has media?": {"main": [[{"node": "Facebook Page photo", "type": "main", "index": 0}], [{"node": "Facebook Page feed", "type": "main", "index": 0}]]},
+    "Facebook Page photo": {"main": [[{"node": "Parse FB response", "type": "main", "index": 0}]], "error": [[{"node": "Handle FB error", "type": "main", "index": 0}]]},
+    "Facebook Page feed": {"main": [[{"node": "Parse FB response", "type": "main", "index": 0}]], "error": [[{"node": "Handle FB error", "type": "main", "index": 0}]]},
+    "Parse FB response": {"main": [[{"node": "Respond 200", "type": "main", "index": 0}]]},
+    "Handle FB error": {"main": [[{"node": "Respond 200", "type": "main", "index": 0}]]}
   },
   "active": false,
-  "settings": {
-    "executionTimeout": 60,
-    "saveDataErrorExecution": "all"
-  },
-  "versionId": "v1"
+  "settings": {"executionTimeout": 60, "saveDataErrorExecution": "all"},
+  "versionId": "v2"
 }

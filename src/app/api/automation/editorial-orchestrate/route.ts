@@ -1829,13 +1829,13 @@ export async function POST(req: Request) {
     "- Informativo, propositivo, no agresivo, no propagandístico.",
     "- No inventar datos/cifras; no ataques personales; no urgencia falsa.",
     "- Debe ser coherente con la biografía y propuestas del candidato.",
-    "- Debe explicar explícitamente cómo 1–2 ejes/puntos de la propuesta del candidato aportan a prevenir/mitigar/solucionar (si es negativo) o potenciar (si es positivo).",
+    "- Debe explicar explícitamente cómo 1–2 ejes de la propuesta del candidato aportan a mitigar el efecto de la noticia si es negativa o a empoderarla si es positiva (prevenir/mitigar/solucionar o potenciar).",
     "- Debe cambiar (reescribir) el título de la noticia real: no copies literal el titular del medio.",
     "- Debe incluir el nombre del candidato y su número de tarjetón cuando se mencione su implicación.",
     "- Debe incluir un cierre tipo 'derecho ciudadano al voto' (reformulado cada vez, no literal).",
     "- Incluye link relativo a /centro-informativo en facebook/x (sin URL absoluta).",
     "- Variants:",
-    "  - blog: 500–800 palabras (OBLIGATORIO). Presentación atractiva:",
+    "  - blog: mínimo 450 palabras, ideal 500–800 (OBLIGATORIO). Presentación atractiva:",
     "    - Primera línea: Título (<=120 caracteres)",
     "    - Luego 1 lead corto",
     "    - Secciones sugeridas: “Qué pasó”, “Por qué importa”, “Cómo encaja con la propuesta del candidato”, “Qué sigue / Recomendaciones”",
@@ -1910,8 +1910,8 @@ export async function POST(req: Request) {
       "Redacta SOLO el artículo del Centro Informativo (NO JSON).",
       "Reglas:",
       "- Español (Colombia).",
-      "- 500–800 palabras (OBLIGATORIO).",
-      "- Primera línea: TÍTULO reescrito (no copies literal el titular del medio).",
+    "- Mínimo 450 palabras, ideal 500–800 (OBLIGATORIO).",
+    "- Primera línea: TÍTULO reescrito (no copies literal el titular del medio).",
       "- Estructura: Qué pasó / Por qué importa / Cómo encaja con 1–2 ejes del programa / Qué sigue.",
       "- Incluye el nombre del candidato y su número de tarjetón cuando menciones su implicación.",
       "- Cierra con: Fuente: <url> (si existe), Hashtags: (3+), Mensaje ciudadano: (reformulado).",
@@ -2112,15 +2112,15 @@ export async function POST(req: Request) {
     return "msi_fallback";
   })();
 
-  // Enforce target blog length (best-effort) before persisting.
+  // Enforce target blog length (best-effort) before persisting. Minimum 450 words per project requirement.
   const wc = wordCount(winner.data.platform_variants.blog);
-  if (wc < 500 || wc > 800) {
+  if (wc < 450 || wc > 800) {
     const topic = [
       "Ajusta SOLO el contenido del JSON para cumplir longitud y estructura del blog.",
       "Reglas:",
       "- Devuelve SOLO JSON con el MISMO esquema.",
       "- Mantén hechos verificables (sin inventar cifras/datos).",
-      "- Blog: 500–800 palabras (OBLIGATORIO).",
+      "- Blog: mínimo 450 palabras, ideal 500–800 (OBLIGATORIO).",
       "- Debe explicar cómo 1–2 ejes de propuesta del candidato aportan a la situación.",
       "- Conserva hashtags (3+) y 'Fuente:' si existe.",
       "- Integra 3–5 SEO keywords dentro del texto de forma natural.",
@@ -2210,9 +2210,8 @@ export async function POST(req: Request) {
     // ignore
   }
 
-  // IMPORTANT (rights & reliability):
-  // - We do NOT publish/hotlink outlet images (OpenGraph/Twitter cards) because licenses are unclear and hotlinking often fails.
-  // - We only publish CC images (Wikimedia) or first-party media we store (including licensed feeds).
+  // Image pipeline order (rights & reliability): 1) RSS (license_confirmed, cached); 2) Wikimedia Commons; 3) AI-generated (rotation); CWI/MSI is used for editorial text, not image discovery.
+  // We do NOT publish/hotlink outlet images (OpenGraph) because licenses are unclear; we only publish CC (Wikimedia), first-party cached (RSS approved), or first-party AI.
   // Canonical source URL (dedupe across tracking params); ensure we always persist one.
   const newsTitleHint = rssChosen?.title ?? article?.title ?? lastPublished?.title ?? "";
   const titleTokens = keywordsFromTitle(newsTitleHint);
