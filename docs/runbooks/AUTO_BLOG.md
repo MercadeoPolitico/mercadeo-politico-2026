@@ -1,26 +1,25 @@
 ## Runbook — Auto-blog / Auto-publicación (global)
 
 ### Objetivo
-Generar y publicar automáticamente **1 noticia por político cada 4 horas**, y enviarla a redes sociales **solo si** existe autorización aprobada.
+Generar y publicar automáticamente **1 noticia por candidato cada 8 horas** (**3 por 24 h**), y enviarla a redes sociales **solo si** existe autorización aprobada. Auto publicado por defecto **ON**. Siempre noticias nuevas (evita URLs/títulos ya usados).
 
 ---
 
 ### 1) Control (Admin Panel)
 Ruta: `/admin/content`
-- Toggle arriba a la derecha: **AUTO ON/OFF**
+- Toggle arriba a la derecha: **AUTO ON/OFF** (por defecto **ON**).
 
 Comportamiento:
-- **ON**: habilita cron global.
+- **ON**: habilita cron global; cada candidato recibe 1 publicación por ventana de 8 h (3 en 24 h).
 - **OFF**: cron se detiene (no crea ni publica automáticamente).
 
 Configuración (en base de datos):
 - `app_settings.auto_blog_global_enabled` = `"true" | "false"` (default: `"true"`)
-- `app_settings.auto_blog_every_hours` = `"4"` (default: 4)
-- `app_settings.auto_blog_jitter_minutes` = `"0".."180"` (default: 37)
+- `app_settings.auto_blog_every_hours` = `"8"` (default: 8) → 3 publicaciones / 24 h por candidato.
+- `app_settings.auto_blog_jitter_minutes` = `"0".."180"` (default: **60**)
 
-Nota anti‑spam:
-- El sistema aplica **jitter determinístico** por candidato (minutos) y un **límite de ejecuciones por corrida**,
-  para evitar que muchos candidatos publiquen exactamente al mismo minuto.
+Rotación para evitar detección (Facebook y otras redes):
+- El **jitter** (p. ej. 60 min) hace que la *siguiente* publicación no sea exactamente a las 8 h, sino entre 8 h y 9 h después (según candidato y ciclo). Así no se ve un patrón fijo tipo “cada 8 h en punto”. Sigue siendo 3 en 24 h, pero con horarios variables (útil si se está viajando o sin supervisión constante).
 
 ---
 
@@ -32,12 +31,11 @@ Cadencia:
 - Por candidato, respeta:
   - `politicians.auto_blog_enabled = true`
   - `politicians.auto_publish_enabled = true`
-  - `politicians.last_auto_blog_at` (no repite antes de 4h)
+  - `politicians.last_auto_blog_at` (no repite antes de 8 h + jitter)
 
 Motor:
-- Llama internamente `POST /api/automation/editorial-orchestrate`
-  - Ese motor genera draft + autopublish en Centro Informativo
-  - Envío a redes: best-effort a n8n usando destinos **approved**
+- **1 llamada** a `POST /api/automation/editorial-orchestrate` por candidato cuando “le toca”.
+- Ese motor elige **noticia nueva** (RSS/GDELT), genera draft + autopublish en Centro Informativo, envía a n8n (destinos **approved**).
 
 ---
 

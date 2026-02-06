@@ -4,6 +4,13 @@ import crypto from "node:crypto";
 
 export const runtime = "nodejs";
 
+/**
+ * Auto-blog cron: 1 publication per candidate per due window.
+ * With every_hours=8 → 3 publications per candidate per 24h. Jitter (default 60 min)
+ * shifts each run so spacing is never exactly 8h (avoids fixed-schedule detection on FB/other networks).
+ * Always uses fresh news (avoid_news_urls / avoid_titles from recent posts).
+ */
+
 function normalizeToken(v: unknown): string {
   const s = String(v ?? "").trim();
   if (!s) return "";
@@ -39,9 +46,10 @@ function parseEveryHours(v: string | null): number {
 
 function parseJitterMinutes(v: string | null): number {
   const n = v ? Number(v) : NaN;
-  if (!Number.isFinite(n)) return 37; // default jitter window (minutes)
+  // Default 60 min: next run = 8h + 0..60 min (never exactly 8h, avoids platform detection).
+  if (!Number.isFinite(n)) return 60;
   const m = Math.floor(n);
-  if (m < 0 || m > 180) return 37;
+  if (m < 0 || m > 180) return 60;
   return m;
 }
 
@@ -140,72 +148,47 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Two publications per candidate per trigger: call orchestrate twice with distinct story_slot and avoid lists.
+    // One publication per candidate per due window → 3 per 24h when every_hours=8. Jitter avoids exact 8h spacing (platform detection).
     const cycle = typeof (dueMeta as any)?.cycle === "number" ? (dueMeta as any).cycle : 0;
-    let triggered = 0;
-    for (let storySlot = 0; storySlot < 2; storySlot++) {
-      const roll = sha256Int(`${c.id}|${cycle}|${storySlot}|mp26_auto_blog_mode`) % 10;
-      const news_mode = roll < 8 ? "grave" : "viral";
-      const focus = (() => {
-        const idx = sha256Int(`${c.id}|${cycle}|${storySlot}|mp26_focus`) % focusClusters.length;
-        return (focusClusters[idx] ?? focusClusters[0]!).join(" ");
-      })();
-      // eslint-disable-next-line no-await-in-loop
-      const resp = await fetch(target, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-automation-token": apiToken },
-        body: JSON.stringify({
-          candidate_id: c.id,
-          max_items: 1,
-          story_slot: storySlot,
-          news_mode,
-          editorial_style: "noticiero_portada",
-          editorial_inclination: news_mode === "grave" ? "correctivo" : "informativo",
-          news_focus: focus,
-          avoid_news_urls: Array.from(usedNewsUrls).slice(0, 80),
-          avoid_media_urls: Array.from(usedMediaUrls).slice(0, 120),
-          avoid_titles: Array.from(usedTitles).slice(0, 60),
-        }),
-        cache: "no-store",
-      });
+    const storySlot = cycle % 2; // rotate so each cycle picks different news seed
+    const roll = sha256Int(`${c.id}|${cycle}|mp26_auto_blog_mode`) % 10;
+    const news_mode = roll < 8 ? "grave" : "viral";
+    const focus = (() => {
+      const idx = sha256Int(`${c.id}|${cycle}|mp26_focus`) % focusClusters.length;
+      return (focusClusters[idx] ?? focusClusters[0]!).join(" ");
+    })();
 
-      if (!resp.ok) break;
-      triggered++;
+    const resp = await fetch(target, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-automation-token": apiToken },
+      body: JSON.stringify({
+        candidate_id: c.id,
+        max_items: 1,
+        story_slot: storySlot,
+        news_mode,
+        editorial_style: "noticiero_portada",
+        editorial_inclination: news_mode === "grave" ? "correctivo" : "informativo",
+        news_focus: focus,
+        avoid_news_urls: Array.from(usedNewsUrls).slice(0, 80),
+        avoid_media_urls: Array.from(usedMediaUrls).slice(0, 120),
+        avoid_titles: Array.from(usedTitles).slice(0, 60),
+      }),
+      cache: "no-store",
+    });
 
-      // Refresh avoid lists from this candidate's latest posts so second call picks different news.
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const { data } = await admin
-          .from("citizen_news_posts")
-          .select("title,source_url,media_urls")
-          .eq("status", "published")
-          .eq("candidate_id", c.id)
-          .order("published_at", { ascending: false })
-          .limit(4);
-        for (const row of data ?? []) {
-          const title = typeof (row as any)?.title === "string" ? String((row as any).title).trim() : "";
-          if (title) usedTitles.add(title);
-          const src = typeof (row as any)?.source_url === "string" ? String((row as any).source_url).trim() : "";
-          if (src) usedNewsUrls.add(src);
-          const arr = Array.isArray((row as any)?.media_urls) ? ((row as any).media_urls as unknown[]) : [];
-          for (const u of arr) if (typeof u === "string" && u.trim()) usedMediaUrls.add(u.trim());
-        }
-      } catch {
-        // ignore
-      }
-      // Small stagger between the two calls to reduce burst load.
-      if (storySlot === 0) await new Promise((r) => setTimeout(r, 2000));
+    if (!resp.ok) {
+      results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
+      continue;
     }
 
-    // Best-effort: update global avoid lists for next candidates.
+    // Refresh avoid lists for next candidates (always new news).
     try {
-      // eslint-disable-next-line no-await-in-loop
       const { data } = await admin
         .from("citizen_news_posts")
         .select("title,source_url,media_urls")
         .eq("status", "published")
         .order("published_at", { ascending: false })
-        .limit(18);
+        .limit(24);
       for (const row of data ?? []) {
         const title = typeof (row as any)?.title === "string" ? String((row as any).title).trim() : "";
         if (title) usedTitles.add(title);
@@ -218,12 +201,7 @@ export async function GET(req: Request) {
       // ignore
     }
 
-    if (triggered === 0) {
-      results.push({ candidate_id: c.id, triggered: false, reason: "engine_failed", next_due_at: nextDueAt });
-      continue;
-    }
     const at = new Date().toISOString();
-    // eslint-disable-next-line no-await-in-loop
     await admin.from("politicians").update({ last_auto_blog_at: at, updated_at: at }).eq("id", c.id);
     results.push({ candidate_id: c.id, triggered: true, reason: "triggered", next_due_at: nextDueAt });
   }
