@@ -24,6 +24,9 @@
 - “Do you have Docker installed?” → **Assume yes** unless the context says otherwise.
 - “Would you like the images to auto-adjust?” / “Would you like the app to work on any device?” → **Do the obvious** (responsive/images) when it’s in scope; don’t spend a prompt asking.
 
+- "Run script X to check" / "You can run npm run Y" → If the user asked "are we doing X?" or "revisa si estamos haciendo X", **run** the relevant check/script and report the result in the same reply; do not suggest they run it.
+- "Do you want me to do X?" when X is the obvious next step (e.g. sync a file just edited, copy to Y) → **Do it**; don't ask.
+
 ---
 
 ## 3) CLI and Tools (how Cursor behaves)
@@ -98,6 +101,14 @@
 - **Explicit “no push” / “local commit only”** → commit only, no push.
 - **Explicit “don’t sync env”** → skip env sync.
 - **Real blocker** (e.g. 401 from n8n API, Meta token invalid) → report clearly and suggest the **one** fix (e.g. “enable n8n API and set N8N_API_KEY in .env.local”), not a long list of “you could also…”.
+
+---
+
+## 12) Deployment and timing
+
+- **Vercel / Railway (app):** Deploy on push to `main`. Env from `.env.local` via `vercel:sync-env` and `railway:sync-worker-env`. Deployment order need not match.
+- **n8n (Railway or Docker):** For Facebook auto-publish: workflow "MP26 — Centro Informativo → Facebook" must be **active**; n8n env: `N8N_WEBHOOK_TOKEN`, `FACEBOOK_CENTRO_PAGE_ID`, `FACEBOOK_CENTRO_PAGE_TOKEN`. App needs `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` and token. Use `npm run railway:sync-n8n-env` after `railway link` to n8n.
+- **Worker (Railway):** Needs `MP26_BASE_URL` and `CRON_SECRET`. Use `railway:sync-worker-env` after `railway link` to Worker.
 
 ---
 

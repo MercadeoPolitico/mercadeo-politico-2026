@@ -154,24 +154,24 @@ export async function POST(req: Request) {
   const baseText = String(draft.generated_text || "").trim();
   if (!baseText) return NextResponse.json({ ok: false, error: "draft_empty" }, { status: 400 });
 
+  const { data: candidate } = await admin
+    .from("politicians")
+    .select("id,name,office,region,ballot_number")
+    .eq("id", draft.candidate_id)
+    .maybeSingle();
+
   // Publish constraints (server-side safety)
   const title = titleFromText(baseText);
   if (!title) return NextResponse.json({ ok: false, error: "missing_title" }, { status: 400 });
   const meta = (draft.metadata as any) ?? {};
   const sourceName = typeof meta.source_name === "string" ? meta.source_name.trim() : "";
   const sourceUrl = typeof meta.source_url === "string" ? meta.source_url.trim() : "";
-  const derivedSource = !sourceName && sourceUrl ? hostOf(sourceUrl) ?? "" : sourceName;
-  if (!derivedSource) return NextResponse.json({ ok: false, error: "missing_author" }, { status: 400 });
+  let derivedSource = !sourceName && sourceUrl ? hostOf(sourceUrl) ?? "" : sourceName;
+  if (!derivedSource) derivedSource = (candidate && typeof (candidate as any)?.name === "string" ? String((candidate as any).name).trim() : "") || "Redacción MP26";
 
   const mediaUrl = meta?.media?.image_url && typeof meta.media.image_url === "string" ? meta.media.image_url.trim() : "";
   const allowNoImage = allow_no_image || meta.allow_no_image === true;
   if (!allowNoImage && !mediaUrl) return NextResponse.json({ ok: false, error: "missing_image" }, { status: 400 });
-
-  const { data: candidate } = await admin
-    .from("politicians")
-    .select("id,name,office,region,ballot_number")
-    .eq("id", draft.candidate_id)
-    .maybeSingle();
 
   const region_key = regionKeyFromCandidate(candidate);
 

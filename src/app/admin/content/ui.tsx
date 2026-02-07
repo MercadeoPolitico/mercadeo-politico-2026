@@ -329,7 +329,8 @@ export function AdminContentPanel() {
     const name = meta && typeof meta.source_name === "string" ? String(meta.source_name).trim() : "";
     if (name) return name;
     const url = meta && typeof meta.source_url === "string" ? String(meta.source_url).trim() : "";
-    return url ? hostOf(url) : null;
+    if (url) return hostOf(url);
+    return (polById[d.candidate_id]?.name?.trim()) || null;
   }
 
   function allowNoImage(d: Draft): boolean {
@@ -683,8 +684,9 @@ export function AdminContentPanel() {
     await refresh();
   }
 
+  const allowedForCIPublish = ["blog", "social", ""];
   async function publishToCitizenCenter(draft: Draft) {
-    if (draft.content_type !== "blog") return;
+    if (!allowedForCIPublish.includes(String(draft.content_type ?? "").trim())) return;
     if (!isPublishApproved(draft)) return;
     const res = await fetch("/api/admin/news/publish", {
       method: "POST",
@@ -728,6 +730,24 @@ export function AdminContentPanel() {
 
   function clearSelection() {
     setChecked({});
+  }
+
+  async function bulkApproveSelected() {
+    if (!bulkHasSelection) return;
+    const ok = window.confirm(`Aprobar ${selectedIds.length} borrador(es) (estado → approved). ¿Continuar?`);
+    if (!ok) return;
+    let done = 0;
+    for (const d of selectedDrafts) {
+      const res = await fetch("/api/admin/drafts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: d.id, status: "approved" }),
+        credentials: "include",
+      });
+      if (res.ok) done++;
+    }
+    window.alert(`Aprobados: ${done} de ${selectedIds.length}.`);
+    await refresh();
   }
 
   /** Borrar todos: server deletes all drafts (no ids sent). Use "Borrar todos" button. */
@@ -838,8 +858,11 @@ export function AdminContentPanel() {
     let okCount = 0;
     let skipCount = 0;
     const reasons: Record<string, number> = {};
+    // Allow blog, social, or empty/legacy content_type so existing drafts can publish to Centro.
+    const allowedForCI = ["blog", "social", ""];
     for (const d of selectedDrafts) {
-      if (d.content_type !== "blog") {
+      const ct = String(d.content_type ?? "").trim();
+      if (ct && !allowedForCI.includes(ct)) {
         skipCount++;
         reasons.not_blog = (reasons.not_blog ?? 0) + 1;
         // eslint-disable-next-line no-continue
@@ -872,7 +895,8 @@ export function AdminContentPanel() {
         skipCount++;
         const j = (await res.json().catch(() => null)) as any;
         const err = typeof j?.error === "string" ? j.error : "publish_failed";
-        reasons[err] = (reasons[err] ?? 0) + 1;
+        const key = err === "not_a_blog" ? "not_blog" : err;
+        reasons[key] = (reasons[key] ?? 0) + 1;
       }
     }
     const detail = Object.keys(reasons).length ? `\n\nDetalle (safe): ${Object.entries(reasons)
@@ -1234,6 +1258,9 @@ export function AdminContentPanel() {
                   <input type="checkbox" checked={bulkAllowNoImage} onChange={(e) => setBulkAllowNoImage(e.target.checked)} />
                   Permitir sin imagen (solo esta acción)
                 </label>
+                <button className="glass-button" type="button" onClick={bulkApproveSelected}>
+                  Aprobar selección
+                </button>
                 <button className="glass-button" type="button" onClick={bulkPublishCitizen}>
                   Publicar Centro Informativo
                 </button>
@@ -1402,7 +1429,7 @@ export function AdminContentPanel() {
                   className="glass-button"
                   type="button"
                   onClick={() => publishToCitizenCenter(selected)}
-                  disabled={selected.content_type !== "blog" || !isPublishApproved(selected)}
+                  disabled={!allowedForCIPublish.includes(String(selected.content_type ?? "").trim()) || !isPublishApproved(selected)}
                 >
                   Publicar en Centro informativo
                 </button>

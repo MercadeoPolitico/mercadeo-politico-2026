@@ -83,7 +83,12 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (!draft) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  if (draft.content_type !== "blog") return NextResponse.json({ error: "not_a_blog" }, { status: 400 });
+  // Allow blog, social, or empty/legacy content_type so existing drafts can publish to Centro.
+  const ct = String(draft.content_type ?? "").trim();
+  const allowedForCI = ["blog", "social", ""];
+  if (ct && !allowedForCI.includes(ct)) {
+    return NextResponse.json({ error: "not_a_blog" }, { status: 400 });
+  }
   if (!isApprovedDraftStatus(draft.status)) return NextResponse.json({ error: "not_approved" }, { status: 400 });
 
   // Idempotency: if draft already references a published post, return it.
@@ -120,7 +125,7 @@ export async function POST(req: Request) {
       ? (draft.metadata as Record<string, unknown>).source_name
       : null;
 
-  const derivedAuthor = (() => {
+  let derivedAuthor = (() => {
     if (typeof source_name === "string" && source_name.trim()) return source_name.trim();
     if (typeof source_url === "string" && source_url.trim()) {
       try {
@@ -132,11 +137,19 @@ export async function POST(req: Request) {
     return null;
   })();
 
+  // Fallback: use politician name so drafts without source_name/source_url can still publish.
+  if (!derivedAuthor && draft.candidate_id) {
+    const { data: pol } = await admin.from("politicians").select("name").eq("id", draft.candidate_id).maybeSingle();
+    const name = pol && typeof (pol as any)?.name === "string" ? String((pol as any).name).trim() : "";
+    if (name) derivedAuthor = name;
+    else derivedAuthor = "Redacción MP26";
+  }
+  if (!derivedAuthor) derivedAuthor = "Redacción MP26";
+
   const media_url = imageUrlFromDraftMeta(draft.metadata);
 
   // Safety checks (avoid publishing incomplete posts)
   if (!title.trim()) return NextResponse.json({ error: "missing_title" }, { status: 400 });
-  if (!derivedAuthor) return NextResponse.json({ error: "missing_author" }, { status: 400 });
   const allowNoImage = allow_no_image || (draft.metadata && typeof draft.metadata === "object" && (draft.metadata as any).allow_no_image === true);
   if (!allowNoImage && !media_url) return NextResponse.json({ error: "missing_image" }, { status: 400 });
 
