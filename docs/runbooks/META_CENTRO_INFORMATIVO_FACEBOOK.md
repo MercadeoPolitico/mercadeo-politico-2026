@@ -92,7 +92,7 @@ En los logs de Vercel aparecerán mensajes con prefijo `[centro-informativo-face
 
 ## Publicaciones por candidato e imágenes
 
-- **Dos publicaciones por candidato:** El cron auto-blog dispara **dos** orquestaciones por candidato (story_slot 0 y 1) con noticias distintas; el sistema mantiene hasta 2 publicaciones vigentes por candidato (scripts `topup-ci-to-two-per-politician`, `prune-ci-to-two`).
+- **Publicaciones por candidato:** El cron auto-blog dispara **1** orquestación por candidato cada ~8 h (3 en 24 h); scripts opcionales `topup-ci-to-two-per-politician` y `prune-ci-to-two` permiten mantener hasta 2 vigentes por candidato si se desea.
 - **Mínimo 450 palabras:** Las publicaciones del centro informativo se generan con mínimo 450 palabras (ideal 500–800), SEO y 1–2 ejes de la propuesta que mitigan o empoderan la noticia.
 - **Imágenes:** Orden del pipeline: RSS (feeds con licencia) → Wikimedia Commons → generación AI en rotación. Atribución siempre en el cuerpo; sin hotlink a medios.
 
@@ -101,10 +101,28 @@ En los logs de Vercel aparecerán mensajes con prefijo `[centro-informativo-face
 - El workflow actual publica en la **Página de Facebook** "Centro Informativo Ciudadano" (con imagen cuando `media_url` está presente vía Graph API `/photos`).
 - Para **Instagram**: hace falta tener la Página conectada a una cuenta Instagram Professional/Business y usar la API de Instagram Content Publishing (crear contenedor y publicar). Mismo token de Page puede tener permisos para IG si está vinculado; se puede añadir un nodo opcional en n8n que llame a la API de IG cuando esté configurado.
 
-## Resumen de comprobaciones
+## No aparece nada en la Página de Facebook
 
-| Dónde        | Qué comprobar |
-|-------------|----------------|
-| Vercel      | `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` apunta al webhook correcto. |
-| n8n (Railway) | Workflow activo, `N8N_WEBHOOK_TOKEN`, `FACEBOOK_CENTRO_PAGE_ID`, `FACEBOOK_CENTRO_PAGE_TOKEN`. |
-| Supabase    | Columnas `citizen_news_posts.facebook_post_id` y `facebook_published_at` (migración aplicada). |
+Si en [Centro Informativo Ciudadano](https://www.facebook.com/profile.php?id=61587865731961) no ves publicaciones:
+
+1. **¿Hay publicaciones en el Centro Informativo (web)?**  
+   Entra en tu sitio en `/centro-informativo`. Si no hay nada, primero tiene que publicarse algo (cron auto o Admin → Contenido → publicar). La app **solo** envía a Facebook cuando se inserta/publica un post en `citizen_news_posts`.
+
+2. **Vercel (app):**  
+   - `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` = URL del webhook de n8n, p. ej. `https://n8n-production-1504.up.railway.app/webhook/mp26-centro-informativo-facebook`.  
+   - Si no está definida, la app **no** llama a n8n (logs: `[centro-informativo-facebook] skip: N8N_WEBHOOK_URL_CENTRO_FACEBOOK not set`).  
+   - Token: `N8N_WEBHOOK_TOKEN` o `MP26_AUTOMATION_TOKEN` (el mismo que usa n8n para validar).
+
+3. **n8n (Railway):**  
+   - Workflow **"MP26 — Centro Informativo → Facebook Page"** **activado** (toggle ON).  
+   - Variables en el servicio n8n: `N8N_WEBHOOK_TOKEN`, `FACEBOOK_CENTRO_PAGE_ID` = `61587865731961`, `FACEBOOK_CENTRO_PAGE_TOKEN` = Page Access Token de esa Página.  
+   - Sincronizar desde repo: `npm run railway:sync-n8n-env` (con `railway link` al servicio n8n).
+
+4. **Comprobar si algún post llegó a Facebook:**  
+   En Supabase, revisa `citizen_news_posts`: si alguna fila tiene `facebook_post_id` no nulo, ese post sí se publicó en la Página. Si todos son NULL, o no se llamó al webhook (Vercel sin URL), o n8n falló (token/Page ID/token de Meta).
+
+5. **Prueba manual:**  
+   Publica **una** entrada desde Admin → Contenido (desde un borrador existente o generando una). Esa publicación dispara el webhook. Revisa logs en Vercel (búsqueda por `centro-informativo-facebook`) y en n8n (ejecuciones del workflow).
+
+Script de diagnóstico (desde repo, sin imprimir secretos):  
+`node scripts/check-ci-facebook-status.mjs` — lista últimas publicaciones y si tienen `facebook_post_id`.

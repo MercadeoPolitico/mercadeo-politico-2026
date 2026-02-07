@@ -1435,6 +1435,7 @@ export function AdminContentPanel() {
                         alt=""
                         className="h-[140px] w-full object-cover"
                         loading="lazy"
+                        referrerPolicy="no-referrer"
                         onError={(e) => {
                           const el = e.currentTarget;
                           el.style.display = "none";

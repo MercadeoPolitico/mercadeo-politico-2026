@@ -19,7 +19,11 @@
     "ci:verify-project": "node scripts/verify-project-env.mjs",
     "verify:connections": "node scripts/verify-connections.mjs",
     "vercel:sync-env": "node scripts/vercel-sync-production-env.mjs",
-    "railway:sync-worker-env": "node scripts/railway-sync-worker-env.mjs"
+"railway:sync-worker-env": "node scripts/railway-sync-worker-env.mjs",
+    "env:centro-facebook": "node scripts/ensure-env-centro-facebook.mjs",
+    "n8n:ensure-centro-facebook": "node scripts/ensure-n8n-centro-facebook-workflow.mjs",
+    "railway:sync-n8n-env": "node scripts/railway-sync-n8n-env.mjs",
+    "ci:check-facebook": "node scripts/check-ci-facebook-status.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
@@ -31,6 +35,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@railway/cli": "^3.10.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -38,6 +43,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.3",
     "tailwindcss": "^4",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vercel": "^39.0.0"
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
 import { PublicPageShell } from "@/components/PublicPageShell";
 
@@ -27,9 +28,9 @@ export default function PoliticoError({
         <button className="glass-button" type="button" onClick={() => reset()}>
           Reintentar
         </button>
-        <a className="glass-button" href="/politico/access">
+        <Link className="glass-button" href="/politico/access">
           Volver a acceso
-        </a>
+        </Link>
       </div>
     </PublicPageShell>
   );

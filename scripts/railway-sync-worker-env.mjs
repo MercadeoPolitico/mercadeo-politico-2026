@@ -36,26 +36,22 @@ async function main() {
     return;
   }
 
-  let ok = 0;
-  let fail = 0;
-  for (const key of present) {
-    const value = String(envLocal[key]).trim();
-    // railway variables set KEY value (no echo of value)
-    const r = spawnSync("railway", ["variables", "set", key, value], {
-      stdio: ["ignore", "pipe", "pipe"],
-      encoding: "utf8",
-      shell: true,
-    });
-    if (r.status === 0) {
-      ok++;
-      console.log("[railway-worker-env] set", key, "(OK)");
-    } else {
-      fail++;
-      console.error("[railway-worker-env] failed", key, r.stderr?.slice(0, 120) || r.error?.message);
-    }
+  // Use npx so project devDependency @railway/cli is used (RECONNECT.md)
+  // Railway CLI v3: railway variables --set "KEY=value" [--set "K2=V2" ...]
+  const setArgs = present.flatMap((k) => ["--set", `${k}=${String(envLocal[k]).trim()}`]);
+  const r = spawnSync("npx", ["--yes", "railway", "variables", ...setArgs], {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    cwd: process.cwd(),
+    shell: process.platform === "win32",
+  });
+  if (r.status === 0) {
+    console.log("[railway-worker-env] set", present.join(", "), "(OK)");
+  } else {
+    console.error("[railway-worker-env] failed", r.stderr?.slice(0, 200) || r.error?.message);
+    process.exit(2);
   }
-  console.log("[railway-worker-env] done", { ok, fail });
-  if (fail > 0) process.exit(2);
+  console.log("[railway-worker-env] done");
 }
 
 main().catch((err) => {
