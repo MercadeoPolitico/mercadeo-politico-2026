@@ -10,8 +10,10 @@
     "n8n:ensure": "node scripts/ensure-n8n-workflow-ready.mjs",
     "smoke:prod": "node scripts/smoke-prod.mjs",
     "smoke:auto-publish:prod": "node scripts/smoke-auto-publish-prod.mjs",
+    "smoke:cron": "node scripts/smoke-cron-auto-blog.mjs",
     "smoke:n8n": "node scripts/smoke-n8n.mjs",
     "smoke": "npm run smoke:n8n && npm run smoke:prod",
+    "smoke:full": "npm run smoke:n8n && npm run smoke:prod && npm run smoke:auto-publish:prod && npm run smoke:cron",
     "ci:purge-regenerate": "node scripts/purge-and-regenerate-two-per-politician.mjs",
     "ci:purge-api": "node scripts/call-ci-purge-api.mjs",
     "ci:verify": "node scripts/verify-ci-two-per-politician.mjs",
@@ -22,8 +24,10 @@
 "railway:sync-worker-env": "node scripts/railway-sync-worker-env.mjs",
     "env:centro-facebook": "node scripts/ensure-env-centro-facebook.mjs",
     "n8n:ensure-centro-facebook": "node scripts/ensure-n8n-centro-facebook-workflow.mjs",
+    "n8n:ensure-centro-tiktok": "node scripts/ensure-n8n-centro-tiktok-workflow.mjs",
     "railway:sync-n8n-env": "node scripts/railway-sync-n8n-env.mjs",
-    "ci:check-facebook": "node scripts/check-ci-facebook-status.mjs"
+    "ci:check-facebook": "node scripts/check-ci-facebook-status.mjs",
+    "check:ci-count": "node scripts/check-ci-count.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

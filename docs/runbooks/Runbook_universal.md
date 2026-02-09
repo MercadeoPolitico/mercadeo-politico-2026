@@ -135,4 +135,12 @@
 
 ---
 
+## 15) Centro TikTok (n8n)
+
+- **Workflow:** `docs/automation/n8n-centro-informativo-tiktok.json`. Webhook path: `mp26-centro-informativo-tiktok`. Same token as Facebook (`N8N_WEBHOOK_TOKEN`).
+- **Install via CLI:** `npm run n8n:ensure-centro-tiktok` (requires `N8N_API_KEY` and `N8N_WEBHOOK_URL` in `.env.local`). If API returns 400, import in n8n UI: **Import from file** → select the JSON → activate.
+- **Env in n8n (Railway):** Optional `TIKTOK_ACCESS_TOKEN` or `TIKTOK_USER_ACCESS_TOKEN` for TikTok API; if missing, workflow responds `ok: false, error: tiktok_not_configured`.
+
+---
+
 *Use this runbook in any project. Copy or link it into `docs/runbooks/` or `.cursor/rules` as needed. When starting: “Read Runbook_universal and let’s start.”*
