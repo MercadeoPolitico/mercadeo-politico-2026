@@ -78,6 +78,8 @@
 ## 8) Vercel
 
 - **Env:** Prefer project sync script over manual “add in dashboard”. Script reads `.env.local` and updates only the keys it knows; no secrets in logs.
+- **Token:** Sync script uses `VERCEL_TOKEN` from `.env.local`. If sync returns 403, create a new Vercel Personal Token and set it in `.env.local`.
+- **Centro Facebook:** Set `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` and token in `.env.local`, then run `npm run vercel:sync-env`.
 - **Build/deploy:** After push, Vercel deploys by integration. Cursor can run `vercel --prod` or `vercel env pull` when the task requires it, without asking “do you want me to deploy?”.
 
 ---
@@ -109,6 +111,27 @@
 - **Vercel / Railway (app):** Deploy on push to `main`. Env from `.env.local` via `vercel:sync-env` and `railway:sync-worker-env`. Deployment order need not match.
 - **n8n (Railway or Docker):** For Facebook auto-publish: workflow "MP26 — Centro Informativo → Facebook" must be **active**; n8n env: `N8N_WEBHOOK_TOKEN`, `FACEBOOK_CENTRO_PAGE_ID`, `FACEBOOK_CENTRO_PAGE_TOKEN`. App needs `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` and token. Use `npm run railway:sync-n8n-env` after `railway link` to n8n.
 - **Worker (Railway):** Needs `MP26_BASE_URL` and `CRON_SECRET`. Use `railway:sync-worker-env` after `railway link` to Worker.
+
+---
+
+## 13) Auto-publication flow (1 or 2 per politician, configurable)
+
+**Default:** 1 per politician per window. **Optional:** Set `auto_blog_publications_per_politician` = "2" for 2 per politician. For each politician who is “due”, the cron triggers **two** calls to editorial-orchestrate (story_slot 0 and 1). Each call:
+
+1. **Autogeneración:** editorial-orchestrate generates one draft (blog + variants, image, metadata) from news/RSS + AI.
+2. **Centro Informativo:** If `auto_publish_enabled` (candidate) and `auto_blog_global_enabled` (app_settings) are ON, the same request inserts one row into `citizen_news_posts` (published) and updates the draft metadata with `published_post_id` / `published_slug`.
+3. **Facebook:** Right after insert, the app calls `submitCentroInformativoToFacebook`, which POSTs to the n8n webhook; n8n posts to the single Facebook Page “Centro Informativo Ciudadano”.
+
+**Result:** With default (1): 1 post per politician per window. With `auto_blog_publications_per_politician = 2`: 2 per window; avoid lists are refreshed between calls. **Requirements:** Worker running, Vercel env `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` + token, n8n workflow active + Facebook env vars, politicians with `auto_blog_enabled` and `auto_publish_enabled` = true.
+
+---
+
+## 14) Task: Centro Facebook end-to-end (checklist)
+
+1. **Vercel:** Define `N8N_WEBHOOK_URL_CENTRO_FACEBOOK` and token (`N8N_WEBHOOK_TOKEN` or `MP26_AUTOMATION_TOKEN`) in Production. In `.env.local` set both (and optionally run `node scripts/ensure-env-centro-facebook.mjs` to derive the URL from `N8N_WEBHOOK_URL`), then run `npm run vercel:sync-env`. If 403: regenerate [Vercel token](https://vercel.com/account/tokens) and set `VERCEL_TOKEN` in `.env.local`.
+2. **n8n:** Workflow "MP26 — Centro Informativo → Facebook" must be **active**. In Railway (n8n service) set `N8N_WEBHOOK_TOKEN`, `FACEBOOK_CENTRO_PAGE_ID`, `FACEBOOK_CENTRO_PAGE_TOKEN`. Run `npm run railway:sync-n8n-env` after `npx railway link` to the **n8n** service.
+3. **Reimport workflow (version with video):** In n8n UI → **Import from file** → select `docs/automation/n8n-centro-informativo-facebook.json` from the repo (this version includes video: IF is video? → Facebook Page video, else photo/feed). Replace/update the existing workflow and **activate** it.
+4. **After publishing an entry:** Run `node scripts/check-ci-facebook-status.mjs` to confirm recent posts have `facebook_post_id`; if none do, check Vercel env, n8n active, and Page ID + Token in n8n.
 
 ---
 
